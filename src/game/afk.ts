@@ -1,0 +1,310 @@
+/**
+ * Offline camp. The player starts it outdoors. On return, elapsed time
+ * becomes kills, then the yard's existing experience and Tropical Rarab
+ * drops. A Field Manual page is not advanced here. Camp kills are not
+ * the worms, hares, beetles, orcs, sheep, or goblins on that page.
+ */
+import { HARE } from "./content";
+import { RARAB_DROPS, dropRate } from "./drops";
+import { settleKill, type ChainClock } from "./exp";
+import { type FovState } from "./fov";
+import { findAction } from "./hotbar";
+import { pointsFromExp, crystalChance } from "./signet";
+import { regionName, RON_X0, RON_Z0, RON_SIZE } from "./world";
+
+/** Hours a camp will pay for. Raise this when the pace should run longer. */
+export const MAX_AFK_HOURS = 12;
+
+export const HARE_MEAT_GIL = 40;
+
+export type FarmZoneId = "west-ronfaure" | "ronfaure-forest";
+
+export type FarmSpot = {
+  id: FarmZoneId;
+  name: string;
+  levelMin: number;
+  levelMax: number;
+  prey: string;
+};
+
+/** Both outdoor regions use the same prey. Towns are not on this list. */
+export const FARM_SPOTS: FarmSpot[] = [
+  { id: "west-ronfaure", name: "San d'Oria", levelMin: 70, levelMax: 75, prey: "Tropical Rarab" },
+  { id: "ronfaure-forest", name: "Southern San d'Oria", levelMin: 70, levelMax: 75, prey: "Tropical Rarab" },
+];
+
+export type AfkFarmSave = {
+  active: true;
+  startTimestamp: number;
+  zoneId: FarmZoneId;
+  farmingEfficiency: number;
+  level: number;
+  exp: number;
+  job: string;
+  treasureHunter: number;
+  signetLeft: number;
+  crystalBonus: boolean;
+  dies: boolean;
+  sustainMinutes: number;
+  sellMeat: boolean;
+  note: string;
+  fovActive: boolean;
+  fovPage: number;
+  /** Missing on an older camp. That camp was West. */
+  fovBook?: "west" | "east";
+  fovCounts: number[];
+  fovRepeat: boolean;
+  fovPaidDays: Partial<Record<number, string>>;
+  fovTabs: number;
+};
+
+export type AfkPreview = {
+  elapsedMinutes: number;
+  remainingMinutes: number;
+  kills: number;
+  exp: number;
+  level: number;
+  pool: number;
+  gil: number;
+  tabs: number;
+  items: Record<string, number>;
+  soldMeat: number;
+  crystals: number;
+  rankPoints: number;
+  conquestPoints: number;
+  note: string;
+  fov: FovState | null;
+};
+
+const EMPTY_CLOCK: ChainClock = { count: 0, until: 0 };
+
+/** San d'Oria still camps the old yard. West Ronfaure has no Tropical Rarabs. */
+export function farmZoneAt(screen: string, x: number, z: number): FarmZoneId | null {
+  if (screen !== "battle") return null;
+  const name = regionName(x, z);
+  if (name === "West Ronfaure") return null;
+  if (name === "Southern San d'Oria" || name === "San d'Oria") return "west-ronfaure";
+  return null;
+}
+
+export function spotById(id: FarmZoneId): FarmSpot {
+  return FARM_SPOTS.find((spot) => spot.id === id) ?? FARM_SPOTS[0];
+}
+
+type MeasureInput = {
+  dmg: number;
+  fstr: number;
+  hit: number;
+  delay: number;
+  hp: number;
+  defense: number;
+  level: number;
+  zoneId: FarmZoneId;
+  gambitOn: boolean;
+  hasWeaponskill: boolean;
+  hasHeal: boolean;
+  party: number;
+  healer: boolean;
+};
+
+const HEALER_TRUSTS = new Set(["kupipi", "curilla", "karaha-baruha", "sylvie", "nashmeira", "adelheid", "koru-moru"]);
+
+export function partyHelps(ids: readonly string[] | undefined): { party: number; healer: boolean } {
+  const list = ids ?? [];
+  return {
+    party: Math.min(5, list.length),
+    healer: list.some((id) => HEALER_TRUSTS.has(id)),
+  };
+}
+
+/** Kills per minute from the live sheet, the open gambit board, and who is summoned. */
+export function measureFarm(input: MeasureInput): { kpm: number; dies: boolean; sustainMinutes: number; note: string } {
+  const delay = Math.max(60, input.delay || 240);
+  const swingSec = delay / 60;
+  const perHit = Math.max(1, Math.floor((Math.max(0, input.dmg) + input.fstr) * 1.2));
+  const hit = Math.max(0.05, Math.min(0.95, input.hit / 100));
+  let dps = (perHit * hit) / swingSec;
+  if (input.gambitOn && input.hasWeaponskill) dps += (perHit * 3) / 20;
+  dps += Math.min(5, Math.max(0, input.party)) * 12;
+  if (!input.gambitOn) dps *= 0.9;
+  const travel = input.zoneId === "ronfaure-forest" ? 12 : 7;
+  const ttk = HARE.hpNatural / Math.max(1, dps) + travel;
+  let kpm = 60 / ttk;
+  let note = "The prey is in your range.";
+  const gap = input.level - HARE.level;
+  if (gap <= -20) {
+    kpm *= 0.25;
+    note = "Far under-leveled. Most of the camp is spent getting up.";
+  } else if (gap < -5) {
+    kpm *= 0.6;
+    note = "Under-leveled for Tropical Rarab.";
+  } else if (gap > 8) {
+    note = "Over-leveled. The prey falls quickly and pays little.";
+  }
+  const hareHit = Math.max(1, HARE.weaponDamage - Math.floor(input.defense / 8));
+  const incoming = (hareHit * 0.65) / (HARE.delay / 60);
+  const kept = (input.gambitOn && input.hasHeal) || input.healer;
+  const net = kept ? incoming * 0.2 : incoming;
+  let dies = false;
+  let sustainMinutes = MAX_AFK_HOURS * 60;
+  if (!kept && input.hp > 0 && net > 0) {
+    dies = true;
+    sustainMinutes = Math.max(0.5, Math.round((input.hp / net / 60) * 10) / 10);
+    note = "No one is healing you. Rewards stop when you fall.";
+  }
+  kpm = Math.max(0.05, Math.min(8, Math.round(kpm * 100) / 100));
+  return { kpm, dies, sustainMinutes, note };
+}
+
+export function gambitShape(book: { on?: boolean; slots?: { action?: string }[] } | undefined): {
+  on: boolean;
+  weaponskill: boolean;
+  heal: boolean;
+  engage: boolean;
+} {
+  const slots = book?.slots ?? [];
+  let weaponskill = false;
+  let heal = false;
+  let engage = false;
+  for (const slot of slots) {
+    const id = slot.action ?? "";
+    if (!id) continue;
+    if (id === "engage") engage = true;
+    const action = findAction(id);
+    if (action?.kind === "weaponskill") weaponskill = true;
+    if (action?.kind === "spell" && /cure|curaga|raise|regen/i.test(action.name)) heal = true;
+    if (/waltz|benediction|heal/i.test(id)) heal = true;
+  }
+  return { on: book?.on === true, weaponskill, heal, engage };
+}
+
+function unit(seed: number): number {
+  let x = Math.imul(seed | 0, 0x6d2b79f5);
+  x = Math.imul(x ^ (x >>> 15), x | 1);
+  x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+  return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+}
+
+export function elapsedMinutes(startTimestamp: number, now: number, capMinutes: number): number {
+  const raw = Math.max(0, (now - startTimestamp) / 60000);
+  return Math.min(raw, Math.max(0, capMinutes), MAX_AFK_HOURS * 60);
+}
+
+export function previewAfk(session: AfkFarmSave, now = Date.now()): AfkPreview {
+  const cap = session.dies ? Math.min(session.sustainMinutes, MAX_AFK_HOURS * 60) : MAX_AFK_HOURS * 60;
+  const minutes = elapsedMinutes(session.startTimestamp, now, cap);
+  const kills = Math.floor(session.farmingEfficiency * minutes);
+  let level = Math.max(1, Math.floor(session.level));
+  let pool = Math.max(0, Math.floor(session.exp));
+  let gained = 0;
+  let clock: ChainClock = EMPTY_CLOCK;
+  let gil = 0;
+  let tabs = 0;
+  let rankPoints = 0;
+  let conquestPoints = 0;
+  let crystals = 0;
+  let soldMeat = 0;
+  const items: Record<string, number> = {};
+  const fov: FovState | null = session.fovActive
+    ? {
+        active: true,
+        page: session.fovPage,
+        book: session.fovBook === "east" ? "east" : "west",
+        counts: session.fovCounts.slice(),
+        repeat: session.fovRepeat,
+        tabs: session.fovTabs,
+        paidDays: { ...session.fovPaidDays },
+      }
+    : null;
+  for (let i = 0; i < kills; i += 1) {
+    const at = session.startTimestamp + ((i + 1) / Math.max(0.05, session.farmingEfficiency)) * 60000;
+    const kill = settleKill(level, HARE.level, pool, at, clock);
+    clock = kill.clock;
+    level = kill.level;
+    pool = kill.exp;
+    gained += kill.gained;
+    const signed = session.signetLeft > 0 && at - session.startTimestamp <= session.signetLeft * 1000;
+    if (signed && kill.gained > 0) {
+      const cut = pointsFromExp(kill.gained, "battle");
+      rankPoints += cut;
+      conquestPoints += cut;
+      const chance = session.crystalBonus ? crystalChance("kingdom-aketon") : crystalChance(null);
+      if (unit(session.startTimestamp + i * 17 + 3) < chance) crystals += 1;
+    }
+    for (const drop of RARAB_DROPS) {
+      if (unit(session.startTimestamp + i * 31 + drop.id.length * 13) >= dropRate(drop.tier, session.treasureHunter)) continue;
+      if (drop.id === "hare-meat" && session.sellMeat) {
+        soldMeat += 1;
+        gil += HARE_MEAT_GIL;
+        continue;
+      }
+      items[drop.id] = (items[drop.id] ?? 0) + 1;
+    }
+  }
+  return {
+    elapsedMinutes: Math.round(minutes * 10) / 10,
+    remainingMinutes: Math.max(0, Math.round((MAX_AFK_HOURS * 60 - Math.min(MAX_AFK_HOURS * 60, (now - session.startTimestamp) / 60000)) * 10) / 10),
+    kills,
+    exp: gained,
+    level,
+    pool,
+    gil,
+    tabs,
+    items,
+    soldMeat,
+    crystals,
+    rankPoints,
+    conquestPoints,
+    note: session.note,
+    fov,
+  };
+}
+
+export function assertAfk(): void {
+  if (MAX_AFK_HOURS !== 12) throw new Error("afk cap");
+  if (farmZoneAt("town", 0, 0) !== null || farmZoneAt("gambits", 0, 40) !== null) throw new Error("town is not a camp");
+  if (farmZoneAt("battle", 0, 0) !== "west-ronfaure") throw new Error("pen camp");
+  if (farmZoneAt("battle", RON_X0 + RON_SIZE / 2, RON_Z0 + RON_SIZE / 2) !== null) throw new Error("forest camp");
+  const fit = measureFarm({
+    dmg: 40, fstr: 8, hit: 80, delay: 240, hp: 1400, defense: 200, level: 75,
+    zoneId: "ronfaure-forest", gambitOn: true, hasWeaponskill: true, hasHeal: true, party: 4, healer: true,
+  });
+  if (fit.kpm < 0.4 || fit.kpm > 8 || fit.dies) throw new Error("healthy camp");
+  const frail = measureFarm({
+    dmg: 6, fstr: 0, hit: 40, delay: 480, hp: 80, defense: 10, level: 10,
+    zoneId: "west-ronfaure", gambitOn: false, hasWeaponskill: false, hasHeal: false, party: 0, healer: false,
+  });
+  if (!frail.dies || frail.sustainMinutes >= MAX_AFK_HOURS * 60) throw new Error("frail camp falls");
+  const start = 1_700_000_000_000;
+  const session: AfkFarmSave = {
+    active: true,
+    startTimestamp: start,
+    zoneId: "west-ronfaure",
+    farmingEfficiency: 1,
+    level: 75,
+    exp: 0,
+    job: "SAM",
+    treasureHunter: 0,
+    signetLeft: 0,
+    crystalBonus: false,
+    dies: false,
+    sustainMinutes: MAX_AFK_HOURS * 60,
+    sellMeat: true,
+    note: "",
+    fovActive: false,
+    fovPage: 0,
+    fovCounts: [],
+    fovRepeat: false,
+    fovPaidDays: {},
+    fovTabs: 0,
+  };
+  const hour = previewAfk(session, start + 60 * 60 * 1000);
+  const again = previewAfk(session, start + 60 * 60 * 1000);
+  if (hour.kills !== 60 || hour.exp <= 0) throw new Error("hour of kills");
+  if (hour.soldMeat !== again.soldMeat || JSON.stringify(hour.items) !== JSON.stringify(again.items)) throw new Error("camp is stable");
+  if ((hour.items["hare-meat"] ?? 0) !== 0) throw new Error("meat was sold");
+  const capped = previewAfk(session, start + 20 * 60 * 60 * 1000);
+  if (capped.kills !== MAX_AFK_HOURS * 60) throw new Error("twelve hour cap");
+  const fallen = previewAfk({ ...session, dies: true, sustainMinutes: 10, farmingEfficiency: 2 }, start + 60 * 60 * 1000);
+  if (fallen.kills !== 20) throw new Error("death stops the camp");
+}

@@ -1,0 +1,15 @@
+node_modules/
+.vercel/
+dist/
+.nitro/
+*.tsbuildinfo
+.grok/
+artifacts/
+screenshots/
+attachments/
+data/
+.project_id
+.env
+.env.*
+*.log
+.node_modules.lock
