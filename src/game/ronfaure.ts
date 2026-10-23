@@ -1104,6 +1104,36 @@ function specOf(id: string): Species {
   return spec;
 }
 
+/** Standing monsters, after the zone fills. Camps read this instead of inventing a roster. */
+export function placedBodies(): { species: string; x: number; z: number }[] {
+  return live.map((body) => ({ species: body.species, x: body.spawnX, z: body.spawnZ }));
+}
+
+/** Level, HP, weapon, delay, and drops for one species. Level is the species minimum. */
+export function speciesFarm(id: string): {
+  name: string;
+  level: number;
+  levelMin: number;
+  levelMax: number;
+  hpNatural: number;
+  weaponDamage: number;
+  delay: number;
+  drops: { id: string; found: string; tier: DropTier }[];
+} {
+  const spec = specOf(id);
+  const stats = bake(spec, spec.levelMin);
+  return {
+    name: spec.name,
+    level: spec.levelMin,
+    levelMin: spec.levelMin,
+    levelMax: spec.levelMax,
+    hpNatural: stats.hp,
+    weaponDamage: stats.weapon,
+    delay: spec.delay,
+    drops: spec.drops.flatMap((drop) => (drop.tier ? [{ id: drop.id, found: drop.found, tier: drop.tier }] : [])),
+  };
+}
+
 function addBody(speciesId: string, x: number, z: number, link: string, ph: FieldBody["ph"], levelOverride?: number): FieldBody {
   const spec = specOf(speciesId);
   const span = spec.levelMax - spec.levelMin;

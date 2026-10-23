@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { FARM_SPOTS, HARE_MEAT_GIL, MAX_AFK_HOURS, farmZoneAt, previewAfk, spotById } from "@/game/afk";
+import { HARE_MEAT_GIL, MAX_AFK_HOURS, campRefusal, farmSpots, farmZoneAt, previewAfk, regionKind, spotById } from "@/game/afk";
 import { ITEMS } from "@/game/content";
 import { readPlace } from "@/game/save";
 import { useGame } from "@/game/store";
+import { regionName } from "@/game/world";
 
 function clock(mins: number): string {
   const whole = Math.max(0, Math.floor(mins));
@@ -20,6 +21,14 @@ export function AfkPanel({ onClose }: { onClose: () => void }) {
   const here = readPlace();
   const zone = farmZoneAt(screen, here.x, here.z);
   const preview = session ? previewAfk(session, Date.now()) : null;
+  const hereRegion = regionName(here.x, here.z);
+  const refused = regionKind(hereRegion) === "town" || regionKind(hereRegion) === "instance";
+  const recommended = farmSpots().slice().sort((a, b) => {
+    const az = a.region === hereRegion ? 0 : 1;
+    const bz = b.region === hereRegion ? 0 : 1;
+    if (az !== bz) return az - bz;
+    return (a.id === zone ? 0 : 1) - (b.id === zone ? 0 : 1);
+  });
 
   useEffect(() => {
     if (!session) return;
@@ -81,12 +90,13 @@ export function AfkPanel({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <p className="mt-3 text-sm text-ink">
-              {zone ? `You are in ${spotById(zone).name}.` : "You are not in an outdoor camp. Towns and instances will not take one."}
+              {zone ? `You are in ${spotById(zone).name}.` : refused ? "Towns and instances can't hold a camp." : campRefusal(screen, here.x, here.z)}
             </p>
             <button
               type="button"
+              disabled={!zone}
               onClick={() => useGame.getState().startAfk()}
-              className="mt-3 h-11 w-full border border-gold bg-gold text-sm font-semibold text-navy"
+              className={`mt-3 h-11 w-full border border-gold bg-gold text-sm font-semibold text-navy ${zone ? "" : "opacity-40"}`}
             >
               Make camp
             </button>
@@ -94,7 +104,7 @@ export function AfkPanel({ onClose }: { onClose: () => void }) {
         )}
         <p className="mt-4 text-xs uppercase tracking-wide text-muted">Recommended</p>
         <ul className="mt-1 min-h-0 flex-1 overflow-y-auto">
-          {FARM_SPOTS.map((spot) => {
+          {recommended.map((spot) => {
             const hereNow = zone === spot.id;
             const fit = level >= spot.levelMin && level <= spot.levelMax;
             return (

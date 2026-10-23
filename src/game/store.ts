@@ -51,7 +51,7 @@ import { abandonTrial as dropMagianTrial, beginTrial as openMagianTrial, bonuses
 import { CONQUEST_SHOP, RARAB_CRYSTAL, crystalChance, pointsFromExp, rankFromPoints, signetHours } from "./signet";
 import { RARAB_DROPS, dropRate } from "./drops";
 import { BAG_SLOTS, bagUsed } from "./inventory";
-import { farmZoneAt, gambitShape, measureFarm, partyHelps, previewAfk, spotById, type AfkFarmSave } from "./afk";
+import { campHere, campRefusal, gambitShape, measureFarm, partyHelps, previewAfk, spotById, type AfkFarmSave } from "./afk";
 import { scale256 } from "./war";
 import { archeryByName, axeByName, blmCanUse, bluCanUse, brdCanUse, bstCanUse, castSword, clubByName, corCanUse, daggerByName, dncCanUse, drgCanUse, drkCanUse, effectiveTp, ftpAt, greatAxeByName, greatKatanaByName, greatSwordByName, HAND_SKILLS, handByName, katanaByName, marksmanshipByName, mnkCanUse, ninCanUse, pldCanUse, polearmByName, pupCanUse, rdmCanUse, rngCanUse, samCanUse, schCanUse, scytheByName, smnCanUse, staffByName, swordByName, thfCanUse, warCanUse, warCanUseArchery, warCanUseAxe, warCanUseClub, warCanUseDagger, warCanUseGreatAxe, warCanUseGreatKatana, warCanUseGreatSword, warCanUseHand, warCanUseKatana, warCanUseMarksmanship, warCanUsePolearm, warCanUseScythe, warCanUseStaff, whmCanUse, runCanUse, geoCanUse } from "./weaponskills";
 import { clearYardSave, readYardSave, writeYardSave } from "./yard-save";
@@ -14312,9 +14312,9 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				return;
 			}
 			const here = readPlace();
-			const zoneId = farmZoneAt(state.screen, here.x, here.z);
-			if (!zoneId) {
-				state.pushLog("Camp only works outdoors. Leave town first.", "info");
+			const camp = campHere(state.screen, here.x, here.z);
+			if (!camp) {
+				state.pushLog(campRefusal(state.screen, here.x, here.z), "info");
 				return;
 			}
 			const board = state.gambits?.[state.mainJob];
@@ -14329,19 +14329,24 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				hp: state.hp,
 				defense: state.sheet?.defense ?? 0,
 				level,
-				zoneId,
+				zoneId: camp.id,
 				gambitOn: shape.on,
 				hasWeaponskill: shape.weaponskill,
 				hasHeal: shape.heal,
 				party: help.party,
 				healer: help.healer,
+				preyLevel: camp.spot.level,
+				preyHp: camp.spot.hpNatural,
+				preyWeapon: camp.spot.weaponDamage,
+				preyDelay: camp.spot.delay,
+				preyName: camp.spot.prey,
 			});
 			const signet = state.buffs.find((buff) => buff.name === "Signet" && buff.left > 0);
 			const fov = readFov(state.fov);
 			const session: AfkFarmSave = {
 				active: true,
 				startTimestamp: Date.now(),
-				zoneId,
+				zoneId: camp.id,
 				farmingEfficiency: measured.kpm,
 				level,
 				exp: state.expByJob?.[state.mainJob] ?? state.exp ?? 0,
@@ -14360,9 +14365,14 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				fovRepeat: fov.repeat,
 				fovPaidDays: { ...fov.paidDays ?? {} },
 				fovTabs: fov.tabs,
+				preyLevel: camp.spot.level,
+				preyHp: camp.spot.hpNatural,
+				preyWeapon: camp.spot.weaponDamage,
+				preyDelay: camp.spot.delay,
+				preyDrops: camp.spot.drops ? [...camp.spot.drops] : [],
 			};
 			set({ afkFarm: session });
-			state.pushLog(`You make camp in ${spotById(zoneId).name}.`, "info");
+			state.pushLog(`You make camp in ${spotById(camp.id).name}.`, "info");
 			saveSettings(false);
 		},
 		stopAfk: () => {

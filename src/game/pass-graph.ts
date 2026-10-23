@@ -112,6 +112,136 @@ export function clampPassGraph(x: number, z: number, radius = 0): { x: number; z
   const keep = Math.max(0, room - radius);
   return { x: cx + (dx / len) * keep, z: cz + (dz / len) * keep };
 }
+export type PassCamp = {
+  id: "pass-mouth" | "pass-early" | "pass-mid" | "pass-deep" | "pass-pool" | "pass-glacier";
+  node: string;
+  /** Kept on the row. A camp is the nearest node along the tunnel, not this radius. */
+  radius: number;
+  /** Species ids fillPass places in this part of the pass. */
+  monsters: readonly string[];
+};
+
+/** AFK camps. Monster lists follow fillPass's squares. Distance is along the tunnel, not a radius. */
+export const PASS_CAMPS: readonly PassCamp[] = [
+  { id: "pass-mouth", node: "j_south", radius: 0.5, monsters: ["pass-wind", "pass-blade"] },
+  { id: "pass-early", node: "west_fork", radius: 0.65, monsters: ["pass-thug", "pass-weaver", "pass-oil"] },
+  {
+    id: "pass-mid",
+    node: "j_trunk_west",
+    radius: 0.7,
+    monsters: ["pass-pathfinder", "pass-bats", "pass-mugger", "pass-gambler", "pass-leecher", "pass-ooze", "pass-seeker", "pass-stirge"],
+  },
+  {
+    id: "pass-deep",
+    node: "chamber_mid",
+    radius: 0.6,
+    monsters: [
+      "pass-giant-scorpion", "pass-floating-eye", "pass-hecteyes", "pass-cave-scorpion",
+      "pass-pathfinder", "pass-bats", "pass-shaman", "pass-smithy", "pass-furrier",
+      "pass-mugger", "pass-gambler", "pass-leecher", "pass-seeker", "pass-stirge",
+    ],
+  },
+  { id: "pass-pool", node: "waters_room", radius: 0.45, monsters: ["pass-evil-weapon", "pass-ooze"] },
+  {
+    id: "pass-glacier",
+    node: "exit_beaucedine",
+    radius: 0.75,
+    monsters: ["pass-bat-eye", "pass-mucoid", "pass-taisai", "pass-floating-eye", "pass-seeker", "pass-stirge"],
+  },
+];
+
+const CAMP_LINKS = new Map<string, { to: string; len: number }[]>();
+function campTouch(id: string): { to: string; len: number }[] {
+  const row = CAMP_LINKS.get(id);
+  if (row) return row;
+  const next: { to: string; len: number }[] = [];
+  CAMP_LINKS.set(id, next);
+  return next;
+}
+for (const edge of PASS_GRAPH.edges) {
+  let len = 0;
+  for (let i = 0; i + 1 < edge.pts.length; i++) {
+    const a = W(edge.pts[i][0], edge.pts[i][1]);
+    const b = W(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+    len += Math.hypot(a.x - b.x, a.z - b.z);
+  }
+  campTouch(edge.from).push({ to: edge.to, len });
+  campTouch(edge.to).push({ to: edge.from, len });
+}
+const CAMP_DIST = new Map<string, Map<string, number>>();
+for (const start of CAMP_LINKS.keys()) {
+  const dist = new Map<string, number>([[start, 0]]);
+  const used = new Set<string>();
+  for (;;) {
+    let best: string | null = null;
+    let bestD = Infinity;
+    for (const [id, d] of dist) {
+      if (used.has(id) || d >= bestD) continue;
+      best = id;
+      bestD = d;
+    }
+    if (!best) break;
+    used.add(best);
+    for (const link of CAMP_LINKS.get(best) ?? []) {
+      const next = bestD + link.len;
+      if (next < (dist.get(link.to) ?? Infinity)) dist.set(link.to, next);
+    }
+  }
+  CAMP_DIST.set(start, dist);
+}
+
+function alongEdge(x: number, z: number, pts: [number, number][]): { off: number; from: number; to: number } {
+  let walked = 0;
+  let bestOff = Infinity;
+  let bestAt = 0;
+  let total = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = W(pts[i][0], pts[i][1]);
+    const b = W(pts[i + 1][0], pts[i + 1][1]);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len2 = dx * dx + dz * dz;
+    const len = Math.sqrt(len2);
+    const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2)) : 0;
+    const qx = a.x + dx * t;
+    const qz = a.z + dz * t;
+    const off = Math.hypot(x - qx, z - qz);
+    if (off < bestOff) {
+      bestOff = off;
+      bestAt = total + t * len;
+    }
+    total += len;
+  }
+  return { off: bestOff, from: bestAt, to: total - bestAt };
+}
+
+/** Camp whose node is closest along the tunnels. No radius. */
+export function nearestPassCamp(x: number, z: number): (typeof PASS_CAMPS)[number]["id"] {
+  let edge = PASS_GRAPH.edges[0];
+  let hit = alongEdge(x, z, edge.pts);
+  for (const next of PASS_GRAPH.edges) {
+    const along = alongEdge(x, z, next.pts);
+    if (along.off < hit.off) {
+      edge = next;
+      hit = along;
+    }
+  }
+  const fromNode = CAMP_DIST.get(edge.from);
+  const toNode = CAMP_DIST.get(edge.to);
+  let best = PASS_CAMPS[0].id;
+  let bestD = Infinity;
+  for (const camp of PASS_CAMPS) {
+    const viaFrom = hit.from + (fromNode?.get(camp.node) ?? Infinity);
+    const viaTo = hit.to + (toNode?.get(camp.node) ?? Infinity);
+    const dist = Math.min(viaFrom, viaTo);
+    if (dist < bestD) {
+      bestD = dist;
+      best = camp.id;
+    }
+  }
+  return best;
+}
+
 export function buildPassMask(res = 8): { res: number; n: number; data: Uint8Array } {
   const n = 15 * res;
   const data = new Uint8Array(n * n);

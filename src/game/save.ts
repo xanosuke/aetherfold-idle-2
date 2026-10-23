@@ -14,7 +14,7 @@ import { sanitizeEquipSets, type EquipSets } from "./equipsets";
 import { BAG_SLOTS, STACK_MAX, assertInventory } from "./inventory";
 import { assertSignet } from "./signet";
 import { assertDrops } from "./drops";
-import { assertAfk, type AfkFarmSave, type FarmZoneId } from "./afk";
+import { assertAfk, knownFarmId, type AfkFarmSave, type FarmDrop, type FarmZoneId } from "./afk";
 import { BLUE_SPELLS, trimBlueSet, withGrantedBlue } from "./blu";
 import { GAMBIT_KEY, gambitBookFrom, type GambitBook } from "./gambits";
 import { mergeSkillSnapshot, PLAYABLE, skillSnapshot } from "./jobs";
@@ -208,18 +208,33 @@ function paidDaysOf(raw: unknown): Partial<Record<number, string>> {
   return out;
 }
 
+function farmDrops(raw: unknown): FarmDrop[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const tiers = new Set(["very-common", "common", "uncommon", "rare", "very-rare", "super-rare", "ultra-rare"]);
+  const out: FarmDrop[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const drop = row as Record<string, unknown>;
+    if (typeof drop.id !== "string" || typeof drop.found !== "string" || typeof drop.tier !== "string" || !tiers.has(drop.tier)) continue;
+    out.push({ id: drop.id.slice(0, 64), found: drop.found.slice(0, 80), tier: drop.tier as FarmDrop["tier"] });
+  }
+  return out;
+}
+
 function sanitizeAfkFarm(raw: unknown): AfkFarmSave | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
   if (row.active !== true) return null;
-  const zoneId: FarmZoneId | null = row.zoneId === "ronfaure-forest" || row.zoneId === "west-ronfaure" ? row.zoneId : null;
+  const rawZone = typeof row.zoneId === "string" ? row.zoneId : "";
+  const zoneId: FarmZoneId | null = knownFarmId(rawZone) ? rawZone : null;
   const start = finite(row.startTimestamp, 0, 0, 8.64e15);
   if (!zoneId || start <= 0) return null;
+  const preyLevel = typeof row.preyLevel === "number" && Number.isFinite(row.preyLevel) ? Math.floor(row.preyLevel) : undefined;
   return {
     active: true,
     startTimestamp: start,
     zoneId,
-    farmingEfficiency: finite(row.farmingEfficiency, 0.05, 0.05, 8),
+    farmingEfficiency: finite(row.farmingEfficiency, 0.05, 0, 8),
     level: Math.floor(finite(row.level, 1, 1, 75)),
     exp: Math.floor(finite(row.exp, 0, 0, 1e9)),
     job: typeof row.job === "string" ? row.job.slice(0, 8) : "WAR",
@@ -239,6 +254,11 @@ function sanitizeAfkFarm(raw: unknown): AfkFarmSave | null {
     fovRepeat: row.fovRepeat === true,
     fovPaidDays: paidDaysOf(row.fovPaidDays),
     fovTabs: Math.floor(finite(row.fovTabs, 0, 0, 50_000)),
+    preyLevel,
+    preyHp: preyLevel != null ? finite(row.preyHp, 1, 1, 1e7) : undefined,
+    preyWeapon: preyLevel != null ? finite(row.preyWeapon, 1, 1, 999) : undefined,
+    preyDelay: preyLevel != null ? finite(row.preyDelay, 240, 60, 2000) : undefined,
+    preyDrops: preyLevel != null ? farmDrops(row.preyDrops) : undefined,
   };
 }
 
