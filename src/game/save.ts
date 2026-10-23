@@ -14,7 +14,7 @@ import { sanitizeEquipSets, type EquipSets } from "./equipsets";
 import { BAG_SLOTS, STACK_MAX, assertInventory } from "./inventory";
 import { assertSignet } from "./signet";
 import { assertDrops } from "./drops";
-import { assertAfk, knownFarmId, type AfkFarmSave, type FarmDrop, type FarmZoneId } from "./afk";
+import { assertAfk, campZoneFromSave, type AfkFarmSave, type FarmDrop, type FarmZoneId } from "./afk";
 import { BLUE_SPELLS, trimBlueSet, withGrantedBlue } from "./blu";
 import { GAMBIT_KEY, gambitBookFrom, type GambitBook } from "./gambits";
 import { mergeSkillSnapshot, PLAYABLE, skillSnapshot } from "./jobs";
@@ -226,14 +226,20 @@ function sanitizeAfkFarm(raw: unknown): AfkFarmSave | null {
   const row = raw as Record<string, unknown>;
   if (row.active !== true) return null;
   const rawZone = typeof row.zoneId === "string" ? row.zoneId : "";
-  const zoneId: FarmZoneId | null = knownFarmId(rawZone) ? rawZone : null;
+  const legacy = rawZone === "west-ronfaure" || rawZone === "ronfaure-forest";
+  const zoneId: FarmZoneId | null = campZoneFromSave(rawZone);
   const start = finite(row.startTimestamp, 0, 0, 8.64e15);
   if (!zoneId || start <= 0) return null;
-  const preyLevel = typeof row.preyLevel === "number" && Number.isFinite(row.preyLevel) ? Math.floor(row.preyLevel) : undefined;
+  const groupId = !legacy && typeof row.groupId === "string" && /^[a-z0-9-]{1,64}$/.test(row.groupId) ? row.groupId : undefined;
+  const preyLevel = groupId && typeof row.preyLevel === "number" && Number.isFinite(row.preyLevel) ? Math.floor(row.preyLevel) : undefined;
   return {
     active: true,
     startTimestamp: start,
     zoneId,
+    mode: row.mode === "nm" ? "nm" : "exp",
+    groupId,
+    groupName: groupId && typeof row.groupName === "string" ? row.groupName.slice(0, 80) : undefined,
+    groupFamily: groupId && typeof row.groupFamily === "string" ? row.groupFamily.slice(0, 40) : undefined,
     farmingEfficiency: finite(row.farmingEfficiency, 0.05, 0, 8),
     level: Math.floor(finite(row.level, 1, 1, 75)),
     exp: Math.floor(finite(row.exp, 0, 0, 1e9)),
@@ -243,7 +249,6 @@ function sanitizeAfkFarm(raw: unknown): AfkFarmSave | null {
     crystalBonus: row.crystalBonus === true,
     dies: row.dies === true,
     sustainMinutes: finite(row.sustainMinutes, 12 * 60, 0, 12 * 60),
-    sellMeat: row.sellMeat !== false,
     note: typeof row.note === "string" ? row.note.slice(0, 160) : "",
     fovActive: row.fovActive === true,
     fovPage: Math.floor(finite(row.fovPage, 0, 0, 5)),
@@ -890,6 +895,73 @@ export function assertSave(): void {
   assertSignet();
   assertDrops();
   assertAfk();
+  const legacyCamp = normalizeProgress({
+    afkFarm: {
+      active: true,
+      startTimestamp: 1_700_000_000_000,
+      zoneId: "west-ronfaure",
+      farmingEfficiency: 1,
+      level: 75,
+      exp: 0,
+      sellMeat: true,
+      mode: "nm",
+      groupId: "tropical-rarab",
+      preyLevel: 75,
+      preyHp: 4000,
+    },
+  });
+  const moved = legacyCamp.save.afkFarm;
+  if (!moved || moved.zoneId !== "ronfaure-west" || moved.groupId || moved.preyLevel != null || moved.mode !== "nm" || "sellMeat" in moved) {
+    throw new Error("old rarab camp did not migrate");
+  }
+  const blended = normalizeProgress({
+    afkFarm: {
+      active: true,
+      startTimestamp: 1_700_000_000_000,
+      zoneId: "ronfaure-west",
+      preyLevel: 8,
+      preyHp: 200,
+      sellMeat: false,
+      preyDrops: [{ id: "hare-meat", found: "hare meat", tier: "common" }],
+    },
+  });
+  if (blended.save.afkFarm?.preyLevel != null || blended.save.afkFarm?.groupId || blended.save.afkFarm?.mode !== "exp") {
+    throw new Error("blended camp kept a snapshot");
+  }
+  const keptGroup = normalizeProgress({
+    afkFarm: {
+      active: true,
+      startTimestamp: 1_700_000_000_000,
+      zoneId: "ronfaure-forest",
+      mode: "exp",
+      groupId: "forest-hare",
+      groupName: "Forest Hare",
+      groupFamily: "Rabbit",
+      preyLevel: 1,
+      preyHp: 20,
+      preyDrops: [{ id: "hare-meat", found: "hare meat", tier: "rare" }],
+    },
+  });
+  const legacyKept = keptGroup.save.afkFarm;
+  if (!legacyKept || legacyKept.zoneId !== "ronfaure-west" || legacyKept.groupId || legacyKept.preyLevel != null) throw new Error("legacy zone kept a chosen group");
+  const liveGroup = normalizeProgress({
+    afkFarm: {
+      active: true,
+      startTimestamp: 1_700_000_000_000,
+      zoneId: "ronfaure-west",
+      mode: "exp",
+      groupId: "forest-hare",
+      groupName: "Forest Hare",
+      groupFamily: "Rabbit",
+      preyLevel: 1,
+      preyHp: 20,
+      preyDrops: [{ id: "hare-meat", found: "hare meat", tier: "rare" }],
+    },
+  });
+  const live = liveGroup.save.afkFarm;
+  if (!live || live.groupId !== "forest-hare" || live.groupName !== "Forest Hare" || live.preyLevel !== 1 || live.preyDrops?.[0]?.id !== "hare-meat" || live.mode !== "exp") {
+    throw new Error("chosen group did not save");
+  }
   assertMagian();
   const partial = normalizeProgress({ version: 1, mainJob: "WHM", gil: 15 });
   if (partial.save.gil !== 15 || partial.save.exp !== 0 || partial.save.subJob !== null) throw new Error("old save did not fill defaults");

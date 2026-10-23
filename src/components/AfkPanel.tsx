@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { HARE_MEAT_GIL, MAX_AFK_HOURS, campRefusal, farmSpots, farmZoneAt, previewAfk, regionKind, spotById } from "@/game/afk";
+import { MAX_AFK_HOURS, campRefusal, checkRating, farmZoneAt, nearestGroup, previewAfk, regionKind, spotById, zoneGroups } from "@/game/afk";
 import { ITEMS } from "@/game/content";
 import { readPlace } from "@/game/save";
 import { useGame } from "@/game/store";
@@ -10,7 +10,12 @@ function clock(mins: number): string {
   const h = Math.floor(whole / 60);
   const m = whole % 60;
   if (h <= 0) return `${m}m`;
+  if (m <= 0) return `${h}h`;
   return `${h}h ${m}m`;
+}
+
+function pace(kpm: number): string {
+  return `${Math.round(kpm * 10) / 10} kills/min`;
 }
 
 export function AfkPanel({ onClose }: { onClose: () => void }) {
@@ -18,17 +23,18 @@ export function AfkPanel({ onClose }: { onClose: () => void }) {
   const screen = useGame((s) => s.screen);
   const level = useGame((s) => s.jobLevels?.[s.mainJob] ?? 75);
   const [tick, setTick] = useState(0);
+  const [pick, setPick] = useState<string | null>(null);
   const here = readPlace();
   const zone = farmZoneAt(screen, here.x, here.z);
-  const preview = session ? previewAfk(session, Date.now()) : null;
+  const preview = session ? previewAfk(session, Date.now(), here) : null;
   const hereRegion = regionName(here.x, here.z);
   const refused = regionKind(hereRegion) === "town" || regionKind(hereRegion) === "instance";
-  const recommended = farmSpots().slice().sort((a, b) => {
-    const az = a.region === hereRegion ? 0 : 1;
-    const bz = b.region === hereRegion ? 0 : 1;
-    if (az !== bz) return az - bz;
-    return (a.id === zone ? 0 : 1) - (b.id === zone ? 0 : 1);
-  });
+  const groups = zone ? zoneGroups(here.x, here.z) : [];
+  const closest = zone ? nearestGroup(here.x, here.z) : null;
+  const selected = zone ? (groups.find((group) => group.id === pick) ?? closest) : null;
+  const preyName = session?.groupName || preview?.preyName || "Camp";
+  const preyLevel = session?.preyLevel ?? preview?.preyLevel ?? 0;
+  const rating = session && preyLevel > 0 ? checkRating(session.level, preyLevel) : "";
 
   useEffect(() => {
     if (!session) return;
@@ -52,23 +58,15 @@ export function AfkPanel({ onClose }: { onClose: () => void }) {
           {session ? "Camp is active." : "Camp is inactive."} A camp runs for {MAX_AFK_HOURS} hours, then stops paying.
         </p>
         {session && preview ? (
-          <>
-            <p className="mt-3 text-sm text-ink">
-              {spotById(session.zoneId).name} · {session.farmingEfficiency} kills a minute
+          <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+            <p className="text-sm text-ink">
+              {preyName} - {rating} - {pace(session.farmingEfficiency)}
             </p>
             <p className="mt-1 text-sm text-gold">
               {clock(preview.elapsedMinutes)} elapsed · {clock(preview.remainingMinutes)} left on the cap
             </p>
             <p className="mt-1 text-xs text-muted">{session.note}</p>
             <ClaimLines preview={preview} />
-            <label className="mt-3 flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={session.sellMeat}
-                onChange={(event) => useGame.getState().setAfkSell(event.target.checked)}
-              />
-              Sell Hare Meat ({HARE_MEAT_GIL} gil each)
-            </label>
             <button
               type="button"
               onClick={() => {
@@ -86,41 +84,57 @@ export function AfkPanel({ onClose }: { onClose: () => void }) {
             >
               Break camp without claiming
             </button>
-          </>
+          </div>
         ) : (
-          <>
-            <p className="mt-3 text-sm text-ink">
-              {zone ? `You are in ${spotById(zone).name}.` : refused ? "Towns and instances can't hold a camp." : campRefusal(screen, here.x, here.z)}
+          <div className="mt-3 flex min-h-0 flex-1 flex-col">
+            <p className="text-sm text-ink">
+              {zone && groups.length === 0
+                ? "Nothing hunts here."
+                : zone
+                  ? `You are in ${spotById(zone).name}.`
+                  : refused
+                    ? "Towns and instances can't hold a camp."
+                    : campRefusal(screen, here.x, here.z)}
             </p>
             <button
               type="button"
-              disabled={!zone}
-              onClick={() => useGame.getState().startAfk()}
-              className={`mt-3 h-11 w-full border border-gold bg-gold text-sm font-semibold text-navy ${zone ? "" : "opacity-40"}`}
+              disabled={!selected}
+              onClick={() => {
+                if (selected) useGame.getState().startAfk(selected.id);
+              }}
+              className={`mt-3 h-11 w-full border border-gold bg-gold text-sm font-semibold text-navy ${selected ? "" : "opacity-40"}`}
             >
               Make camp
             </button>
-          </>
+            <p className="mt-4 text-xs uppercase tracking-wide text-muted">Prey</p>
+            <ul className="mt-1 min-h-0 flex-1 overflow-y-auto">
+              {groups.map((group, index) => {
+                const outside = level < group.levelMin || level > group.levelMax;
+                const on = selected?.id === group.id;
+                const showFamily = index === 0 || groups[index - 1]?.family !== group.family;
+                return (
+                  <li key={group.id} className="border-t border-gold-dim py-1">
+                    {showFamily ? <p className="pt-1 text-xs uppercase tracking-wide text-muted">{group.family}</p> : null}
+                    <button
+                      type="button"
+                      onClick={() => setPick(group.id)}
+                      className={`mt-1 w-full border px-2 py-2 text-left ${on ? "border-gold" : "border-transparent"}`}
+                    >
+                      <p className="text-sm text-ink">
+                        {group.name}
+                        {closest?.id === group.id ? <span className="text-gold"> · closest</span> : null}
+                      </p>
+                      <p className="text-xs text-muted">
+                        levels {group.levelMin}–{group.levelMax} · {checkRating(level, group.level)}
+                        {outside ? " · outside your level" : ""}
+                      </p>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
-        <p className="mt-4 text-xs uppercase tracking-wide text-muted">Recommended</p>
-        <ul className="mt-1 min-h-0 flex-1 overflow-y-auto">
-          {recommended.map((spot) => {
-            const hereNow = zone === spot.id;
-            const fit = level >= spot.levelMin && level <= spot.levelMax;
-            return (
-              <li key={spot.id} className="border-t border-gold-dim py-2">
-                <p className="text-sm text-ink">
-                  {spot.name}
-                  {hereNow ? <span className="text-gold"> · here</span> : null}
-                </p>
-                <p className="text-xs text-muted">
-                  {spot.prey} · levels {spot.levelMin}–{spot.levelMax}
-                  {fit ? "" : " · outside your level"}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
       </div>
     </div>
   );
@@ -131,7 +145,7 @@ function ClaimLines({ preview }: { preview: ReturnType<typeof previewAfk> }) {
   return (
     <div className="mt-3 border border-gold-dim px-2 py-2 text-sm text-ink">
       <p>{preview.kills} kills · {preview.exp.toLocaleString()} experience</p>
-      <p>{preview.gil.toLocaleString()} gil{preview.soldMeat > 0 ? ` · sold ${preview.soldMeat} Hare Meat` : ""}</p>
+      {preview.gil > 0 ? <p>{preview.gil.toLocaleString()} gil</p> : null}
       {preview.tabs > 0 ? <p>{preview.tabs} tabs</p> : null}
       {preview.crystals > 0 ? <p>{preview.crystals} fire crystals</p> : null}
       {preview.rankPoints > 0 ? <p>{preview.rankPoints} rank and conquest points</p> : null}

@@ -1,10 +1,11 @@
 /**
- * Offline camp. Elapsed time becomes kills against the monsters placed in
- * the zone the player is standing in. Towns and instances refuse. An old
- * Tropical Rarab camp still pays out once, then it is gone.
+ * Offline camp. Elapsed time becomes kills against one monster group
+ * placed in the zone the player is standing in. Towns and instances refuse.
+ * The camp does not move the player. An old town id loads as West Ronfaure
+ * and hunts the nearest group there.
  */
-import { HARE } from "./content";
-import { RARAB_DROPS, dropRate, type DropTier } from "./drops";
+import { dropRate, type DropTier } from "./drops";
+import { checkCon, type Con } from "./commands";
 import { EAST_STAND } from "./east-ronfaure";
 import { settleKill, type ChainClock } from "./exp";
 import { type FovState } from "./fov";
@@ -21,9 +22,34 @@ import { FISHER, RON_SIZE, RON_X0, RON_Z0, regionName } from "./world";
 /** Hours a camp will pay for. Raise this when the pace should run longer. */
 export const MAX_AFK_HOURS = 12;
 
-export const HARE_MEAT_GIL = 40;
-
 export type ZoneKind = "town" | "instance" | "field" | "dungeon";
+
+/** Experience camp is this step. Notorious-monster camp is the next one. */
+export type CampMode = "exp" | "nm";
+
+export type CheckRating =
+  | "Too Weak"
+  | "Easy Prey"
+  | "Decent Challenge"
+  | "Even Match"
+  | "Tough"
+  | "Very Tough"
+  | "Incredibly Tough";
+
+const RATING: Record<Con, CheckRating> = {
+  "too-weak": "Too Weak",
+  "easy-prey": "Easy Prey",
+  "decent-challenge": "Decent Challenge",
+  "even-match": "Even Match",
+  "tough": "Tough",
+  "very-tough": "Very Tough",
+  "incredibly-tough": "Incredibly Tough",
+};
+
+/** /check against one prey level. Too Weak pays no experience. */
+export function checkRating(playerLevel: number, mobLevel: number): CheckRating {
+  return RATING[checkCon(playerLevel, mobLevel)];
+}
 
 /** Every region named in world.ts. Unknown ground is treated as a town. */
 export const REGION_KIND: Record<string, ZoneKind> = {
@@ -58,8 +84,7 @@ export function regionKind(name: string): ZoneKind {
 }
 
 type ZoneCampId = "ronfaure-west" | "ronfaure-east" | "ranperre" | "beaucedine" | "ghelsba" | "fort-ghelsba" | "yughott";
-type LegacyFarmId = "west-ronfaure" | "ronfaure-forest";
-export type FarmZoneId = LegacyFarmId | ZoneCampId | (typeof PASS_CAMPS)[number]["id"] | `zone-${string}`;
+export type FarmZoneId = ZoneCampId | (typeof PASS_CAMPS)[number]["id"] | `zone-${string}`;
 
 export type FarmDrop = { id: string; found: string; tier: DropTier };
 
@@ -77,14 +102,22 @@ export type FarmSpot = {
   drops?: readonly FarmDrop[];
 };
 
-type PreyCard = { level: number; hpNatural: number; weaponDamage: number; delay: number; drops: readonly FarmDrop[] };
-
-const RARAB_PREY: PreyCard = {
-  level: HARE.level,
-  hpNatural: HARE.hpNatural,
-  weaponDamage: HARE.weaponDamage,
-  delay: HARE.delay,
-  drops: RARAB_DROPS,
+/** One species placed in the zone the player is standing in. */
+export type PreyGroup = {
+  id: string;
+  name: string;
+  family: string;
+  levelMin: number;
+  levelMax: number;
+  /** Species minimum. /check and kill experience both use this level. */
+  level: number;
+  hpNatural: number;
+  weaponDamage: number;
+  delay: number;
+  drops: FarmDrop[];
+  x: number;
+  z: number;
+  dist: number;
 };
 
 function orcMid(name: string): { x: number; z: number } {
@@ -129,11 +162,31 @@ function zoneCampId(region: string): FarmZoneId {
   return `zone-${slug}`;
 }
 
+/** Town-yard ids from older saves are not camps. They load as West Ronfaure. */
 export function knownFarmId(id: string): id is FarmZoneId {
-  if (id === "west-ronfaure" || id === "ronfaure-forest") return true;
   if (PASS_CAMPS.some((camp) => camp.id === id)) return true;
   if ((Object.values(NAMED_CAMPS) as string[]).includes(id)) return true;
   return /^zone-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id);
+}
+
+export function campZoneFromSave(id: string): FarmZoneId | null {
+  if (id === "west-ronfaure" || id === "ronfaure-forest") return "ronfaure-west";
+  return knownFarmId(id) ? id : null;
+}
+
+export function regionForZone(id: string): string | null {
+  if (id === "west-ronfaure" || id === "ronfaure-forest") return "West Ronfaure";
+  if (PASS_CAMPS.some((camp) => camp.id === id)) return "Ranguemont Pass";
+  for (const [name, camp] of Object.entries(NAMED_CAMPS)) {
+    if (camp === id) return name;
+  }
+  if (!id.startsWith("zone-")) return null;
+  const slug = id.slice("zone-".length);
+  for (const name of Object.keys(REGION_KIND)) {
+    const next = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (next === slug) return name;
+  }
+  return null;
 }
 
 function campSpot(id: (typeof PASS_CAMPS)[number]["id"]): FarmSpot {
@@ -215,13 +268,7 @@ function weightedSpot(id: FarmZoneId, region: string, x: number, z: number): Far
 
 const PASS_SPOTS = PASS_CAMPS.map((camp) => campSpot(camp.id));
 
-/** Old town camps. Not offered. A save that still names one pays the Rarab once. */
-const LEGACY_SPOTS: FarmSpot[] = [
-  { id: "west-ronfaure", name: "San d'Oria", region: "San d'Oria", levelMin: 70, levelMax: 75, prey: "Tropical Rarab", ...RARAB_PREY },
-  { id: "ronfaure-forest", name: "Southern San d'Oria", region: "Southern San d'Oria", levelMin: 70, levelMax: 75, prey: "Tropical Rarab", ...RARAB_PREY },
-];
-
-/** Camps the panel may offer. Pass nodes, then one camp per walkable field or dungeon. No towns. */
+/** Camps the field may stand in. Pass nodes, then one camp per walkable field or dungeon. No towns. */
 export function farmSpots(): FarmSpot[] {
   const zones: FarmSpot[] = [];
   for (const [name, kind] of Object.entries(REGION_KIND)) {
@@ -238,8 +285,6 @@ export function farmSpots(): FarmSpot[] {
 export function spotById(id: FarmZoneId): FarmSpot {
   const pass = PASS_SPOTS.find((spot) => spot.id === id);
   if (pass) return pass;
-  const legacy = LEGACY_SPOTS.find((spot) => spot.id === id);
-  if (legacy) return legacy;
   const live = farmSpots().find((spot) => spot.id === id);
   if (live) return live;
   const region = Object.keys(REGION_KIND).find((name) => zoneCampId(name) === id);
@@ -251,25 +296,49 @@ export function spotById(id: FarmZoneId): FarmSpot {
   return PASS_SPOTS[0];
 }
 
-/** Legacy Rarab saves fall back. A field with no placed monsters does not. */
-function preyOf(spot: FarmSpot): PreyCard | null {
-  if (spot.id === "west-ronfaure" || spot.id === "ronfaure-forest") {
-    return {
-      level: spot.level ?? RARAB_PREY.level,
-      hpNatural: spot.hpNatural ?? RARAB_PREY.hpNatural,
-      weaponDamage: spot.weaponDamage ?? RARAB_PREY.weaponDamage,
-      delay: spot.delay ?? RARAB_PREY.delay,
-      drops: spot.drops ?? RARAB_PREY.drops,
-    };
+/** Species in the region under this point, one row each. Empty in a town, an instance, or a zone with no spawns. */
+export function zoneGroups(x: number, z: number): PreyGroup[] {
+  const name = regionName(x, z);
+  const kind = regionKind(name);
+  if (kind !== "field" && kind !== "dungeon") return [];
+  const nearest = new Map<string, { x: number; z: number; dist: number }>();
+  for (const body of placedBodies()) {
+    if (regionName(body.x, body.z) !== name) continue;
+    const dist = Math.hypot(body.x - x, body.z - z);
+    const prev = nearest.get(body.species);
+    if (prev && prev.dist <= dist) continue;
+    nearest.set(body.species, { x: body.x, z: body.z, dist });
   }
-  if (spot.level == null || spot.hpNatural == null) return null;
-  return {
-    level: spot.level,
-    hpNatural: spot.hpNatural,
-    weaponDamage: spot.weaponDamage ?? 1,
-    delay: spot.delay ?? 240,
-    drops: spot.drops ?? [],
-  };
+  const groups: PreyGroup[] = [];
+  for (const [species, spot] of nearest) {
+    const farm = speciesFarm(species);
+    groups.push({
+      id: species,
+      name: farm.name,
+      family: farm.family,
+      levelMin: farm.levelMin,
+      levelMax: farm.levelMax,
+      level: farm.level,
+      hpNatural: farm.hpNatural,
+      weaponDamage: farm.weaponDamage,
+      delay: farm.delay,
+      drops: farm.drops,
+      x: spot.x,
+      z: spot.z,
+      dist: spot.dist,
+    });
+  }
+  groups.sort((a, b) => a.family.localeCompare(b.family) || a.levelMin - b.levelMin || a.name.localeCompare(b.name));
+  return groups;
+}
+
+/** Closest placed body. A tie takes the earlier name. */
+export function nearestGroup(x: number, z: number): PreyGroup | null {
+  let best: PreyGroup | null = null;
+  for (const group of zoneGroups(x, z)) {
+    if (!best || group.dist < best.dist || (group.dist === best.dist && group.name.localeCompare(best.name) < 0)) best = group;
+  }
+  return best;
 }
 
 /** The camp under the player. Towns, instances, and any screen but the field refuse. */
@@ -311,7 +380,12 @@ export type AfkFarmSave = {
   crystalBonus: boolean;
   dies: boolean;
   sustainMinutes: number;
-  sellMeat: boolean;
+  /** Experience camp is saved as exp. An nm string is kept and still pays experience. */
+  mode: CampMode;
+  /** Species the player chose. An older camp omits this and hunts the nearest group. */
+  groupId?: string;
+  groupName?: string;
+  groupFamily?: string;
   note: string;
   fovActive: boolean;
   fovPage: number;
@@ -339,12 +413,13 @@ export type AfkPreview = {
   gil: number;
   tabs: number;
   items: Record<string, number>;
-  soldMeat: number;
   crystals: number;
   rankPoints: number;
   conquestPoints: number;
   note: string;
   fov: FovState | null;
+  preyName: string;
+  preyLevel: number;
 };
 
 const EMPTY_CLOCK: ChainClock = { count: 0, until: 0 };
@@ -382,17 +457,20 @@ export function partyHelps(ids: readonly string[] | undefined): { party: number;
 
 /** Kills per minute from the live sheet, the open gambit board, and who is summoned. */
 export function measureFarm(input: MeasureInput): { kpm: number; dies: boolean; sustainMinutes: number; note: string } {
-  const spot = spotById(input.zoneId);
-  const card = preyOf(spot);
+  const region = regionForZone(input.zoneId);
+  const centre = region ? REGION_CENTRE[region] : undefined;
+  const near = centre && regionName(centre.x, centre.z) === region ? nearestGroup(centre.x, centre.z) : null;
   const prey = input.preyHp != null && input.preyLevel != null
     ? {
         level: input.preyLevel,
         hpNatural: input.preyHp,
-        weaponDamage: input.preyWeapon ?? card?.weaponDamage ?? 1,
-        delay: input.preyDelay ?? card?.delay ?? 240,
-        drops: card?.drops ?? [],
+        weaponDamage: input.preyWeapon ?? near?.weaponDamage ?? 1,
+        delay: input.preyDelay ?? near?.delay ?? 240,
+        name: input.preyName ?? near?.name ?? "the prey",
       }
-    : card;
+    : near
+      ? { level: near.level, hpNatural: near.hpNatural, weaponDamage: near.weaponDamage, delay: near.delay, name: near.name }
+      : null;
   if (!prey) return { kpm: 0, dies: false, sustainMinutes: MAX_AFK_HOURS * 60, note: "Nothing is camped here." };
   const delay = Math.max(60, input.delay || 240);
   const swingSec = delay / 60;
@@ -402,7 +480,7 @@ export function measureFarm(input: MeasureInput): { kpm: number; dies: boolean; 
   if (input.gambitOn && input.hasWeaponskill) dps += (perHit * 3) / 20;
   dps += Math.min(5, Math.max(0, input.party)) * 12;
   if (!input.gambitOn) dps *= 0.9;
-  const travel = input.zoneId === "ronfaure-forest" ? 12 : 7;
+  const travel = 7;
   const ttk = prey.hpNatural / Math.max(1, dps) + travel;
   let kpm = 60 / ttk;
   let note = "The prey is in your range.";
@@ -412,7 +490,7 @@ export function measureFarm(input: MeasureInput): { kpm: number; dies: boolean; 
     note = "Far under-leveled. Most of the camp is spent getting up.";
   } else if (gap < -5) {
     kpm *= 0.6;
-    note = `Under-leveled for ${input.preyName ?? spot.prey}.`;
+    note = `Under-leveled for ${prey.name}.`;
   } else if (gap > 8) {
     note = "Over-leveled. The prey falls quickly and pays little.";
   }
@@ -465,18 +543,32 @@ export function elapsedMinutes(startTimestamp: number, now: number, capMinutes: 
   return Math.min(raw, Math.max(0, capMinutes), MAX_AFK_HOURS * 60);
 }
 
-export function previewAfk(session: AfkFarmSave, now = Date.now()): AfkPreview {
-  const spot = spotById(session.zoneId);
-  const base = preyOf(spot);
-  const prey = session.preyLevel != null && session.preyHp != null
-    ? {
-        level: session.preyLevel,
-        hpNatural: session.preyHp,
-        weaponDamage: session.preyWeapon ?? base?.weaponDamage ?? 1,
-        delay: session.preyDelay ?? base?.delay ?? 240,
-        drops: session.preyDrops ?? base?.drops ?? [],
-      }
-    : base;
+type ResolvedPrey = { name: string; level: number; hpNatural: number; drops: readonly FarmDrop[] };
+
+/** A saved group with a prey snapshot stays put. Anything older hunts the nearest group where that camp stands. */
+function resolvedPrey(session: AfkFarmSave, stand?: { x: number; z: number }): ResolvedPrey | null {
+  if (session.groupId && session.preyLevel != null && session.preyHp != null) {
+    return {
+      name: session.groupName && session.groupName.length > 0 ? session.groupName : session.groupId,
+      level: session.preyLevel,
+      hpNatural: session.preyHp,
+      drops: session.preyDrops ?? [],
+    };
+  }
+  const region = regionForZone(session.zoneId);
+  if (!region) return null;
+  const stood = stand && regionName(stand.x, stand.z) === region ? stand : null;
+  const centre = REGION_CENTRE[region];
+  const at = stood ?? (centre && regionName(centre.x, centre.z) === region ? centre : null);
+  if (!at) return null;
+  const picked = session.groupId ? zoneGroups(at.x, at.z).find((group) => group.id === session.groupId) : undefined;
+  const group = picked ?? nearestGroup(at.x, at.z);
+  if (!group) return null;
+  return { name: group.name, level: group.level, hpNatural: group.hpNatural, drops: group.drops };
+}
+
+export function previewAfk(session: AfkFarmSave, now = Date.now(), stand?: { x: number; z: number }): AfkPreview {
+  const prey = resolvedPrey(session, stand);
   const cap = session.dies ? Math.min(session.sustainMinutes, MAX_AFK_HOURS * 60) : MAX_AFK_HOURS * 60;
   const minutes = elapsedMinutes(session.startTimestamp, now, cap);
   const kills = prey ? Math.floor(session.farmingEfficiency * minutes) : 0;
@@ -489,7 +581,6 @@ export function previewAfk(session: AfkFarmSave, now = Date.now()): AfkPreview {
   let rankPoints = 0;
   let conquestPoints = 0;
   let crystals = 0;
-  let soldMeat = 0;
   const items: Record<string, number> = {};
   const fov: FovState | null = session.fovActive
     ? {
@@ -520,11 +611,6 @@ export function previewAfk(session: AfkFarmSave, now = Date.now()): AfkPreview {
     }
     for (const drop of prey.drops) {
       if (unit(session.startTimestamp + i * 31 + drop.id.length * 13) >= dropRate(drop.tier, session.treasureHunter)) continue;
-      if (drop.id === "hare-meat" && session.sellMeat) {
-        soldMeat += 1;
-        gil += HARE_MEAT_GIL;
-        continue;
-      }
       items[drop.id] = (items[drop.id] ?? 0) + 1;
     }
   }
@@ -538,23 +624,26 @@ export function previewAfk(session: AfkFarmSave, now = Date.now()): AfkPreview {
     gil,
     tabs,
     items,
-    soldMeat,
     crystals,
     rankPoints,
     conquestPoints,
     note: session.note,
     fov,
+    preyName: prey?.name ?? "",
+    preyLevel: prey?.level ?? 0,
   };
 }
 
 export function assertAfk(): void {
   if (MAX_AFK_HOURS !== 12) throw new Error("afk cap");
+  const modes: CampMode[] = ["exp", "nm"];
+  if (modes.join(",") !== "exp,nm") throw new Error("camp mode");
   if (farmZoneAt("town", 0, 0) !== null || farmZoneAt("gambits", 0, 40) !== null) throw new Error("town is not a camp");
   if (farmZoneAt("battle", 0, 0) !== null) throw new Error("pen camp");
+  if (zoneGroups(0, 0).length !== 0) throw new Error("town listed prey");
   if (!REGION_KIND["San d'Oria"]) throw new Error("missing kind San d'Oria");
   const westAt = REGION_CENTRE["West Ronfaure"];
   if (farmZoneAt("menu", westAt.x, westAt.z) !== null) throw new Error("camp off the field");
-  // Shut gates. They are fields on the map and have no interior, so there is no centre to stand in.
   const shut = new Set(["La Theine Plateau", "Carpenters' Landing", "Jugner Forest", "Batallia Downs", "Xarcabard", "Fei'Yin", "Pso'Xja"]);
   for (const [name, kind] of Object.entries(REGION_KIND)) {
     const centre = REGION_CENTRE[name];
@@ -573,85 +662,143 @@ export function assertAfk(): void {
     }
     const id = farmZoneAt("battle", centre.x, centre.z);
     if (!id) throw new Error(`${name} has no camp`);
-    if (id === "west-ronfaure" || id === "ronfaure-forest") throw new Error(`${name} kept a town camp`);
+    const raw = id as string;
+    if (raw === "west-ronfaure" || raw === "ronfaure-forest") throw new Error(`${name} kept a town camp`);
     if (spotById(id).prey === "Tropical Rarab") throw new Error(`${name} camped a rarab`);
   }
   const offered = farmSpots();
   if (!offered.some((spot) => spot.region === "West Ronfaure")) throw new Error("west was not offered");
   for (const spot of offered) {
     const kind = regionKind(spot.region);
+    const raw = spot.id as string;
     if (kind === "town" || kind === "instance") throw new Error(`${spot.region} was offered`);
-    if (spot.prey === "Tropical Rarab" || spot.id === "west-ronfaure" || spot.id === "ronfaure-forest") throw new Error(`${spot.id} offered a rarab`);
+    if (spot.prey === "Tropical Rarab" || raw === "west-ronfaure" || raw === "ronfaure-forest") throw new Error(`${spot.id} offered a rarab`);
   }
-  if (!knownFarmId("west-ronfaure") || !knownFarmId("ronfaure-forest") || knownFarmId("not-a-camp")) throw new Error("old rarab save would not load");
-  const west = farmZoneAt("battle", REGION_CENTRE["West Ronfaure"].x, REGION_CENTRE["West Ronfaure"].z);
-  if (!west || west === "west-ronfaure" || west === "ronfaure-forest") throw new Error("west ronfaure camp");
+  if (knownFarmId("west-ronfaure") || knownFarmId("ronfaure-forest") || knownFarmId("not-a-camp")) throw new Error("legacy camp still live");
+  if (campZoneFromSave("west-ronfaure") !== "ronfaure-west" || campZoneFromSave("ronfaure-forest") !== "ronfaure-west") throw new Error("legacy camp did not move");
+  if (campZoneFromSave("not-a-camp") !== null) throw new Error("unknown camp loaded");
+  const west = farmZoneAt("battle", westAt.x, westAt.z);
+  if (west !== "ronfaure-west") throw new Error("west ronfaure camp");
+  const ice = REGION_CENTRE["Beaucedine Glacier"];
+  if (!farmZoneAt("battle", ice.x, ice.z) || zoneGroups(ice.x, ice.z).length !== 0 || nearestGroup(ice.x, ice.z)) throw new Error("glacier invented prey");
+  const westGroups = zoneGroups(westAt.x, westAt.z);
+  if (westGroups.length < 2) throw new Error(`west groups ${westGroups.length}`);
+  if (new Set(westGroups.map((group) => group.family)).size < 2) throw new Error("west families");
+  const near = nearestGroup(westAt.x, westAt.z);
+  if (!near) throw new Error("west nearest");
+  let best = westGroups[0]!;
+  for (const group of westGroups) {
+    if (group.dist < best.dist || (group.dist === best.dist && group.name.localeCompare(best.name) < 0)) best = group;
+  }
+  if (near.id !== best.id) throw new Error(`nearest group ${near.id}`);
+  const hareGroup = westGroups.find((group) => group.id === "forest-hare");
+  const hare = speciesFarm("forest-hare");
+  if (!hareGroup || hare.level !== 1 || !hareGroup.drops.some((drop) => drop.id === "hare-meat")) throw new Error("hare meat left the forest");
+  if (checkRating(75, hare.level) !== "Too Weak") throw new Error("hare is not too weak");
   const f10 = gridToWorld(5.35, 9.4);
   if (passSquare(f10.x, f10.z) !== "F-10") throw new Error("F-10 stand");
   const f10Camp = farmZoneAt("battle", f10.x, f10.z);
   if (f10Camp !== "pass-mouth" && f10Camp !== "pass-early") throw new Error(`F-10 camp ${f10Camp}`);
   const fit = measureFarm({
-    dmg: 40, fstr: 8, hit: 80, delay: 240, hp: 1400, defense: 200, level: 75,
-    zoneId: "ronfaure-forest", gambitOn: true, hasWeaponskill: true, hasHeal: true, party: 4, healer: true,
+    dmg: 40, fstr: 8, hit: 80, delay: 240, hp: 1400, defense: 200, level: hare.level,
+    zoneId: "ronfaure-west", gambitOn: true, hasWeaponskill: true, hasHeal: true, party: 4, healer: true,
+    preyLevel: hare.level, preyHp: hare.hpNatural, preyWeapon: hare.weaponDamage, preyDelay: hare.delay, preyName: hare.name,
   });
   if (fit.kpm < 0.4 || fit.kpm > 8 || fit.dies) throw new Error("healthy camp");
   const frail = measureFarm({
     dmg: 6, fstr: 0, hit: 40, delay: 480, hp: 80, defense: 10, level: 10,
-    zoneId: "west-ronfaure", gambitOn: false, hasWeaponskill: false, hasHeal: false, party: 0, healer: false,
+    zoneId: "ronfaure-west", gambitOn: false, hasWeaponskill: false, hasHeal: false, party: 0, healer: false,
+    preyLevel: hare.level, preyHp: hare.hpNatural, preyWeapon: hare.weaponDamage, preyDelay: hare.delay, preyName: hare.name,
   });
   if (!frail.dies || frail.sustainMinutes >= MAX_AFK_HOURS * 60) throw new Error("frail camp falls");
   const start = 1_700_000_000_000;
-  const session: AfkFarmSave = {
-    active: true,
-    startTimestamp: start,
-    zoneId: "west-ronfaure",
-    farmingEfficiency: 1,
-    level: 75,
-    exp: 0,
-    job: "SAM",
-    treasureHunter: 0,
-    signetLeft: 0,
-    crystalBonus: false,
-    dies: false,
-    sustainMinutes: MAX_AFK_HOURS * 60,
-    sellMeat: true,
-    note: "",
-    fovActive: false,
-    fovPage: 0,
-    fovCounts: [],
-    fovRepeat: false,
-    fovPaidDays: {},
-    fovTabs: 0,
-  };
-  const hour = previewAfk(session, start + 60 * 60 * 1000);
-  const again = previewAfk(session, start + 60 * 60 * 1000);
-  if (hour.kills !== 60 || hour.exp <= 0) throw new Error("hour of kills");
-  if (hour.soldMeat !== again.soldMeat || JSON.stringify(hour.items) !== JSON.stringify(again.items)) throw new Error("camp is stable");
-  if ((hour.items["hare-meat"] ?? 0) !== 0) throw new Error("meat was sold");
-  const capped = previewAfk(session, start + 20 * 60 * 60 * 1000);
-  if (capped.kills !== MAX_AFK_HOURS * 60) throw new Error("twelve hour cap");
-  const fallen = previewAfk({ ...session, dies: true, sustainMinutes: 10, farmingEfficiency: 2 }, start + 60 * 60 * 1000);
-  if (fallen.kills !== 20) throw new Error("death stops the camp");
-  const faded = preyOf({ id: "west-ronfaure", name: "San d'Oria", region: "San d'Oria", levelMin: 70, levelMax: 75, prey: "Tropical Rarab" });
-  if (!faded || faded.level !== HARE.level || faded.hpNatural !== HARE.hpNatural || faded.weaponDamage !== HARE.weaponDamage || faded.delay !== HARE.delay || faded.drops !== RARAB_DROPS) {
-    throw new Error("old rarab save still pays the rarab");
+  const hourMs = 60 * 60 * 1000;
+  function sessionFor(group: PreyGroup, level: number, zoneId: FarmZoneId = "ronfaure-west"): AfkFarmSave {
+    return {
+      active: true,
+      startTimestamp: start,
+      zoneId,
+      mode: "exp",
+      groupId: group.id,
+      groupName: group.name,
+      groupFamily: group.family,
+      farmingEfficiency: 1,
+      level,
+      exp: 0,
+      job: "SAM",
+      treasureHunter: 0,
+      signetLeft: 0,
+      crystalBonus: false,
+      dies: false,
+      sustainMinutes: MAX_AFK_HOURS * 60,
+      note: "",
+      fovActive: false,
+      fovPage: 0,
+      fovCounts: [],
+      fovRepeat: false,
+      fovPaidDays: {},
+      fovTabs: 0,
+      preyLevel: group.level,
+      preyHp: group.hpNatural,
+      preyWeapon: group.weaponDamage,
+      preyDelay: group.delay,
+      preyDrops: group.drops,
+    };
   }
-  const bareField = preyOf({ id: "ronfaure-west", name: "West Ronfaure", region: "West Ronfaure", levelMin: 1, levelMax: 1, prey: "Goblin Thug" });
-  if (bareField) throw new Error("a field fell back to the rarab");
+  const even = sessionFor(near, near.level);
+  const hour = previewAfk(even, start + hourMs);
+  const again = previewAfk(even, start + hourMs);
+  if (hour.kills !== 60 || hour.exp <= 0) throw new Error("hour of kills");
+  if (JSON.stringify(hour.items) !== JSON.stringify(again.items)) throw new Error("camp is stable");
+  const allowedNear = new Set(near.drops.map((drop) => drop.id));
+  for (const id of Object.keys(hour.items)) {
+    if (!allowedNear.has(id)) throw new Error(`near foreign drop ${id}`);
+  }
+  const capped = previewAfk(even, start + 20 * hourMs);
+  if (capped.kills !== MAX_AFK_HOURS * 60) throw new Error("twelve hour cap");
+  const fallen = previewAfk({ ...even, dies: true, sustainMinutes: 10, farmingEfficiency: 2 }, start + hourMs);
+  if (fallen.kills !== 20) throw new Error("death stops the camp");
+  const weak = previewAfk(sessionFor(hareGroup, 75), start + hourMs);
+  if (weak.kills !== 60 || weak.exp !== 0 || weak.gil !== 0) throw new Error("too weak still paid");
+  const picked = westGroups.find((group) => group.id !== near.id) ?? near;
+  const pickedHour = previewAfk(sessionFor(picked, picked.level), start + hourMs, { x: 0, z: 0 });
+  if (pickedHour.exp <= 0 || pickedHour.preyName !== picked.name) throw new Error("picked group");
+  const allowedPick = new Set(picked.drops.map((drop) => drop.id));
+  for (const id of Object.keys(pickedHour.items)) {
+    if (!allowedPick.has(id)) throw new Error(`picked foreign drop ${id}`);
+  }
+  const blended = previewAfk({
+    ...even,
+    groupId: undefined,
+    groupName: undefined,
+    groupFamily: undefined,
+    preyLevel: 70,
+    preyHp: 9000,
+    preyDrops: [{ id: "not-a-drop", found: "fake", tier: "common" }],
+    level: near.level,
+  }, start + hourMs, westAt);
+  if (blended.preyName !== near.name || blended.items["not-a-drop"] || blended.kills !== 60) throw new Error("old blend did not take the nearest group");
+  const asNm = previewAfk({ ...even, mode: "nm" }, start + hourMs);
+  if (asNm.exp !== hour.exp || asNm.kills !== hour.kills) throw new Error("nm mode still camps for exp");
   for (const camp of PASS_CAMPS) {
     const node = PASS_GRAPH.nodes.find((row) => row.id === camp.node);
     if (!node) throw new Error(`camp node ${camp.node}`);
     const at = gridToWorld(node.gx, node.gy);
     if (!inPass(at.x, at.z, 0)) throw new Error(`${camp.id} is outside the pass`);
     if (farmZoneAt("battle", at.x, at.z) !== camp.id) throw new Error(`${camp.id} centre`);
-    const spot = spotById(camp.id);
-    const allowed = new Set((spot.drops ?? []).map((drop) => drop.id));
-    if (!allowed.size) throw new Error(`${camp.id} has no drops`);
-    const campHour = previewAfk(
-      { ...session, zoneId: camp.id, sellMeat: false, level: 75, exp: 0, farmingEfficiency: 1, dies: false },
-      start + 60 * 60 * 1000,
-    );
-    if (campHour.kills <= 0) throw new Error(`${camp.id} kills`);
+    const group = nearestGroup(at.x, at.z);
+    if (!group || group.drops.length === 0) throw new Error(`${camp.id} has no group`);
+    const allowed = new Set(group.drops.map((drop) => drop.id));
+    const campHour = previewAfk({
+      ...sessionFor(group, group.level, camp.id),
+      groupId: undefined,
+      groupName: undefined,
+      groupFamily: undefined,
+      preyLevel: undefined,
+      preyHp: undefined,
+      preyDrops: undefined,
+    }, start + hourMs, { x: at.x, z: at.z });
+    if (campHour.kills <= 0 || campHour.preyName !== group.name) throw new Error(`${camp.id} kills`);
     for (const id of Object.keys(campHour.items)) {
       if (!allowed.has(id)) throw new Error(`${camp.id} foreign drop ${id}`);
     }

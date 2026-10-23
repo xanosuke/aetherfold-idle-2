@@ -1112,6 +1112,7 @@ export function placedBodies(): { species: string; x: number; z: number }[] {
 /** Level, HP, weapon, delay, and drops for one species. Level is the species minimum. */
 export function speciesFarm(id: string): {
   name: string;
+  family: string;
   level: number;
   levelMin: number;
   levelMax: number;
@@ -1124,6 +1125,7 @@ export function speciesFarm(id: string): {
   const stats = bake(spec, spec.levelMin);
   return {
     name: spec.name,
+    family: spec.family,
     level: spec.levelMin,
     levelMin: spec.levelMin,
     levelMax: spec.levelMax,
