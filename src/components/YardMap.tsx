@@ -44,7 +44,7 @@ import {
 } from "@/game/world";
 import { EAST_CELL, EAST_COAST, EAST_PATHS, EAST_PLACES, EAST_SIZE, EAST_WATER, EAST_X0, EAST_Z0 } from "@/game/east-ronfaure";
 import { tombChart } from "@/game/tomb";
-import { passChart } from "@/game/pass";
+import { PASS_CELL, passChart, passSquare } from "@/game/pass";
 import { glacierChart } from "@/game/glacier";
 
 /** How much ground the circle covers. The ward fits; the south gate scrolls in. */
@@ -211,6 +211,12 @@ const SHORT_GATE: Record<string, string> = {
   "Outpost": "Outpost",
   "Goblin Footprint": "Footprint",
   "Waters of Oblivion": "Oblivion",
+  "??? / Metallic Slime": "???",
+  "Exit only": "Exit",
+  "Enter only": "Enter",
+  "Survival Guide": "Guide",
+  "Mucoid Mass": "Mucoid",
+  "Gloom Eye": "Gloom Eye",
   "Cavernous Maw": "Maw",
 };
 
@@ -385,13 +391,42 @@ function fillRect(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => P
 function paintOrc(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => Pt, chart: OrcChart, region: string, dpr: number, label: boolean) {
   const floor = region === "King Ranperre's Tomb" ? "#5c5348" : region === "Ranguemont Pass" ? "#4d5966" : region === "Beaucedine Glacier" ? "#d5e2ee" : region === "Yughott Grotto" ? "#4a4038" : region === "Horlais Peak" ? "#6d6254" : region === "Fort Ghelsba" ? "#6a5840" : "#6c7346";
   const water = region === "Beaucedine Glacier" ? "#7eb4d4" : region === "Horlais Peak" ? "#6e9a96" : "#245868";
-  for (const rect of chart.rects) fillRect(ctx, at, rect, floor);
+  const unit = Math.hypot(at(1, 0).x - at(0, 0).x, at(1, 0).y - at(0, 0).y);
+  if (chart.paths?.length) {
+    if (chart.discs) {
+      ctx.fillStyle = floor;
+      for (const disc of chart.discs) {
+        const p = at(disc.x, disc.z);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1, disc.r * unit), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.strokeStyle = floor;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const path of chart.paths) {
+      if (path.pts.length < 2) continue;
+      ctx.beginPath();
+      ctx.lineWidth = Math.max(1, path.width * PASS_CELL * unit);
+      const start = at(path.pts[0].x, path.pts[0].z);
+      ctx.moveTo(start.x, start.y);
+      for (let i = 1; i < path.pts.length; i++) {
+        const p = at(path.pts[i].x, path.pts[i].z);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+  } else {
+    for (const rect of chart.rects) fillRect(ctx, at, rect, floor);
+  }
   for (const rect of chart.water) fillRect(ctx, at, rect, water);
   if (chart.grid) {
     ctx.strokeStyle = "rgba(227, 197, 122, 0.22)";
     ctx.lineWidth = Math.max(1, dpr);
     ctx.beginPath();
-    for (let i = 0; i <= 12; i++) {
+    const gridEnd = region === "Ranguemont Pass" ? 15 : 12;
+    for (let i = 0; i <= gridEnd; i++) {
       const x = chart.grid.x0 + i * chart.grid.cell;
       const z = chart.grid.z0 + i * chart.grid.cell;
       if (x >= chart.bounds.minX && x <= chart.bounds.maxX) {
@@ -450,9 +485,11 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
   const chart = snap.region === "King Ranperre's Tomb" ? tombChart(snap.x, snap.z) : snap.region === "Ranguemont Pass" ? passChart(snap.x, snap.z) : snap.region === "Beaucedine Glacier" ? glacierChart(snap.x, snap.z) : orcLayout(snap.region);
   const forest = snap.region === "West Ronfaure";
   const east = snap.region === "East Ronfaure";
-  const view = forest || east ? 340 : chart ? 78 : VIEW;
-  const ox = forest ? RON_X0 + RON_SIZE / 2 : east ? EAST_X0 + EAST_SIZE / 2 : snap.x;
-  const oz = forest ? RON_Z0 + RON_SIZE / 2 : east ? EAST_Z0 + EAST_SIZE / 2 : snap.z;
+  const pass = snap.region === "Ranguemont Pass" && chart;
+  const span = pass ? Math.max(chart.bounds.maxX - chart.bounds.minX, chart.bounds.maxZ - chart.bounds.minZ) : 0;
+  const view = forest || east ? 340 : pass ? span * 0.56 : chart ? 78 : VIEW;
+  const ox = forest ? RON_X0 + RON_SIZE / 2 : east ? EAST_X0 + EAST_SIZE / 2 : pass ? (chart.bounds.minX + chart.bounds.maxX) / 2 : snap.x;
+  const oz = forest ? RON_Z0 + RON_SIZE / 2 : east ? EAST_Z0 + EAST_SIZE / 2 : pass ? (chart.bounds.minZ + chart.bounds.maxZ) / 2 : snap.z;
   const at = (x: number, z: number) => project(x, z, c, radius, ox, oz, view);
   if (forest) {
     paintRonGround(ctx, at, dpr, Math.max(2.4, (10 / view) * radius));
@@ -792,9 +829,11 @@ export function YardMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const atlasRef = useRef<HTMLCanvasElement>(null);
   const coordRef = useRef<HTMLParagraphElement>(null);
+  const squareRef = useRef<HTMLParagraphElement>(null);
   const nameRef = useRef<HTMLParagraphElement>(null);
   const atlasNameRef = useRef<HTMLParagraphElement>(null);
   const atlasCoordRef = useRef<HTMLParagraphElement>(null);
+  const atlasSquareRef = useRef<HTMLParagraphElement>(null);
   const rootRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
 
@@ -803,6 +842,7 @@ export function YardMap() {
     if (!canvas) return;
     let frame = 0;
     let shown = "";
+    let shownSquare = "";
     let region = "";
     const draw = () => {
       frame = window.requestAnimationFrame(draw);
@@ -811,11 +851,23 @@ export function YardMap() {
       if (atlasRef.current) paintAtlas(atlasRef.current, snap);
       const label = `(${snap.x.toFixed(1)}, ${snap.z.toFixed(1)})`;
       const nextRegion = snap.region || "San d'Oria";
+      const square = nextRegion === "Ranguemont Pass" ? passSquare(snap.x, snap.z) : "";
       if (label !== shown) {
         shown = label;
         if (coordRef.current) coordRef.current.textContent = label;
       }
       if (atlasCoordRef.current && atlasCoordRef.current.textContent !== label) atlasCoordRef.current.textContent = label;
+      if (square !== shownSquare) {
+        shownSquare = square;
+        if (squareRef.current) {
+          squareRef.current.textContent = square;
+          squareRef.current.hidden = square === "";
+        }
+        if (atlasSquareRef.current) {
+          atlasSquareRef.current.textContent = square;
+          atlasSquareRef.current.hidden = square === "";
+        }
+      }
       if (nextRegion !== region) {
         region = nextRegion;
         if (nameRef.current) nameRef.current.textContent = nextRegion;
@@ -850,6 +902,8 @@ export function YardMap() {
         <p ref={coordRef} className="mt-1 bg-navy/80 px-1.5 py-0.5 text-xs tabular-nums leading-none text-ink">
           (0.0, 0.0)
         </p>
+        <p ref={squareRef} hidden className="mt-0.5 bg-navy/80 px-1.5 py-0.5 text-xs tabular-nums leading-none text-gold">
+        </p>
         <p ref={nameRef} className="mt-1 max-w-40 border border-gold bg-panel px-2 py-1 text-right font-display text-sm leading-tight text-gold">
           San d'Oria
         </p>
@@ -864,6 +918,8 @@ export function YardMap() {
                 </p>
                 <p ref={atlasCoordRef} className="mt-1 text-sm tabular-nums text-muted">
                   (0.0, 0.0)
+                </p>
+                <p ref={atlasSquareRef} hidden className="text-sm tabular-nums text-gold">
                 </p>
               </div>
               <button

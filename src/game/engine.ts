@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, BoxGeometry, CanvasTexture, CircleGeometry, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, Euler, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, MeshToonMaterial, NearestFilter, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, Quaternion, Raycaster, RingGeometry, Scene, Fog, SphereGeometry, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer } from "three";
+import { Bone, Box3, BoxGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -29,7 +29,7 @@ import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, E
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc } from "./ghelsba";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
-import { buildPass, inPass, oneWayBlocks, PASS_NPCS } from "./pass";
+import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
 import { buildGlacier, GLACIER_NPCS, inGlacier } from "./glacier";
 import { assertExp, noteDefeat, takeExpMarks } from "./exp";
 import { publishRadar } from "./radar";
@@ -4234,6 +4234,51 @@ export function createYard(canvas) {
 	trustRing.visible = false;
 	scene.add(trustRing);
 	const raycaster = new Raycaster();
+	const wallRay = new Raycaster();
+	const wallTo = new Vector3();
+	const wallBlocking = new Set();
+	function fadePassWalls(dt) {
+		const meshes = scene.userData.passWalls;
+		if (!meshes || !meshes.length) return;
+		wallBlocking.clear();
+		if (inPass(px, pz)) {
+			const marks = [[px, 1.05, pz]];
+			for (let i = 0; i < puppets.length; i++) {
+				const pup = puppets[i];
+				if (!pup.body.root.visible) continue;
+				marks.push([pup.x, 0.85 * (pup.def.scale || 1), pup.z]);
+			}
+			for (let i = 0; i < marks.length; i++) {
+				const x = marks[i][0], y = marks[i][1], z = marks[i][2];
+				wallTo.set(x - camera.position.x, y - camera.position.y, z - camera.position.z);
+				const dist = wallTo.length();
+				if (dist < 0.25) continue;
+				wallTo.multiplyScalar(1 / dist);
+				wallRay.set(camera.position, wallTo);
+				wallRay.far = Math.max(0, dist - 0.2);
+				const hits = wallRay.intersectObjects(meshes, false);
+				for (let h = 0; h < hits.length; h++) wallBlocking.add(hits[h].object);
+			}
+		}
+		const speed = 5;
+		for (let i = 0; i < meshes.length; i++) {
+			const mat = meshes[i].material;
+			if (!mat) continue;
+			const goal = wallBlocking.has(meshes[i]) ? 0.25 : 1;
+			const cur = mat.opacity == null ? 1 : mat.opacity;
+			let next = cur + Math.sign(goal - cur) * Math.min(Math.abs(goal - cur), speed * dt);
+			if (Math.abs(next - goal) < 0.01) next = goal;
+			const solid = next >= 0.995 && goal === 1;
+			if (solid) next = 1;
+			mat.opacity = next;
+			const wantTransparent = !solid;
+			if (mat.transparent !== wantTransparent) {
+				mat.transparent = wantTransparent;
+				mat.depthWrite = !wantTransparent;
+				mat.needsUpdate = true;
+			}
+		}
+	}
 	const ndc = new Vector2();
 	const camPos = new Vector3(-look.x * 13, 15.2, -look.z * 13);
 	const basis = new Matrix4();
@@ -4253,9 +4298,15 @@ export function createYard(canvas) {
 		bornX = land.x;
 		bornZ = land.z;
 	} else if (!inWorld(bornX, bornZ, .2)) {
-		const held = clampWorld(bornX, bornZ, .36);
-		bornX = held.x;
-		bornZ = held.z;
+		const seated = seatPassSave(bornX, bornZ);
+		if (seated) {
+			bornX = seated.x;
+			bornZ = seated.z;
+		} else {
+			const held = clampWorld(bornX, bornZ, .36);
+			bornX = held.x;
+			bornZ = held.z;
+		}
 	}
 	if (bornX !== bornRaw.x || bornZ !== bornRaw.z) writePlace(bornX, bornZ, false);
 	let px = bornX;
@@ -4271,6 +4322,7 @@ export function createYard(canvas) {
 	const zoneFog = new Fog(9357551, 26, 52);
 	const canyonFog = new Fog(7231552, 18, 40);
 	const caveFog = new Fog(525828, 36, 78);
+	const passFog = new Fog(0x07090d, 42, 120);
 	const snowFog = new Fog(12965606, 40, 90);
 	const peakFog = new Fog(9085144, 24, 52);
 	const fogFor = (x, z) => {
@@ -4283,7 +4335,7 @@ export function createYard(canvas) {
 		if (kind === "peak") return peakFog;
 		return null;
 	};
-	scene.fog = fogFor(px, pz);
+	scene.fog = inPass(px, pz, 0) ? passFog : fogFor(px, pz);
 	const zoneVeil = document.createElement("div");
 	zoneVeil.setAttribute("aria-hidden", "true");
 	zoneVeil.style.cssText = "position:absolute;inset:0;background:#0c1b38;opacity:0;pointer-events:none;z-index:40;transition:opacity .28s linear;";
@@ -4894,6 +4946,11 @@ export function createYard(canvas) {
 			}
 			slot.id = body.id;
 			slot.root.userData.fieldId = body.id;
+			slot.root.userData.made = "fieldProto";
+			slot.root.userData.species = body.species;
+			slot.root.userData.fieldName = body.name;
+			slot.root.userData.look = body.look;
+			slot.root.userData.variant = body.variant || "";
 			slot.root.visible = body.sink < .97 && !(body.mode === "dead" && body.animLeft <= 0);
 			const hover = body.look === "ghost" || body.look === "hecteyes" || body.look === "ahriman" || body.look === "weapon" ? 0.72 : 0;
 			slot.root.position.set(body.x, (body.look === "worm" ? -body.sink * 1.7 : 0) + hover, body.z);
@@ -10446,6 +10503,91 @@ export function createYard(canvas) {
 		if (knobEl) knobEl.style.transform = "translate(0px, 0px)";
 	}
 	let groundTapAt = 0;
+	const passUserData = (ud) => {
+		const src = ud || {};
+		const out = {};
+		for (const key of ["made", "sealedGate", "passWall", "fieldId", "species", "fieldName", "look", "variant", "glacierNpc"]) {
+			if (src[key] != null && src[key] !== "") out[key] = src[key];
+		}
+		return out;
+	};
+	const passChain = (obj) => {
+		const rows = [];
+		let node = obj;
+		while (node && node !== scene) {
+			rows.push({
+				name: node.name || "",
+				type: node.type,
+				made: (node.userData && (node.userData.made || node.userData.sealedGate)) || "",
+				userData: passUserData(node.userData)
+			});
+			node = node.parent;
+		}
+		return rows;
+	};
+	const passMatColour = (obj) => {
+		const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
+		return mats.map((mat) => ({
+			color: mat.color && mat.color.getHexString ? mat.color.getHexString() : "",
+			emissive: mat.emissive && mat.emissive.getHexString ? mat.emissive.getHexString() : ""
+		}));
+	};
+	const passNear = () => {
+		const ox = 330.9;
+		const oz = -37.1;
+		const rows = [];
+		scene.updateMatrixWorld(true);
+		const box = new Box3();
+		scene.traverse((obj) => {
+			if (!obj.isMesh && !obj.isSprite && !obj.isPoints) return;
+			if (!obj.geometry) return;
+			if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+			box.copy(obj.geometry.boundingBox).applyMatrix4(obj.matrixWorld);
+			const cx = (box.min.x + box.max.x) / 2;
+			const cz = (box.min.z + box.max.z) / 2;
+			if (Math.hypot(cx - ox, cz - oz) > 30 && Math.hypot(obj.position.x - ox, obj.position.z - oz) > 30) return;
+			const chain = passChain(obj);
+			rows.push({
+				name: obj.name || "",
+				type: obj.type,
+				made: chain.map((row) => row.made).filter(Boolean).join(">") || "",
+				userData: passUserData(obj.userData),
+				chain,
+				x: Math.round(cx * 10) / 10,
+				y: Math.round(((box.min.y + box.max.y) / 2) * 10) / 10,
+				z: Math.round(cz * 10) / 10,
+				color: passMatColour(obj)
+			});
+		});
+		console.log("[pass-near]", ox, oz, rows);
+		return rows;
+	};
+	const passClickLog = (nx, ny) => {
+		const ray = new Raycaster();
+		ray.setFromCamera(new Vector2(nx * 2 - 1, -(ny * 2 - 1)), camera);
+		const hits = ray.intersectObjects(scene.children, true);
+		const hit = hits.find((row) => row.object && (row.object.isMesh || row.object.isSprite));
+		if (!hit) {
+			console.log("[pass-hit] none");
+		} else {
+			const world = hit.object.getWorldPosition(new Vector3());
+			console.log("[pass-hit]", {
+				chain: passChain(hit.object),
+				point: {
+					x: Math.round(hit.point.x * 10) / 10,
+					y: Math.round(hit.point.y * 10) / 10,
+					z: Math.round(hit.point.z * 10) / 10
+				},
+				world: {
+					x: Math.round(world.x * 10) / 10,
+					y: Math.round(world.y * 10) / 10,
+					z: Math.round(world.z * 10) / 10
+				},
+				color: passMatColour(hit.object)
+			});
+		}
+		return passNear();
+	};
 	function onPointerDown(e) {
 		if (e.button !== 0) return;
 		const s = useGame.getState();
@@ -10453,6 +10595,7 @@ export function createYard(canvas) {
 		const rect = canvas.getBoundingClientRect();
 		ndc.x = (e.clientX - rect.left) / rect.width * 2 - 1;
 		ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+		if (import.meta.env.DEV) passClickLog((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);
 		raycaster.setFromCamera(ndc, camera);
 		const pick = [
 			crystal,
@@ -10820,11 +10963,21 @@ export function createYard(canvas) {
 		if (moved !== placeSeen) {
 			placeSeen = moved;
 			const next = readPlace();
-			px = next.x;
-			pz = next.z;
+			let landX = next.x;
+			let landZ = next.z;
+			if (!inWorld(landX, landZ, .2)) {
+				const seated = seatPassSave(landX, landZ);
+				if (seated) {
+					landX = seated.x;
+					landZ = seated.z;
+				}
+			}
+			px = landX;
+			pz = landZ;
 			dest = null;
 			vx = 0;
 			vz = 0;
+			if (landX !== next.x || landZ !== next.z) writePlace(landX, landZ, false);
 		}
 		const right = {
 			x: Math.cos(CAM_YAW),
@@ -13250,12 +13403,55 @@ export function createYard(canvas) {
 		perchond.position.y = Math.sin(elapsed * 1.2 + .4) * .012;
 		myffore.position.y = Math.sin(elapsed * 1.15 + 1.7) * .012;
 		for (let i = 0; i < glacierNpcs.length; i++) glacierNpcs[i].position.y = Math.sin(elapsed * 1.15 + i * .4) * .012;
-		if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
-		const inCave = orcFog(px, pz) === "cave" || inTomb(px, pz) || inPass(px, pz);
+		const inPassNow = inPass(px, pz);
+		const inCave = orcFog(px, pz) === "cave" || inTomb(px, pz) || inPassNow;
 		const onIce = inGlacier(px, pz);
-		renderer.setClearColor(onIce ? 12044764 : orcFog(px, pz) || inTomb(px, pz) || inPass(px, pz) ? 0 : 9357551, 1);
-		hemi.intensity = inCave ? 0.58 : 0.72;
-		sun.intensity = inCave ? 0.95 : 1.2;
+		if (inPassNow) {
+			hemi.color.setHex(0x8e9cb0);
+			hemi.groundColor.setHex(0x4a545c);
+			hemi.intensity = 1.45;
+			sun.intensity = 1.05;
+			if (scene.fog !== passFog) scene.fog = passFog;
+		} else {
+			hemi.color.setHex(12969727);
+			hemi.groundColor.setHex(6983498);
+			hemi.intensity = inCave ? 0.58 : 0.72;
+			sun.intensity = inCave ? 0.95 : 1.2;
+			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
+		}
+		const passLights = scene.userData.passLights;
+		const passFlames = scene.userData.passFlames;
+		if (passFlames) passFlames.emissiveIntensity = 1.25 + 0.06 * Math.sin(elapsed * 7.5);
+		if (passLights && passLights.length) {
+			const lit = passLights[0].parent === scene;
+			if (inPassNow !== lit) {
+				for (let i = 0; i < passLights.length; i++) {
+					if (inPassNow) scene.add(passLights[i]);
+					else scene.remove(passLights[i]);
+				}
+			}
+			if (inPassNow) {
+				const torches = scene.userData.passTorches || [];
+				const ranked = [];
+				for (let i = 0; i < torches.length; i++) {
+					const t = torches[i];
+					const dx = t.x - px;
+					const dz = t.z - pz;
+					ranked.push({ t, d: dx * dx + dz * dz });
+				}
+				ranked.sort((a, b) => a.d - b.d);
+				for (let i = 0; i < passLights.length; i++) {
+					const spot = ranked[i];
+					if (!spot) {
+						passLights[i].intensity = 0;
+						continue;
+					}
+					passLights[i].position.set(spot.t.x, 1.7, spot.t.z);
+					passLights[i].intensity = 78 * (1 + 0.05 * Math.sin(elapsed * 8.5 + i * 1.3));
+				}
+			}
+		}
+		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
@@ -41161,6 +41357,7 @@ export function createYard(canvas) {
 			steps++;
 		}
 		if (acc > STEP) acc = 0;
+		fadePassWalls(dt);
 		renderer.render(scene, camera);
 	}
 	const unsub = useGame.subscribe((s, prev) => {
@@ -41237,6 +41434,10 @@ export function createYard(canvas) {
 			window.removeEventListener("fs-fish-go", onFishGo);
 			if (fishShown) window.dispatchEvent(new CustomEvent("fs-fish", { detail: false }));
 			if (window.__controlsTest?.getYaw === api.getYaw) delete window.__controlsTest;
+			if (window.__passAudit === passAudit) delete window.__passAudit;
+			if (window.__passHit === passHit) delete window.__passHit;
+			if (window.__passNear === passNear) delete window.__passNear;
+			if (window.__passClick === passClickLog) delete window.__passClick;
 		}
 	};
 	window.__controlsTest = {
@@ -41244,6 +41445,78 @@ export function createYard(canvas) {
 		getSpeed: api.getSpeed,
 		setKeys: api.setKeys
 	};
+	const passAudit = () => {
+		const rows = [];
+		scene.updateMatrixWorld(true);
+		const corner = new Vector3();
+		scene.traverse((obj) => {
+			if (!obj.isMesh) return;
+			const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+			let red = false;
+			for (const mat of mats) {
+				if (!mat || !mat.emissive) continue;
+				if (mat.emissive.getHex() === 0xb01818) red = true;
+			}
+			if (!obj.userData.sealedGate && !red && !String(obj.name || "").includes("door") && !String(obj.name || "").includes("sealed")) return;
+			const geo = obj.geometry;
+			geo.computeBoundingBox();
+			const bb = geo.boundingBox;
+			const min = { x: Infinity, y: Infinity, z: Infinity };
+			const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+			if (bb) {
+				for (const x of [bb.min.x, bb.max.x])
+					for (const y of [bb.min.y, bb.max.y])
+						for (const z of [bb.min.z, bb.max.z]) {
+							corner.set(x, y, z).applyMatrix4(obj.matrixWorld);
+							min.x = Math.min(min.x, corner.x);
+							min.y = Math.min(min.y, corner.y);
+							min.z = Math.min(min.z, corner.z);
+							max.x = Math.max(max.x, corner.x);
+							max.y = Math.max(max.y, corner.y);
+							max.z = Math.max(max.z, corner.z);
+						}
+			}
+			rows.push({
+				name: obj.name || "",
+				part: obj.userData.sealedGate || "",
+				red,
+				type: geo && geo.type,
+				x: Math.round(obj.position.x * 10) / 10,
+				y: Math.round(obj.position.y * 10) / 10,
+				z: Math.round(obj.position.z * 10) / 10,
+				minX: Math.round(min.x * 10) / 10,
+				maxX: Math.round(max.x * 10) / 10,
+				minZ: Math.round(min.z * 10) / 10,
+				maxZ: Math.round(max.z * 10) / 10
+			});
+		});
+		return rows;
+	};
+	const passHit = (nx, ny) => {
+		const ray = new Raycaster();
+		const ndc = new Vector2(nx * 2 - 1, -(ny * 2 - 1));
+		ray.setFromCamera(ndc, camera);
+		return ray.intersectObjects(scene.children, true).slice(0, 5).map((hit) => {
+			const names = [];
+			let node = hit.object;
+			while (node && node !== scene) {
+				names.push(node.name || node.type);
+				node = node.parent;
+			}
+			return {
+				chain: names.join(" < "),
+				part: hit.object.userData.sealedGate || "",
+				type: hit.object.geometry && hit.object.geometry.type,
+				x: Math.round(hit.point.x * 10) / 10,
+				y: Math.round(hit.point.y * 10) / 10,
+				z: Math.round(hit.point.z * 10) / 10
+			};
+		});
+	};
+	window.__passAudit = passAudit;
+	window.__passHit = passHit;
+	window.__passNear = passNear;
+	window.__passClick = passClickLog;
 	return api;
 }
 function patchShaderPrecision() {
@@ -46062,6 +46335,513 @@ function buildRoom(scene, toonMat, colliders) {
 		list.push(geo);
 		buckets.set(color, list);
 	};
+	const stoneNoise = (x, y) => {
+		const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+		return n - Math.floor(n);
+	};
+	const fadeNoise = (t) => t * t * (3 - 2 * t);
+	const valueNoise = (x, y) => {
+		const x0 = Math.floor(x);
+		const y0 = Math.floor(y);
+		const tx = fadeNoise(x - x0);
+		const ty = fadeNoise(y - y0);
+		const n00 = stoneNoise(x0, y0);
+		const n10 = stoneNoise(x0 + 1, y0);
+		const n01 = stoneNoise(x0, y0 + 1);
+		const n11 = stoneNoise(x0 + 1, y0 + 1);
+		return n00 + (n10 - n00) * tx + (n01 - n00) * ty + (n00 - n10 - n01 + n11) * tx * ty;
+	};
+	const fbm = (x, y) => {
+		let a = 0;
+		let amp = 1;
+		let f = 1;
+		let sum = 0;
+		for (let o = 0; o < 4; o++) {
+			a += amp * valueNoise(x * f, y * f);
+			sum += amp;
+			amp *= 0.5;
+			f *= 2.03;
+		}
+		return a / sum;
+	};
+	const texOf = (canvas, color, wrapT) => {
+		const tex = new CanvasTexture(canvas);
+		tex.colorSpace = color ? SRGBColorSpace : NoColorSpace;
+		tex.wrapS = RepeatWrapping;
+		tex.wrapT = wrapT;
+		tex.magFilter = LinearFilter;
+		tex.minFilter = LinearFilter;
+		tex.generateMipmaps = false;
+		tex.needsUpdate = true;
+		return tex;
+	};
+	const paintPassStone = () => {
+		const worldW = 5;
+		const worldH = 6.4;
+		const px = 64;
+		const cW = Math.round(worldW * px);
+		const cH = Math.round(worldH * px);
+		const canvas = document.createElement("canvas");
+		canvas.width = cW;
+		canvas.height = cH;
+		const bumpC = document.createElement("canvas");
+		bumpC.width = cW;
+		bumpC.height = cH;
+		const ctx = canvas.getContext("2d");
+		const btx = bumpC.getContext("2d");
+		ctx.fillStyle = "#121614";
+		ctx.fillRect(0, 0, cW, cH);
+		btx.fillStyle = "#1c1c1c";
+		btx.fillRect(0, 0, cW, cH);
+		const blockW = 2.5;
+		const rows = 5;
+		const blockH = worldH / rows;
+		const mortar = 0.12 * px;
+		for (let row = 0; row < rows; row++) {
+			const off = row % 2 === 0 ? 0 : blockW * 0.5;
+			for (let col = -1; col < 3; col++) {
+				const x0 = (col * blockW + off) * px + mortar;
+				const x1 = (col * blockW + off + blockW) * px - mortar;
+				const yTop = (worldH - (row + 1) * blockH) * px + mortar;
+				const yBot = (worldH - row * blockH) * px - mortar;
+				const n = stoneNoise(col + 2.2, row + 4.7);
+				const r = 118 + n * 56;
+				const g = 126 + n * 46;
+				const b = 110 + n * 34;
+				ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
+				ctx.fillRect(x0, yTop, x1 - x0, yBot - yTop);
+				ctx.fillStyle = `rgba(0,0,0,${0.06 + (1 - n) * 0.1})`;
+				ctx.fillRect(x0 + 6, yTop + 5, (x1 - x0) * 0.42, (yBot - yTop) * 0.28);
+				const bh = 150 + n * 70;
+				btx.fillStyle = `rgb(${bh | 0},${bh | 0},${bh | 0})`;
+				btx.fillRect(x0, yTop, x1 - x0, yBot - yTop);
+			}
+		}
+		const img = ctx.getImageData(0, 0, cW, cH);
+		const bmp = btx.getImageData(0, 0, cW, cH);
+		const d = img.data;
+		const bd = bmp.data;
+		const moss0 = cH - px;
+		for (let y = 0; y < cH; y++) {
+			const shade = 0.5 + 0.5 * (y / (cH - 1));
+			for (let x = 0; x < cW; x++) {
+				const i = (y * cW + x) * 4;
+				if (d[i] < 36) continue;
+				let edge = false;
+				if (x > 0 && x < cW - 1 && y > 0 && y < cH - 1) {
+					const l = d[i - 4];
+					const rgt = d[i + 4];
+					const up = d[i - cW * 4];
+					const dn = d[i + cW * 4];
+					edge = l < 36 || rgt < 36 || up < 36 || dn < 36;
+				}
+				const n = stoneNoise(x * 0.19, y * 0.17);
+				if (edge && n < 0.46) {
+					d[i] = 18;
+					d[i + 1] = 22;
+					d[i + 2] = 18;
+					bd[i] = bd[i + 1] = bd[i + 2] = 24;
+					continue;
+				}
+				const grit = (n - 0.5) * 16;
+				d[i] = Math.max(0, Math.min(255, d[i] * shade + grit));
+				d[i + 1] = Math.max(0, Math.min(255, d[i + 1] * shade + grit));
+				d[i + 2] = Math.max(0, Math.min(255, d[i + 2] * shade + grit * 0.5));
+				if (edge) {
+					const low = Math.max(0, bd[i] - 55);
+					bd[i] = bd[i + 1] = bd[i + 2] = low;
+				}
+				if (y >= moss0 - 10) {
+					const band = y < moss0 ? (y - (moss0 - 10)) / 10 * 0.35 : 0.35 + 0.65 * ((y - moss0) / (cH - moss0));
+					const nse = fbm(x * 0.045, y * 0.06);
+					const a = Math.min(0.34, Math.max(0, nse - 0.46) * band * 1.15);
+					if (a > 0.03) {
+						d[i] = d[i] * (1 - a) + 0x3f * a;
+						d[i + 1] = d[i + 1] * (1 - a) + 0x5a * a;
+						d[i + 2] = d[i + 2] * (1 - a) + 0x3a * a;
+						bd[i] = bd[i + 1] = bd[i + 2] = bd[i] * (1 - a * 0.35);
+					}
+				}
+			}
+		}
+		ctx.putImageData(img, 0, 0);
+		btx.putImageData(bmp, 0, 0);
+		return {
+			map: texOf(canvas, true, ClampToEdgeWrapping),
+			bump: texOf(bumpC, false, ClampToEdgeWrapping)
+		};
+	};
+	const paintFlagstones = () => {
+		const world = 16;
+		const size = 512;
+		const s = size / world;
+		const canvas = document.createElement("canvas");
+		canvas.width = size;
+		canvas.height = size;
+		const bumpC = document.createElement("canvas");
+		bumpC.width = size;
+		bumpC.height = size;
+		const ctx = canvas.getContext("2d");
+		const btx = bumpC.getContext("2d");
+		ctx.fillStyle = "#121612";
+		ctx.fillRect(0, 0, size, size);
+		btx.fillStyle = "#222222";
+		btx.fillRect(0, 0, size, size);
+		const chunks = (total, seed) => {
+			const out = [];
+			let left = total;
+			let i = 0;
+			while (left > 5.001) {
+				let w = 2 + stoneNoise(seed, i + 0.4) * 3;
+				if (left - w < 2) w = Math.max(2, left - 2);
+				w = Math.min(Math.max(2, w), left);
+				out.push(w);
+				left -= w;
+				i += 1;
+			}
+			if (left > 0.05) out.push(left);
+			return out;
+		};
+		const rows = chunks(world, 2.2);
+		let y = 0;
+		for (let row = 0; row < rows.length; row++) {
+			const rh = rows[row];
+			const widths = chunks(world, 8 + row * 1.7);
+			const shift = row % 2 === 0 ? 0 : widths[0] * (0.35 + stoneNoise(row, 6) * 0.3);
+			let x = -shift;
+			for (let col = 0; col < widths.length; col++) {
+				const rw = widths[col];
+				const crosses = x < -0.001 || x + rw > world + 0.001;
+				const rot = crosses ? 0 : (stoneNoise(row + 2, col + 5) - 0.5) * 0.09;
+				const places = [x];
+				if (x < -0.001) places.push(x + world);
+				if (x + rw > world + 0.001) places.push(x - world);
+				const t = stoneNoise(col + 1.3, row + 9);
+				const r = 0x4a + (0x5a - 0x4a) * t;
+				const g = 0x52 + (0x63 - 0x52) * t;
+				const b = 0x48 + (0x58 - 0x48) * t;
+				const bh = 120 + t * 60;
+				for (const px0 of places) {
+					ctx.save();
+					btx.save();
+					ctx.beginPath();
+					ctx.rect(0, 0, size, size);
+					ctx.clip();
+					btx.beginPath();
+					btx.rect(0, 0, size, size);
+					btx.clip();
+					const cx = (px0 + rw / 2) * s;
+					const cy = (y + rh / 2) * s;
+					ctx.translate(cx, cy);
+					ctx.rotate(rot);
+					btx.translate(cx, cy);
+					btx.rotate(rot);
+					const inset = 0.09 * s;
+					const sw = rw * s - inset * 2;
+					const sh = rh * s - inset * 2;
+					ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
+					ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+					ctx.fillStyle = `rgba(0,0,0,${0.08 + (1 - t) * 0.1})`;
+					ctx.fillRect(-sw * 0.15, -sh * 0.12, sw * 0.42, sh * 0.28);
+					btx.fillStyle = `rgb(${bh | 0},${bh | 0},${bh | 0})`;
+					btx.fillRect(-sw / 2, -sh / 2, sw, sh);
+					ctx.restore();
+					btx.restore();
+				}
+				x += rw;
+			}
+			y += rh;
+		}
+		const img = ctx.getImageData(0, 0, size, size);
+		const d = img.data;
+		for (let i = 0; i < d.length; i += 4) {
+			if (d[i] < 30 || d[i + 1] > d[i] + 8) continue;
+			const n = stoneNoise((i / 4) % size, (i / 4) / size);
+			const grit = (n - 0.5) * 8;
+			d[i] = Math.max(0x4a, Math.min(0x5a, d[i] + grit));
+			d[i + 1] = Math.max(0x52, Math.min(0x63, d[i + 1] + grit));
+			d[i + 2] = Math.max(0x48, Math.min(0x58, d[i + 2] + grit * 0.6));
+		}
+		for (let y = 0; y < size; y++) {
+			for (let x = 0; x < size; x++) {
+				const i = (y * size + x) * 4;
+				if (d[i] >= 30) continue;
+				const nse = fbm(x * 0.018, y * 0.018);
+				const a = Math.min(0.42, Math.max(0, nse - 0.42) * 1.35);
+				if (a < 0.04) continue;
+				d[i] = d[i] * (1 - a) + 0x3f * a;
+				d[i + 1] = d[i + 1] * (1 - a) + 0x5a * a;
+				d[i + 2] = d[i + 2] * (1 - a) + 0x3a * a;
+			}
+		}
+		ctx.putImageData(img, 0, 0);
+		return {
+			map: texOf(canvas, true, RepeatWrapping),
+			bump: texOf(bumpC, false, RepeatWrapping)
+		};
+	};
+	const wallStone = paintPassStone();
+	const floorStone = paintFlagstones();
+	const wallBase = new MeshLambertMaterial({
+		map: wallStone.map,
+		bumpMap: wallStone.bump,
+		bumpScale: 1.35,
+		color: 0xffffff
+	});
+	const lipBase = new MeshLambertMaterial({
+		map: wallStone.map,
+		bumpMap: wallStone.bump,
+		bumpScale: 1.35,
+		color: 0x9a9e96
+	});
+	const floorMat = new MeshLambertMaterial({
+		map: floorStone.map,
+		bumpMap: floorStone.bump,
+		bumpScale: 0.65,
+		color: 0xffffff
+	});
+	const stoneWallUvs = (geo, length, height, thick) => {
+		const pos = geo.attributes.position;
+		const uv = geo.attributes.uv;
+		const halfL = length / 2;
+		const halfH = height / 2;
+		const halfT = thick / 2;
+		for (let i = 0; i < pos.count; i++) {
+			const face = (i / 4) | 0;
+			const x = pos.getX(i);
+			const y = pos.getY(i);
+			const z = pos.getZ(i);
+			let u = (x + halfL) / 5;
+			let v = (y + halfH) / 6.4;
+			if (face < 2) {
+				u = (z + halfT) / 5;
+				v = (y + halfH) / 6.4;
+			} else if (face < 4) {
+				u = (x + halfL) / 5;
+				v = 0.36 + (z + halfT) / 6.4;
+			}
+			uv.setXY(i, u, v);
+		}
+		uv.needsUpdate = true;
+	};
+	const flagUvs = (geo) => {
+		const pos = geo.attributes.position;
+		const uv = geo.attributes.uv;
+		for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / 16, pos.getZ(i) / 16);
+		uv.needsUpdate = true;
+	};
+	const passWalls = [];
+	const addYaw = (color, w, h, d, x, y, z, yaw) => {
+		const geo = new BoxGeometry(w, h, d);
+		stoneWallUvs(geo, w, h, d);
+		const mesh = new Mesh(geo, (color !== 0 && h < 2 ? lipBase : wallBase).clone());
+		mesh.position.set(x, y, z);
+		mesh.rotation.y = yaw;
+		mesh.castShadow = h >= 2;
+		mesh.receiveShadow = true;
+		mesh.userData.passWall = true;
+		mesh.userData.made = "addYaw";
+		passWalls.push(mesh);
+		scene.add(mesh);
+	};
+	const flagGeos = [];
+	const addFlag = (w, d, x, z) => {
+		const geo = new BoxGeometry(w, 0.16, d);
+		geo.translate(x, -0.1, z);
+		flagUvs(geo);
+		flagGeos.push(geo);
+	};
+	const skirtGeos = [];
+	const addSkirt = (length, mx, mz, ux, uz, ix, iz) => {
+		const geo = new PlaneGeometry(Math.max(length, 0.2), 1.5, 1, 1);
+		const pos = geo.attributes.position;
+		const uv = geo.attributes.uv;
+		for (let i = 0; i < pos.count; i++) {
+			const lx = pos.getX(i);
+			const ly = pos.getY(i);
+			const across = (ly + 0.75) / 1.5;
+			pos.setXYZ(i, mx + ux * lx + ix * across * 1.5, 0.008, mz + uz * lx + iz * across * 1.5);
+			uv.setXY(i, (mx + ux * lx) / 8, across);
+		}
+		skirtGeos.push(geo);
+	};
+	const skirtCanvas = document.createElement("canvas");
+	skirtCanvas.width = 128;
+	skirtCanvas.height = 64;
+	const skirtCtx = skirtCanvas.getContext("2d");
+	const skirtGrad = skirtCtx.createLinearGradient(0, 64, 0, 0);
+	skirtGrad.addColorStop(0, "rgba(8, 12, 8, 0.8)");
+	skirtGrad.addColorStop(0.42, "rgba(20, 30, 18, 0.4)");
+	skirtGrad.addColorStop(1, "rgba(20, 30, 18, 0)");
+	skirtCtx.fillStyle = skirtGrad;
+	skirtCtx.fillRect(0, 0, 128, 64);
+	const skirtImg = skirtCtx.getImageData(0, 0, 128, 64);
+	const sd = skirtImg.data;
+	for (let y = 0; y < 64; y++) {
+		const near = Math.max(0, (64 - y) / 64);
+		for (let x = 0; x < 128; x++) {
+			const nse = fbm(x * 0.05, y * 0.07);
+			const a = Math.min(0.38, Math.max(0, nse - 0.4) * near * 1.2);
+			if (a < 0.03) continue;
+			const i = (y * 128 + x) * 4;
+			sd[i] = sd[i] * (1 - a) + 0x3f * a;
+			sd[i + 1] = sd[i + 1] * (1 - a) + 0x5a * a;
+			sd[i + 2] = sd[i + 2] * (1 - a) + 0x3a * a;
+		}
+	}
+	skirtCtx.putImageData(skirtImg, 0, 0);
+	const skirtMat = new MeshBasicMaterial({
+		map: texOf(skirtCanvas, true, RepeatWrapping),
+		transparent: true,
+		depthWrite: false,
+		toneMapped: false,
+		polygonOffset: true,
+		polygonOffsetFactor: -2,
+		polygonOffsetUnits: -2
+	});
+	const passFlame = new MeshLambertMaterial({
+		color: 0xffb060,
+		emissive: 0xff6418,
+		emissiveIntensity: 1.15
+	});
+	const haloCanvas = document.createElement("canvas");
+	haloCanvas.width = 64;
+	haloCanvas.height = 64;
+	const haloCtx = haloCanvas.getContext("2d");
+	const haloGrad = haloCtx.createRadialGradient(32, 32, 2, 32, 32, 30);
+	haloGrad.addColorStop(0, "rgba(255,255,255,0.9)");
+	haloGrad.addColorStop(0.4, "rgba(255,255,255,0.28)");
+	haloGrad.addColorStop(1, "rgba(255,255,255,0)");
+	haloCtx.fillStyle = haloGrad;
+	haloCtx.fillRect(0, 0, 64, 64);
+	const haloMat = new SpriteMaterial({
+		map: texOf(haloCanvas, true, ClampToEdgeWrapping),
+		color: 0xc45a18,
+		transparent: true,
+		depthWrite: false,
+		opacity: 0.9,
+		toneMapped: false
+	});
+	const passTorches = [];
+	const hangTorch = (x, z) => {
+		const flame = new Mesh(new BoxGeometry(0.22, 0.28, 0.22), passFlame);
+		flame.position.set(x, 1.6, z);
+		flame.castShadow = false;
+		flame.receiveShadow = false;
+		const halo = new Sprite(haloMat);
+		halo.position.set(x, 1.64, z);
+		halo.scale.set(0.8, 0.8, 1);
+		scene.add(flame, halo);
+		passTorches.push({ x, z });
+	};
+	const passLights = [];
+	for (let i = 0; i < 8; i++) {
+		const light = new PointLight(0xff7a32, 0, 6, 2);
+		light.castShadow = false;
+		passLights.push(light);
+	};
+	const redCanvas = document.createElement("canvas");
+	redCanvas.width = 128;
+	redCanvas.height = 256;
+	const redCtx = redCanvas.getContext("2d");
+	redCtx.fillStyle = "#b01818";
+	redCtx.fillRect(0, 0, 128, 256);
+	const redGlow = redCtx.createRadialGradient(64, 128, 10, 64, 128, 150);
+	redGlow.addColorStop(0, "rgba(255, 70, 48, 0.35)");
+	redGlow.addColorStop(1, "rgba(80, 0, 0, 0)");
+	redCtx.fillStyle = redGlow;
+	redCtx.fillRect(0, 0, 128, 256);
+	redCtx.strokeStyle = "#ff4c3c";
+	redCtx.lineWidth = 3;
+	const dw = 32;
+	const dh = 40;
+	for (let y = -dh; y < 256 + dh; y += dh) {
+		for (let x = -dw; x < 128 + dw; x += dw) {
+			redCtx.beginPath();
+			redCtx.moveTo(x, y + dh / 2);
+			redCtx.lineTo(x + dw / 2, y);
+			redCtx.lineTo(x + dw, y + dh / 2);
+			redCtx.lineTo(x + dw / 2, y + dh);
+			redCtx.closePath();
+			redCtx.stroke();
+		}
+	}
+	redCtx.strokeStyle = "#6e0c0c";
+	redCtx.lineWidth = 1.5;
+	for (let y = -dh; y < 256 + dh; y += dh) {
+		for (let x = -dw; x < 128 + dw; x += dw) {
+			redCtx.beginPath();
+			redCtx.moveTo(x + 6, y + dh / 2);
+			redCtx.lineTo(x + dw / 2, y + 8);
+			redCtx.lineTo(x + dw - 6, y + dh / 2);
+			redCtx.lineTo(x + dw / 2, y + dh - 8);
+			redCtx.closePath();
+			redCtx.stroke();
+		}
+	}
+	const redTex = texOf(redCanvas, true, ClampToEdgeWrapping);
+	const redMat = new MeshLambertMaterial({
+		color: 0xffffff,
+		map: redTex,
+		emissive: 0xb01818,
+		emissiveMap: redTex,
+		emissiveIntensity: 0.85,
+		side: DoubleSide
+	});
+	const leanGeo = (geo, lean) => {
+		if (!lean) return;
+		const pos = geo.attributes.position;
+		const c = Math.cos(lean);
+		const s = Math.sin(lean);
+		for (let i = 0; i < pos.count; i++) {
+			const py = pos.getY(i);
+			const pz = pos.getZ(i);
+			pos.setY(i, py * c - pz * s);
+			pos.setZ(i, py * s + pz * c);
+		}
+		pos.needsUpdate = true;
+		geo.computeVertexNormals();
+	};
+	const addStone = (parts, x, y, z, yaw, lean) => {
+		const geos = [];
+		for (const part of parts) {
+			const geo = new BoxGeometry(part.w, part.h, part.d);
+			stoneWallUvs(geo, part.w, part.h, part.d);
+			geo.translate(part.x, part.y, part.z);
+			geos.push(geo);
+		}
+		const merged = mergeGeometries(geos, false);
+		for (const geo of geos) geo.dispose();
+		if (!merged) return;
+		leanGeo(merged, lean);
+		const mesh = new Mesh(merged, wallBase);
+		mesh.name = "sealed-gate-stone";
+		mesh.userData.sealedGate = "stone";
+		mesh.userData.made = "addStone";
+		mesh.position.set(x, y, z);
+		mesh.rotation.y = yaw;
+		mesh.castShadow = true;
+		mesh.receiveShadow = true;
+		scene.add(mesh);
+	};
+	const addRed = (w, h, lx, ly, lz, x, y, z, yaw, lean) => {
+		const geo = new PlaneGeometry(w, h);
+		geo.translate(lx, ly, lz);
+		leanGeo(geo, lean);
+		const mesh = new Mesh(geo, redMat);
+		mesh.name = "sealed-gate-panel";
+		mesh.userData.sealedGate = "panel";
+		mesh.userData.made = "addRed";
+		mesh.position.set(x, y, z);
+		mesh.rotation.y = yaw;
+		mesh.castShadow = false;
+		mesh.receiveShadow = false;
+		scene.add(mesh);
+	};
+	scene.userData.passWalls = passWalls;
+	scene.userData.passTorches = passTorches;
+	scene.userData.passLights = passLights;
+	scene.userData.passFlames = passFlame;
 	const sand = 14272417;
 	const sandDark = 12035468;
 	const mortar = 9204560;
@@ -46238,7 +47018,7 @@ function buildRoom(scene, toonMat, colliders) {
 	moat(scene, toonMat, 14, spanZ + 4, sideX + 5.6, floorZ);
 	moat(scene, toonMat, 14, spanZ + 4, -sideX - 5.6, floorZ);
 	buildDistricts(add, colliders, scene, toonMat);
-	buildForest(scene, toonMat, colliders, add, buckets);
+	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed);
 	buildOrcLands(add, colliders);
 	const footIn = (x, z) => {
 		const near = boxesNear(colliders, x, z, .48);
@@ -46297,8 +47077,28 @@ function buildRoom(scene, toonMat, colliders) {
 		scene.add(mesh);
 		for (const g of geos) g.dispose();
 	}
+	if (flagGeos.length) {
+		const mergedFloor = mergeGeometries(flagGeos);
+		if (mergedFloor) {
+			const floorMesh = new Mesh(mergedFloor, floorMat);
+			floorMesh.castShadow = false;
+			floorMesh.receiveShadow = true;
+			scene.add(floorMesh);
+		}
+		for (const g of flagGeos) g.dispose();
+	}
+	if (skirtGeos.length) {
+		const mergedSkirt = mergeGeometries(skirtGeos);
+		if (mergedSkirt) {
+			const skirtMesh = new Mesh(mergedSkirt, skirtMat);
+			skirtMesh.castShadow = false;
+			skirtMesh.receiveShadow = false;
+			scene.add(skirtMesh);
+		}
+		for (const g of skirtGeos) g.dispose();
+	}
 }
-function buildForest(scene, toon, colliders, add, buckets) {
+function buildForest(scene, toon, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed) {
 	const bridgeLen = BRIDGE_Z1 - BRIDGE_Z0;
 	const mid = (BRIDGE_Z0 + BRIDGE_Z1) / 2;
 	add(12035468, BRIDGE_HALF * 2 + .9, .22, bridgeLen + .85, 0, .02, mid);
@@ -46321,7 +47121,8 @@ function buildForest(scene, toon, colliders, add, buckets) {
 	buildRonfaure(add, colliders);
 	buildEastRonfaure(add, colliders);
 	buildTomb(add, colliders);
-	buildPass(add, colliders);
+	const eye = fwd(CAM_YAW);
+	buildPass(add, colliders, addYaw, { x: -eye.x, z: -eye.z }, addFlag, hangTorch, addSkirt, addStone, addRed);
 	buildGlacier(add, colliders);
 }
 function pine(add, x, z, s) {

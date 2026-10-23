@@ -4,7 +4,7 @@
  * poseField drives patrol, the bite, and the named move.
  */
 // @ts-nocheck
-import { Bone, BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshBasicMaterial, OctahedronGeometry, SphereGeometry } from "three";
+import { Bone, BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshBasicMaterial, OctahedronGeometry, SphereGeometry, TorusGeometry } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 export type FieldLook =

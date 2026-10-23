@@ -506,6 +506,9 @@ export type OrcChart = {
   bounds: Rect;
   marks: { x: number; z: number; name: string }[];
   grid: { x0: number; z0: number; cell: number } | null;
+  /** Traced tunnel centerlines, in yalms. The map strokes these instead of filling rects. */
+  paths?: { pts: { x: number; z: number }[]; width: number }[];
+  discs?: { x: number; z: number; r: number }[];
 };
 
 export function orcLayout(region: string): OrcChart | null {
