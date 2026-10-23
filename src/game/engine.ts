@@ -26,7 +26,7 @@ import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustF
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch } from "./world";
-import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc } from "./ghelsba";
+import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc, ORC_FIRES, orcZoneAt } from "./ghelsba";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -4237,17 +4237,10 @@ export function createYard(canvas) {
 	const wallRay = new Raycaster();
 	const wallTo = new Vector3();
 	const wallBlocking = new Set();
-	function fadePassWalls(dt) {
-		const meshes = scene.userData.passWalls;
+	function fadeWallSet(meshes, gateMeshes, active, dt) {
 		if (!meshes || !meshes.length) return;
-		let passGates = scene.userData.passGates;
-		if (!passGates) {
-			passGates = [];
-			for (let i = 0; i < meshes.length; i++) if (meshes[i].userData.sealedGate) passGates.push(meshes[i]);
-			scene.userData.passGates = passGates;
-		}
 		wallBlocking.clear();
-		if (inPass(px, pz)) {
+		if (active) {
 			const marks = [[px, 1.05, pz]];
 			for (let i = 0; i < puppets.length; i++) {
 				const pup = puppets[i];
@@ -4270,7 +4263,7 @@ export function createYard(canvas) {
 					wallTo.multiplyScalar(1 / dist);
 					wallRay.set(camera.position, wallTo);
 					wallRay.far = Math.max(0, dist - 0.2);
-					const hits = wallRay.intersectObjects(pad === 0 ? meshes : passGates, false);
+					const hits = wallRay.intersectObjects(pad === 0 ? meshes : gateMeshes, false);
 					for (let h = 0; h < hits.length; h++) wallBlocking.add(hits[h].object);
 				}
 			}
@@ -4294,6 +4287,18 @@ export function createYard(canvas) {
 				mat.needsUpdate = true;
 			}
 		}
+	}
+	function fadePassWalls(dt) {
+		const meshes = scene.userData.passWalls;
+		let passGates = scene.userData.passGates;
+		if (meshes && meshes.length && !passGates) {
+			passGates = [];
+			for (let i = 0; i < meshes.length; i++) if (meshes[i].userData.sealedGate) passGates.push(meshes[i]);
+			scene.userData.passGates = passGates;
+		}
+		fadeWallSet(meshes, passGates || [], inPass(px, pz), dt);
+		const orcWalls = scene.userData.orcWalls;
+		fadeWallSet(orcWalls, orcWalls || [], inOrc(px, pz), dt);
 	}
 	const ndc = new Vector2();
 	const camPos = new Vector3(-look.x * 13, 15.2, -look.z * 13);
@@ -13464,6 +13469,38 @@ export function createYard(canvas) {
 					}
 					passLights[i].position.set(spot.t.x, 1.7, spot.t.z);
 					passLights[i].intensity = 78 * (1 + 0.05 * Math.sin(elapsed * 8.5 + i * 1.3));
+				}
+			}
+		}
+		const orcLights = scene.userData.orcLights;
+		if (orcLights && orcLights.length) {
+			const orcHere = orcZoneAt(px, pz);
+			const orcCamp = !!(orcHere && (orcHere.id === "ghelsba" || orcHere.id === "fort-ghelsba" || orcHere.id === "yughott"));
+			const orcLit = orcLights[0].parent === scene;
+			if (orcCamp !== orcLit) {
+				for (let i = 0; i < orcLights.length; i++) {
+					if (orcCamp) scene.add(orcLights[i]);
+					else scene.remove(orcLights[i]);
+				}
+			}
+			if (orcCamp) {
+				const fires = [];
+				for (let i = 0; i < ORC_FIRES.length; i++) {
+					const fire = ORC_FIRES[i];
+					if (fire.zone !== orcHere.id) continue;
+					const dx = fire.x - px;
+					const dz = fire.z - pz;
+					fires.push({ fire, d: dx * dx + dz * dz });
+				}
+				fires.sort((a, b) => a.d - b.d);
+				for (let i = 0; i < orcLights.length; i++) {
+					const spot = fires[i];
+					if (!spot) {
+						orcLights[i].intensity = 0;
+						continue;
+					}
+					orcLights[i].position.set(spot.fire.x, 0.7, spot.fire.z);
+					orcLights[i].intensity = 28 * (1 + 0.12 * Math.sin(elapsed * 6.5 + i * 1.7));
 				}
 			}
 		}
@@ -46363,8 +46400,10 @@ function buildAngler(toon, tunic = 1841186) {
 }
 function buildRoom(scene, toonMat, colliders) {
 	const buckets = /* @__PURE__ */ new Map();
-	const add = (color, w, h, d, x, y, z) => {
+	const add = (color, w, h, d, x, y, z, yaw, pitch) => {
 		const geo = new BoxGeometry(w, h, d);
+		if (pitch) geo.rotateX(pitch);
+		if (yaw) geo.rotateY(yaw);
 		geo.translate(x, y, z);
 		const list = buckets.get(color) ?? [];
 		list.push(geo);
@@ -46790,7 +46829,14 @@ function buildRoom(scene, toonMat, colliders) {
 		const light = new PointLight(0xff7a32, 0, 6, 2);
 		light.castShadow = false;
 		passLights.push(light);
-	};
+	}
+	const orcLights = [];
+	for (let i = 0; i < 6; i++) {
+		const light = new PointLight(0xff6a2a, 0, 14, 2);
+		light.castShadow = false;
+		orcLights.push(light);
+	}
+	scene.userData.orcLights = orcLights;;
 	const redCanvas = document.createElement("canvas");
 	redCanvas.width = 128;
 	redCanvas.height = 256;
@@ -47124,7 +47170,19 @@ function buildRoom(scene, toonMat, colliders) {
 	moat(scene, toonMat, 14, spanZ + 4, -sideX - 5.6, floorZ);
 	buildDistricts(add, colliders, scene, toonMat);
 	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
-	buildOrcLands(add, colliders);
+	const orcWalls = [];
+	const addOrcFade = (color, w, h, d, x, y, z) => {
+		const mesh = new Mesh(new BoxGeometry(w, h, d), toonMat(color));
+		mesh.position.set(x, y, z);
+		mesh.castShadow = false;
+		mesh.receiveShadow = true;
+		mesh.userData.fadeBase = 1;
+		mesh.userData.orcWall = true;
+		orcWalls.push(mesh);
+		scene.add(mesh);
+	};
+	buildOrcLands(add, colliders, addOrcFade);
+	scene.userData.orcWalls = orcWalls;
 	const footIn = (x, z) => {
 		const near = boxesNear(colliders, x, z, .48);
 		for (let i = 0; i < near.length; i++) {
@@ -47150,6 +47208,7 @@ function buildRoom(scene, toonMat, colliders) {
 		4097712,
 		3108230,
 		5918792,
+		4073524,
 		8304816,
 		3811874,
 		8020548,

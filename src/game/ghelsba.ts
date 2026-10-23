@@ -609,7 +609,7 @@ export function orcLayout(region: string): OrcChart | null {
   };
 }
 
-type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number) => void;
+type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
 type Solid = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 function box(add: Add, colliders: Solid[] | null, color: number, w: number, h: number, d: number, x: number, y: number, z: number) {
@@ -653,14 +653,20 @@ function cutSpans(full: [number, number], cuts: [number, number][]): [number, nu
 }
 
 // One solid face along every exposed edge. Posts with gaps read as sky, not a wall.
-function cliffWall(add: Add, colliders: Solid[], rects: Rect[], gates: readonly OrcGate[], style: "rock" | "timber" | "cave") {
+// The outpost canyon is the tall style. South faces stay a low lip so the camera can see in.
+function cliffWall(add: Add, colliders: Solid[], rects: Rect[], gates: readonly OrcGate[], style: "rock" | "timber" | "cave" | "canyon", fade?: Add) {
   const rock = 6050130;
+  const rockLight = 10126180;
   const rockDark = 3948594;
+  const caveFace = 2893862;
+  const caveCap = 1442577;
   const timber = 6964012;
-  const face = style === "timber" ? timber : style === "cave" ? rockDark : rock;
-  const tall = style === "timber" ? 7.8 : style === "cave" ? 6.6 : 8.4;
+  const canyon = style === "canyon";
+  const face = style === "timber" ? timber : style === "cave" ? caveFace : canyon ? rockLight : rock;
+  const cap = style === "cave" ? caveCap : rockDark;
+  const tall = style === "timber" ? 7.8 : style === "cave" ? 7.6 : canyon ? 12.4 : 8.4;
   const thick = 2.6;
-  const sides: Array<"n" | "s" | "e" | "w"> = ["n", "e", "w"];
+  const sides: Array<"n" | "s" | "e" | "w"> = canyon ? ["n", "e", "w", "s"] : ["n", "e", "w"];
   for (const rect of rects) {
     for (const side of sides) {
       const horizontal = side === "n" || side === "s";
@@ -703,6 +709,12 @@ function cliffWall(add: Add, colliders: Solid[], rects: Rect[], gates: readonly 
         const cz = horizontal ? acrossC : midA;
         const w = horizontal ? len : thick;
         const d = horizontal ? thick : len;
+        if (side === "s" && canyon) {
+          if (!fade) continue;
+          const lipH = 0.72;
+          fade(cap, w, lipH, d, cx, lipH / 2, cz);
+          continue;
+        }
         if (style === "timber") {
           box(add, colliders, rockDark, w, 2.4, d, cx, 1.1, cz);
           add(timber, w, 5.6, d, cx, 5.15, cz);
@@ -713,17 +725,26 @@ function cliffWall(add: Add, colliders: Solid[], rects: Rect[], gates: readonly 
             const oz = horizontal ? edge + outward * (thick / 2 + 0.38) : t;
             add(timber, horizontal ? 0.46 : 0.62, h, horizontal ? 0.62 : 0.46, ox, h / 2, oz);
           }
+          for (let t = a + 0.45; t < b - 0.3; t += 1.7) {
+            if (Math.floor(t * 0.37) % 2 === 0) continue;
+            const ox = horizontal ? t : edge + outward * (thick / 2);
+            const oz = horizontal ? edge + outward * (thick / 2) : t;
+            add(timber, horizontal ? 0.74 : 0.9, 0.82, horizontal ? 0.9 : 0.74, ox, 8.2, oz);
+          }
         } else {
-          box(add, colliders, face, w, tall, d, cx, tall / 2 - 0.12, cz);
+          const body = style === "rock" ? tall : tall * (canyon ? 0.68 : 0.78);
+          const capH = tall - body;
+          box(add, colliders, face, w, body, d, cx, body / 2 - 0.12, cz);
+          if (capH > 0.35) add(cap, w, capH, d, cx, body + capH / 2 - 0.1, cz);
           const baseT = thick + 0.7;
           const baseC = edge + outward * (baseT / 2);
-          add(rockDark, horizontal ? len : baseT, 1.8, horizontal ? baseT : len, horizontal ? cx : baseC, 0.8, horizontal ? baseC : cz);
+          add(cap, horizontal ? len : baseT, 1.8, horizontal ? baseT : len, horizontal ? cx : baseC, 0.8, horizontal ? baseC : cz);
           for (let t = a + 1.4; t < b - 0.6; t += 4.6) {
             const n = Math.abs(Math.sin(t * 0.21 + edge * 0.05));
             const h = tall * (0.78 + n * 0.32);
             const ox = horizontal ? t : edge + outward * (thick / 2 + 0.2);
             const oz = horizontal ? edge + outward * (thick / 2 + 0.2) : t;
-            add(rockDark, 1.45, h, 1.45, ox, h / 2 - 0.1, oz);
+            add(cap, 1.45, h, 1.45, ox, h / 2 - 0.1, oz);
           }
         }
       }
@@ -971,10 +992,182 @@ function mountWallTorches(add: Add) {
   }
 }
 
-export function buildOrcLands(add: Add, colliders: Solid[]) {
+function propClear(x: number, z: number, reach = 5): boolean {
+  if (!inOrc(x, z, 0.25)) return false;
+  if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < reach || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < reach - 1)) return false;
+  if (Math.hypot(x - RON_TO_GHELSBA.x, z - RON_TO_GHELSBA.z) < reach) return false;
+  if (ORC_WATER.some((row) => x > row.rect.minX - 0.7 && x < row.rect.maxX + 0.7 && z > row.rect.minZ - 0.7 && z < row.rect.maxZ + 0.7)) return false;
+  return true;
+}
+
+function towerFoot(x: number, z: number): boolean {
+  const half = 1.5;
+  for (const dx of [-half, 0, half]) {
+    for (const dz of [-half, 0, half]) {
+      if (hit(OUT_ROOMS, x + dx, z + dz, 0)) return false;
+    }
+  }
+  let near = Infinity;
+  for (const rect of OUT_ROOMS) near = Math.min(near, rectDist(x, z, rect));
+  if (near > 3.6 || near < 0.35) return false;
+  if (!propClear(x, z, 7) && ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 7)) return false;
+  if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 6.5 || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < 6)) return false;
+  if (Math.hypot(x - RON_TO_GHELSBA.x, z - RON_TO_GHELSBA.z) < 7) return false;
+  if (ORC_WATER.some((row) => x > row.rect.minX - 2 && x < row.rect.maxX + 2 && z > row.rect.minZ - 2 && z < row.rect.maxZ + 2)) return false;
+  return true;
+}
+
+function seekRim(ax: number, az: number, dx: number, dz: number): { x: number; z: number } | null {
+  const alongX = -dz;
+  const alongZ = dx;
+  const outs = [3.3, 4.4, 5.5, 8, 12, 16.8, 17.6, 18.4, 19.2, 20];
+  for (const along of [0, 6, -6, 9, -9, 12, -12, 15, -15, 18, -18]) {
+    for (const out of outs) {
+      const x = ax + dx * out + alongX * along;
+      const z = az + dz * out + alongZ * along;
+      if (towerFoot(x, z)) return { x, z };
+    }
+  }
+  return null;
+}
+
+/** Watchtowers on the canyon rim, off the floor, beside the fort mouth and the Ronfaure mouth. */
+export function orcTowers(): { x: number; z: number }[] {
+  const fort = ORC_GATES.find((gate) => gate.id === "ghelsba-fort");
+  const ron = ORC_GATES.find((gate) => gate.id === "ghelsba-ron");
+  if (!fort || !ron) return [];
+  const found = [seekRim(fort.x, fort.z, 1, 0), seekRim(mid(oH8).x, oH8.minZ, 0, -1), seekRim(ron.x, ron.z, 0, 1)];
+  const out: { x: number; z: number }[] = [];
+  for (const spot of found) {
+    if (!spot) continue;
+    if (out.some((kept) => Math.hypot(kept.x - spot.x, kept.z - spot.z) < 7)) continue;
+    out.push(spot);
+  }
+  return out.slice(0, 3);
+}
+
+const FIRE_CANDIDATES: { zone: string; x: number; z: number }[] = [
+  { zone: "ghelsba", x: mid(oH7).x + 1.8, z: mid(oH7).z + 2.6 },
+  { zone: "ghelsba", x: mid(oG9).x - 4.2, z: mid(oG9).z + 3.4 },
+  { zone: "ghelsba", x: mid(oH6).x + 4.5, z: mid(oH6).z + 2.2 },
+  { zone: "ghelsba", x: mid(oF7).x + 4.8, z: mid(oF7).z - 3.6 },
+  { zone: "fort-ghelsba", x: mid(fG6).x + 1.4, z: mid(fG6).z + 2.2 },
+  { zone: "fort-ghelsba", x: mid(fH7).x - 2.4, z: mid(fH7).z + 2.6 },
+  { zone: "fort-ghelsba", x: mid(fJ6).x + 1.2, z: mid(fJ6).z - 2.2 },
+];
+
+/** Campfires. At most six a zone; the engine lights only the nearest of these. */
+export const ORC_FIRES: readonly { zone: string; x: number; z: number }[] = FIRE_CANDIDATES.filter((spot) => propClear(spot.x, spot.z, 4.2));
+
+function watchtower(add: Add, colliders: Solid[], x: number, z: number) {
+  const wood = 6964012;
+  const deck = 8020548;
+  const roof = 5257770;
+  const s = 1.15;
+  for (const [dx, dz] of [[-s, -s], [s, -s], [-s, s], [s, s]] as const) {
+    box(add, colliders, wood, 0.36, 4.4, 0.36, x + dx, 2.2, z + dz);
+  }
+  add(deck, s * 2 + 0.45, 0.16, s * 2 + 0.45, x, 3.72, z);
+  add(roof, s * 2 + 1.2, 0.2, s * 2 + 0.85, x, 4.62, z, 0, 0.4);
+  add(wood, 0.14, 1.45, 0.14, x + 0.15, 5.2, z);
+  add(ORC_RED, 0.1, 0.72, 0.95, x + 0.15, 5.6, z + 0.32);
+}
+
+function palisadeRun(add: Add, rect: Rect, side: "n" | "s" | "e" | "w") {
+  const wood = 6964012;
+  const tip = 5255210;
+  const horizontal = side === "n" || side === "s";
+  const edge = side === "n" ? rect.minZ : side === "s" ? rect.maxZ : side === "w" ? rect.minX : rect.maxX;
+  const full: [number, number] = horizontal ? [rect.minX + 1.6, rect.maxX - 1.6] : [rect.minZ + 1.6, rect.maxZ - 1.6];
+  const inset = 1.2;
+  const pitch = side === "n" ? -0.22 : 0.22;
+  const yaw = horizontal ? 0 : Math.PI / 2;
+  for (let t = full[0]; t <= full[1]; t += 1.15) {
+    const x = horizontal ? t : edge + (side === "w" ? inset : -inset);
+    const z = horizontal ? edge + (side === "n" ? inset : -inset) : t;
+    if (!hit(OUT_ROOMS, x, z, 0.15)) continue;
+    if (!propClear(x, z, 6)) continue;
+    add(wood, 0.2, 2.6, 0.2, x, 1.22, z, yaw, pitch);
+    add(tip, 0.08, 0.32, 0.08, x, 2.55, z, yaw, pitch);
+  }
+}
+
+function drum(add: Add, x: number, z: number) {
+  add(6964012, 1.15, 0.62, 1.15, x, 0.31, z);
+  add(ORC_RED, 1.28, 0.1, 1.28, x, 0.66, z);
+}
+
+function weaponRack(add: Add, x: number, z: number) {
+  const wood = 6964012;
+  const iron = 7895160;
+  add(wood, 0.16, 1.45, 0.16, x - 0.7, 0.72, z);
+  add(wood, 0.16, 1.45, 0.16, x + 0.7, 0.72, z);
+  add(wood, 1.7, 0.12, 0.12, x, 1.4, z);
+  add(iron, 0.1, 0.85, 0.28, x - 0.28, 1.05, z);
+  add(iron, 0.1, 0.7, 0.22, x + 0.28, 0.95, z);
+}
+
+function skullPole(add: Add, x: number, z: number) {
+  add(6964012, 0.14, 2.15, 0.14, x, 1.05, z);
+  add(14927226, 0.32, 0.26, 0.28, x, 2.18, z);
+  add(3948594, 0.08, 0.18, 0.08, x + 0.1, 2.4, z);
+}
+
+function campfire(add: Add, x: number, z: number) {
+  add(3948594, 0.34, 0.26, 0.32, x - 0.42, 0.13, z - 0.16);
+  add(3948594, 0.3, 0.22, 0.3, x + 0.46, 0.11, z + 0.12);
+  add(3948594, 0.26, 0.2, 0.28, x + 0.06, 0.1, z + 0.46);
+  add(5257770, 0.7, 0.14, 0.18, x, 0.1, z);
+  add(16739994, 0.26, 0.4, 0.26, x, 0.4, z);
+  add(16755726, 0.12, 0.2, 0.12, x + 0.06, 0.58, z);
+}
+
+function fortArch(add: Add, gate: OrcGate) {
+  const timber = 6964012;
+  const cap = 3948594;
+  const x = gate.x + 1.5;
+  for (const sign of [-1, 1] as const) {
+    add(timber, 0.62, 5.5, 0.62, x, 2.75, gate.z + sign * 3.55);
+    add(cap, 0.8, 0.26, 0.8, x, 5.5, gate.z + sign * 3.55);
+  }
+  add(timber, 0.48, 0.52, 7.8, x, 5.1, gate.z);
+  add(cap, 0.7, 0.2, 8.4, x, 5.45, gate.z);
+}
+
+function fungi(add: Add, x: number, z: number) {
+  add(3948594, 0.7, 0.1, 0.5, x, 0.06, z);
+  add(8257446, 0.4, 0.26, 0.4, x, 0.22, z);
+  add(14217156, 0.18, 0.16, 0.18, x + 0.22, 0.16, z + 0.1);
+  add(9133055, 0.16, 0.22, 0.16, x - 0.16, 0.18, z - 0.08);
+}
+
+function bedroll(add: Add, x: number, z: number) {
+  add(6964012, 1.55, 0.1, 0.68, x, 0.07, z);
+  add(ORC_RED, 0.34, 0.14, 0.52, x - 0.52, 0.14, z);
+}
+
+function crate(add: Add, x: number, z: number) {
+  add(8020548, 0.82, 0.66, 0.72, x, 0.33, z);
+  add(6964012, 0.86, 0.08, 0.08, x, 0.52, z);
+}
+
+function stairMark(add: Add) {
+  const span = y2Neck.maxZ - y2Neck.minZ;
+  const steps = 5;
+  const cx = mid(y2Neck).x;
+  const width = Math.min(8.5, (y2Neck.maxX - y2Neck.minX) * 0.7);
+  for (let i = 0; i < steps; i++) {
+    const z = y2Neck.minZ + ((i + 0.5) / steps) * span;
+    add(8020548, width, 0.08, (span / steps) * 0.62, cx, 0.05 + i * 0.035, z);
+  }
+  add(3948594, 0.22, 0.32, span * 0.82, y2Neck.minX + 0.45, 0.18, mid(y2Neck).z);
+  add(3948594, 0.22, 0.32, span * 0.82, y2Neck.maxX - 0.45, 0.18, mid(y2Neck).z);
+}
+
+export function buildOrcLands(add: Add, colliders: Solid[], fade?: Add) {
   const dirt = 9269316;
   const dirtDark = 7033908;
-  const cave = 5918792;
+  const cave = 4073524;
   const rock = 6050130;
   const rockDark = 3948594;
   const timber = 6964012;
@@ -1001,7 +1194,7 @@ export function buildOrcLands(add: Add, colliders: Solid[]) {
   const fortGates = ORC_GATES.filter((gate) => hit(FORT_ROOMS, gate.x, gate.z, 0));
   const yugGates = ORC_GATES.filter((gate) => hit(YUG_ROOMS, gate.x, gate.z, 0));
   const peakGates = ORC_GATES.filter((gate) => hit(PEAK_ROOMS, gate.x, gate.z, 0));
-  cliffWall(add, colliders, OUT_ROOMS, outGates, "rock");
+  cliffWall(add, colliders, OUT_ROOMS, outGates, "canyon", fade);
   cliffWall(add, colliders, FORT_ROOMS, fortGates, "timber");
   cliffWall(add, colliders, YUG_ROOMS, yugGates, "cave");
   cliffWall(add, colliders, PEAK_ROOMS, peakGates, "rock");
@@ -1058,17 +1251,46 @@ export function buildOrcLands(add: Add, colliders: Solid[]) {
   boulder(add, colliders, mid(oF7).x - 8, mid(oF7).z - 5);
   boulder(add, colliders, mid(oH10).x + 6, mid(oH10).z - 4);
   boulder(add, colliders, mid(oG9).x - 6, mid(oG9).z + 4);
+  for (const spot of orcTowers()) watchtower(add, colliders, spot.x, spot.z);
+  palisadeRun(add, oF7, "w");
+  palisadeRun(add, oK9, "e");
+  palisadeRun(add, oF5, "n");
+  palisadeRun(add, oJ6, "n");
+  if (propClear(camp.x - 4.2, camp.z + 0.6, 3.2)) drum(add, camp.x - 4.2, camp.z + 0.6);
+  if (propClear(camp.x + 4.6, camp.z - 1.2, 3.2)) weaponRack(add, camp.x + 4.6, camp.z - 1.2);
+  if (propClear(camp.x - 0.8, camp.z - 4.4, 3.2)) skullPole(add, camp.x - 0.8, camp.z - 4.4);
+  for (const fire of ORC_FIRES) if (fire.zone === "ghelsba") campfire(add, fire.x, fire.z);
   const siege = mid(fI10);
   catapult(add, colliders, siege.x, siege.z - 4);
   ram(add, colliders, mid(fG8).x, mid(fG8).z + 5);
   banner(add, mid(fH8).x, mid(fH8).z - 5);
   banner(add, mid(fE8).x + 6, mid(fE8).z - 4);
   banner(add, mid(fJ8).x - 6, mid(fJ8).z);
+  for (const rect of [fF8, fG8, fH8, fI8]) banner(add, mid(rect).x, mid(rect).z + 4.4);
+  const fortDoor = ORC_GATES.find((gate) => gate.id === "fort-out");
+  if (fortDoor) fortArch(add, fortDoor);
+  for (const fire of ORC_FIRES) if (fire.zone === "fort-ghelsba") campfire(add, fire.x, fire.z);
+  if (propClear(mid(fG6).x - 3.2, mid(fG6).z - 1.4, 3)) {
+    drum(add, mid(fG6).x - 3.2, mid(fG6).z - 1.4);
+    weaponRack(add, mid(fG6).x + 2.8, mid(fG6).z - 1.6);
+  }
   torch(add, mid(fE8).x + 5, mid(fE8).z + 6);
   box(add, colliders, timber, 2.4, 0.7, 1.1, mid(fG6).x, 0.35, mid(fG6).z);
   lip(add, colliders, pool, "w");
   mountWallTorches(add);
   for (const rect of [yG8, y2J6, yE9, yH7]) cornerRocks(add, colliders, rect);
+  for (const rect of [yF7, yH7, yG8, yH8, yE9, y2K5, y2K6, y2J9]) {
+    const bx = rect.minX + 2.7;
+    const bz = rect.minZ + 2.5;
+    if (propClear(bx, bz, 4) && hit([rect], bx, bz, 0.4)) {
+      bedroll(add, bx, bz);
+      crate(add, bx + 1.25, bz + 0.15);
+    }
+    const fx = rect.maxX - 2.5;
+    const fz = rect.maxZ - 2.4;
+    if (propClear(fx, fz, 4) && hit([rect], fx, fz, 0.4)) fungi(add, fx, fz);
+  }
+  stairMark(add);
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     const x = PEAK_X + Math.cos(a) * 8;
@@ -1285,4 +1507,24 @@ export function assertGhelsba(): void {
     if (gate.id !== "ghelsba-ron" && blocked(gate.arrive.x, gate.arrive.z)) throw new Error(`${gate.id} arrival is inside a prop`);
   }
   if (blocked(RON_TO_GHELSBA.x, RON_TO_GHELSBA.z)) throw new Error("outpost landing is inside a prop");
+  const towers = orcTowers();
+  if (towers.length < 2 || towers.length > 3) throw new Error(`watchtowers ${towers.length}`);
+  const post = 1.15;
+  for (const spot of towers) {
+    if (hit(OUT_ROOMS, spot.x, spot.z, 0)) throw new Error("watchtower on the floor");
+    for (const [dx, dz] of [[-post, -post], [post, -post], [-post, post], [post, post]] as const) {
+      if (hit(OUT_ROOMS, spot.x + dx, spot.z + dz, -0.2)) throw new Error("watchtower post on the floor");
+    }
+  }
+  const firesIn = (zone: string) => ORC_FIRES.filter((fire) => fire.zone === zone).length;
+  if (firesIn("ghelsba") < 1 || firesIn("fort-ghelsba") < 1) throw new Error("camp fires missing");
+  if (firesIn("ghelsba") > 6 || firesIn("fort-ghelsba") > 6 || firesIn("yughott") > 0) throw new Error("camp fire cap");
+  const walks = [
+    mid(oH7), mid(oH8), mid(oI8), mid(oJ11), mid(oG6), mid(oF7), mid(oF10),
+    mid(fE8), mid(fG8), mid(fI8),
+    mid(yE9), mid(yF7), mid(yH8), mid(y2J6), mid(y2Neck), mid(y2K5),
+  ];
+  for (const step of walks) {
+    if (blocked(step.x, step.z)) throw new Error("a walk path grew a collider");
+  }
 }
