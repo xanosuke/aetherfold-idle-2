@@ -19,6 +19,8 @@ const probe = spawnSync(
     `
       import { assertPass, sealedGateSpots, passSquare, inPass } from "./src/game/pass.ts";
       import { PASS_GRAPH, gridToWorld, PASS_CELL } from "./src/game/pass-graph.ts";
+      import { assertWestGrid } from "./src/game/world.ts";
+      assertWestGrid();
       assertPass();
       const poi = PASS_GRAPH.pois.find((item) => item.id === "nm_taisaijin");
       const h9 = gridToWorld(poi.gx, poi.gy);

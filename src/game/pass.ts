@@ -10,6 +10,7 @@
 import { EAST_MOUTH } from "./east-ronfaure";
 import { GLACIER_ARRIVE, inGlacier } from "./glacier";
 import { PASS_CELL, PASS_DISCS, PASS_GRAPH, PASS_WIDTH, PASS_X, PASS_Z, buildPassMask, clampPassGraph, gridToWorld, inPassGraph, passClearance } from "./pass-graph";
+import { squareOf, ZONE_GRIDS } from "./zone-grid";
 
 export { PASS_CELL };
 
@@ -278,10 +279,9 @@ export function clampPass(x: number, z: number, radius = 0): { x: number; z: num
 }
 
 export function passSquare(x: number, z: number): string {
-  const col = Math.floor((x - PASS_X) / PASS_CELL);
-  const row = Math.floor((z - PASS_Z) / PASS_CELL);
-  const letter = "ABCDEFGHIJKLMNO"[col] ?? "?";
-  return `${letter}-${row + 1}`;
+  const grid = ZONE_GRIDS.find((g) => g.zone === "ranguemont");
+  if (!grid) return "?";
+  return squareOf(grid, x, z);
 }
 
 function poiName(id: string, label: string): string {
@@ -593,6 +593,10 @@ function logPassGraph(): void {
 
 export function assertPass(): void {
   if (PASS_CELL !== 48) throw new Error("pass cell");
+  const grid = ZONE_GRIDS.find((g) => g.zone === "ranguemont");
+  if (!grid || grid.x0 !== PASS_X || grid.z0 !== PASS_Z || grid.cell !== PASS_CELL || grid.cols !== 15 || grid.rows !== 15) {
+    throw new Error("pass grid");
+  }
   if (passSquare(PASS_ARRIVE.x, PASS_ARRIVE.z) !== "G-12") throw new Error("arrival square");
   if (passSquare(glacierStand.x, glacierStand.z) !== "L-4") throw new Error("glacier stand");
   if (passSquare(PASS_FROM_GLACIER.x, PASS_FROM_GLACIER.z) !== "L-4") throw new Error("glacier return square");

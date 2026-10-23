@@ -10,6 +10,8 @@ import { assertEast, clampEast, EAST_MOUTH, EAST_SIZE, EAST_STAND, EAST_X0, EAST
 import { assertTomb, clampTomb, inTomb, TOMB_FOYER, TOMB_GATES, type TombGate } from "./tomb";
 import { assertPass, clampPass, inPass, PASS_ARRIVE, PASS_FROM_GLACIER, PASS_GATES, type PassGate } from "./pass";
 import { assertGlacier, clampGlacier, glacierChart, GLACIER_ARRIVE, GLACIER_GATES, inGlacier, type GlacierGate } from "./glacier";
+import { assertWorldLinks } from "./world-links";
+import { squareCenter, squareOf, ZONE_GRIDS } from "./zone-grid";
 
 /** How far the old training fence sat from the yard center. The south gate still uses it. */
 export const PEN_EDGE = 8.55;
@@ -735,6 +737,7 @@ export function regionName(x: number, z: number): string {
 }
 
 function assertWorld(): void {
+  assertWestGrid();
   if (FOREST_HALF * 2 < 18.6 * Math.sqrt(10) - 0.05) throw new Error("forest is not 10x the pen");
   if (RON_SIZE !== 576) throw new Error("west ronfaure is 576 yalms");
   if (!inWorld(0, 0)) throw new Error("pen center");
@@ -936,6 +939,23 @@ function assertWorld(): void {
   if (!on(NORTH_LANE, -39.4, -328) || !on(NORTH_LANE, -32, -328) || !on(NORTH_LANE, 8, -332)) throw new Error("lane misses the landing or the chateau door");
   if (!on(PORT_QUAY, -8, -386) || !on(PORT_QUAY, 2, -446)) throw new Error("quay misses the dock");
   if (on(CHATEAU_FOOT, 8, -332)) throw new Error("chateau covers its own door");
+  assertWorldLinks();
+}
+
+export function assertWestGrid(): void {
+  const south = ZONE_GRIDS.find((g) => g.zone === "ronfaure-south");
+  const north = ZONE_GRIDS.find((g) => g.zone === "ronfaure-north");
+  if (!south || !north) throw new Error("west grid");
+  if (south.x0 !== RON_X0 || south.z0 !== RON_Z0 || south.cell !== RON_CELL || south.cols !== 12 || south.rows !== 12) throw new Error("west grid");
+  if (north.x0 !== south.x0 || north.z0 !== south.z0 || north.cell !== south.cell || north.cols !== south.cols || north.rows !== south.rows) {
+    throw new Error("north grid");
+  }
+  if (squareOf(south, RON_MARKS.southGate.x, RON_MARKS.southGate.z) !== "I-6") throw new Error("I-6");
+  if (squareOf(south, RON_MARKS.northGate.x, RON_MARKS.northGate.z) !== "I-5") throw new Error("I-5");
+  const c7 = squareCenter(south, "C-7");
+  if (!c7 || squareOf(south, c7.x, c7.z) !== "C-7") throw new Error("C-7");
+  const back = squareCenter(south, "I-6");
+  if (!back || Math.abs(back.x - RON_MARKS.southGate.x) > 0.01 || Math.abs(back.z - RON_MARKS.southGate.z) > 0.01) throw new Error("I-6 center");
 }
 
 try {

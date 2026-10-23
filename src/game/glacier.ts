@@ -11,6 +11,8 @@
  * Nothing here hunts. The other zone lines stay shut.
  */
 
+import { squareOf, ZONE_GRIDS } from "./zone-grid";
+
 export const GLACIER_CELL = 48;
 /** West edge of column A. E-11 starts just east of the pass mouth. */
 export const GLACIER_X = 400;
@@ -229,10 +231,9 @@ export function clampGlacier(x: number, z: number, radius = 0): { x: number; z: 
 }
 
 export function glacierSquare(x: number, z: number): string {
-  const col = Math.floor((x - GLACIER_X) / GLACIER_CELL);
-  const row = Math.floor((z - GLACIER_Z) / GLACIER_CELL);
-  const letter = "ABCDEFGHIJKLMNO"[col] ?? "?";
-  return `${letter}-${row + 1}`;
+  const grid = ZONE_GRIDS.find((g) => g.zone === "beaucedine");
+  if (!grid) return "?";
+  return squareOf(grid, x, z);
 }
 
 export function glacierChart(_x: number, _z: number) {
@@ -292,6 +293,10 @@ function onGate(gate: GlacierGate, x: number, z: number): boolean {
 
 export function assertGlacier(): void {
   if (GLACIER_CELL !== 48) throw new Error("glacier cell");
+  const grid = ZONE_GRIDS.find((g) => g.zone === "beaucedine");
+  if (!grid || grid.x0 !== GLACIER_X || grid.z0 !== GLACIER_Z || grid.cell !== GLACIER_CELL || grid.cols !== 15 || grid.rows !== 15) {
+    throw new Error("glacier grid");
+  }
   const squareOf = (rect: GlacierRect) => glacierSquare(mid(rect).x, mid(rect).z);
   const expect: [GlacierRect, string][] = [
     [e11, "E-11"],

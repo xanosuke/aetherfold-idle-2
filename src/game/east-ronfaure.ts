@@ -11,6 +11,8 @@
  * two fords cross it. The hunting camps stand on the banks and in the trees.
  */
 
+import { squareOf, ZONE_GRIDS } from "./zone-grid";
+
 export const EAST_CELL = 48;
 export const EAST_X0 = 360;
 export const EAST_Z0 = 220;
@@ -88,8 +90,14 @@ function at(col: number, row: number): { x: number; z: number } {
 }
 
 export function eastSquare(col: number, row: number): string {
-  const letter = "ABCDEFGHIJKL"[Math.floor(col)] ?? "?";
-  return `${letter}-${Math.floor(row) + 1}`;
+  const c = Math.floor(col);
+  const r = Math.floor(row);
+  const grid = ZONE_GRIDS.find((g) => g.zone === "east-ronfaure");
+  if (!grid || c < 0 || r < 0 || c >= grid.cols || r >= grid.rows) {
+    const letter = "ABCDEFGHIJKL"[c] ?? "?";
+    return `${letter}-${r + 1}`;
+  }
+  return squareOf(grid, grid.x0 + (c + 0.5) * grid.cell, grid.z0 + (r + 0.5) * grid.cell);
 }
 
 function box(col0: number, row0: number, col1: number, row1: number): Span {
@@ -437,6 +445,10 @@ function blocked(x: number, z: number): boolean {
 }
 
 export function assertEast(): void {
+  const grid = ZONE_GRIDS.find((g) => g.zone === "east-ronfaure");
+  if (!grid || grid.x0 !== EAST_X0 || grid.z0 !== EAST_Z0 || grid.cell !== EAST_CELL || grid.cols !== 12 || grid.rows !== 12) {
+    throw new Error("east grid");
+  }
   const square = (col: number, row: number) => eastSquare(col, row);
   const colOf = (x: number) => (x - EAST_X0) / EAST_CELL;
   const rowOf = (z: number) => (z - EAST_Z0) / EAST_CELL;

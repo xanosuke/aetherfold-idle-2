@@ -18,3 +18,10 @@ ZONE LAYOUT RULES (Aetherfold Idle 2)
   with a message starting with the step name (e.g. "Step 7b: ...") and push to the main
   branch of https://github.com/xanosuke/aetherfold-idle-2. Never push if a check fails.
   End your reply with the commit SHA.
+
+ZONE RULES (all zones)
+- STRICT: every zone line must sit in the retail map square on BOTH sides and lead to the right neighbour. The source of truth is src/game/world-links.ts (WORLD_LINKS). Never move a gate without updating that table, and never edit the table to make a wrong gate pass.
+- LOOSE: layouts don't have to be 1:1 with retail. Keep each zone's rough shape, major landmarks and character (forest, orc canyon, crypt, glacier). Don't redraw a zone's coast polygon or rooms unless a step asks.
+- Squares come from src/game/zone-grid.ts (ZONE_GRIDS / squareOf). Don't hand-roll "ABCDEFGHIJKL"[...] in zone files.
+- After every step, assertWorldLinks() must pass along with the existing checks (once Step A2 starts fixing exits).
+

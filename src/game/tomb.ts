@@ -12,6 +12,7 @@
  */
 
 import { EAST_MOUTH } from "./east-ronfaure";
+import { squareOf, ZONE_GRIDS, type ZoneGrid } from "./zone-grid";
 
 export const TOMB_CELL = 48;
 
@@ -307,12 +308,13 @@ export function clampTomb(x: number, z: number, radius = 0): { x: number; z: num
 
 export function tombSquare(x: number, z: number): string {
   const floor = FLOORS.find((row) => hit(row.rects, x, z, 0));
-  const ox = floor?.ox ?? M1X;
-  const oz = floor?.oz ?? M1Z;
-  const col = Math.floor((x - ox) / TOMB_CELL);
-  const row = Math.floor((z - oz) / TOMB_CELL);
-  const letter = "ABCDEFGHIJKLMNO"[col] ?? "?";
-  return `${letter}-${row + 1}`;
+  const map = floor?.id === "tomb-2" ? 2 : floor?.id === "tomb-3" ? 3 : 1;
+  const grid = ZONE_GRIDS.find((g) => g.zone === "ranperre" && g.map === map);
+  const ox = floor?.ox ?? grid?.x0 ?? M1X;
+  const oz = floor?.oz ?? grid?.z0 ?? M1Z;
+  if (!grid) return "?";
+  const aligned: ZoneGrid = { ...grid, x0: ox, z0: oz, cell: TOMB_CELL };
+  return squareOf(aligned, x, z);
 }
 
 export function tombChart(x: number, z: number) {
@@ -383,6 +385,16 @@ function standClear(stand: { x: number; z: number }, gate: { x: number; z: numbe
 
 export function assertTomb(): void {
   if (TOMB_CELL !== 48) throw new Error("tomb cell");
+  for (const [map, x0, z0] of [
+    [1, M1X, M1Z],
+    [2, M2X, M2Z],
+    [3, M3X, M3Z],
+  ] as const) {
+    const grid = ZONE_GRIDS.find((g) => g.zone === "ranperre" && g.map === map);
+    if (!grid || grid.x0 !== x0 || grid.z0 !== z0 || grid.cell !== TOMB_CELL || grid.cols !== 15 || grid.rows !== 15) {
+      throw new Error(`tomb map ${map} grid`);
+    }
+  }
   if (!inTomb(foyerStand.x, foyerStand.z, 0.36)) throw new Error("foyer stand");
   if (tombSquare(mid(foyer).x, mid(foyer).z) !== "G-5") throw new Error("entrance square");
   if (tombSquare(mid(exitRoom).x, mid(exitRoom).z) !== "I-5") throw new Error("one-way square");

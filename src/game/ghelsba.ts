@@ -10,6 +10,8 @@
  * fits in each lobe without standing on a gate. Horlais Peak is unchanged.
  */
 
+import { squareOf, ZONE_GRIDS } from "./zone-grid";
+
 export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 export type OrcGate = {
@@ -424,6 +426,34 @@ export function grottoCell(col: number, row: number): { x: number; z: number } {
   return cell(YUG_X, YUG_Z, col, row);
 }
 
+function zoneGrid(zone: string) {
+  const grid = ZONE_GRIDS.find((g) => g.zone === zone);
+  if (!grid) throw new Error(`${zone} grid`);
+  return grid;
+}
+
+export function ghelsbaSquare(x: number, z: number): string {
+  return squareOf(zoneGrid("ghelsba"), x, z);
+}
+
+export function fortSquare(x: number, z: number): string {
+  return squareOf(zoneGrid("fort-ghelsba"), x, z);
+}
+
+export function yughottSquare(x: number, z: number): string {
+  return squareOf(zoneGrid("yughott"), x, z);
+}
+
+/** Map 1 is the retail grid. Map 2 is the offset rooms south of I-9, which have no grid. */
+export function grottoMap(x: number, z: number): 1 | 2 | null {
+  const map1 = hit([yE9, yF9, yG8, yF7, yH7, yI9, yI6], x, z, 0);
+  const map2 = hit([y2J6, y2K5, y2K6, y2J9], x, z, 0) || (hit([y2Neck], x, z, 0) && !map1);
+  if (map2 && !map1) return 2;
+  if (map1) return 1;
+  if (hit(YUG_ROOMS, x, z, 0)) return 2;
+  return null;
+}
+
 /** Map 2 has no grid origin. These are the hall and the three mouths off it. */
 export function grottoHall(): { x: number; z: number } {
   return mid(y2J6);
@@ -531,7 +561,14 @@ export function orcLayout(region: string): OrcChart | null {
     marks.push({ x: (pond.minX + pond.maxX) / 2, z: (pond.minZ + pond.maxZ) / 2, name: "Pond" });
   }
   if (region === "Horlais Peak") marks.push({ x: PEAK_X, z: PEAK_Z, name: "Burning Circle" });
-  const grid = region === "Ghelsba Outpost" ? { x0: OUT_X, z0: OUT_Z, cell: CELL } : region === "Fort Ghelsba" ? { x0: FORT_X, z0: FORT_Z, cell: CELL } : null;
+  const outGrid = ZONE_GRIDS.find((g) => g.zone === "ghelsba");
+  const fortGrid = ZONE_GRIDS.find((g) => g.zone === "fort-ghelsba");
+  const grid =
+    region === "Ghelsba Outpost" && outGrid
+      ? { x0: outGrid.x0, z0: outGrid.z0, cell: outGrid.cell }
+      : region === "Fort Ghelsba" && fortGrid
+        ? { x0: fortGrid.x0, z0: fortGrid.z0, cell: fortGrid.cell }
+        : null;
   return {
     rects: zone.rects,
     water: ORC_WATER.filter((row) => hit(zone.rects, (row.rect.minX + row.rect.maxX) / 2, (row.rect.minZ + row.rect.maxZ) / 2, 0)).map((row) => row.rect),
@@ -1030,6 +1067,19 @@ function component(rects: Rect[]) {
 }
 
 export function assertGhelsba(): void {
+  const expectGrid = (zone: string, x0: number, z0: number) => {
+    const grid = ZONE_GRIDS.find((g) => g.zone === zone);
+    if (!grid || grid.x0 !== x0 || grid.z0 !== z0 || grid.cell !== CELL || grid.cols !== 12 || grid.rows !== 12) throw new Error(`${zone} grid`);
+  };
+  expectGrid("ghelsba", OUT_X, OUT_Z);
+  expectGrid("fort-ghelsba", FORT_X, FORT_Z);
+  expectGrid("yughott", YUG_X, YUG_Z);
+  if (ghelsbaSquare(cell(OUT_X, OUT_Z, 8, 7).x, cell(OUT_X, OUT_Z, 8, 7).z) !== "I-8") throw new Error("outpost I-8");
+  if (ghelsbaSquare(cell(OUT_X, OUT_Z, 9, 10).x, cell(OUT_X, OUT_Z, 9, 10).z) !== "J-11") throw new Error("outpost J-11");
+  if (fortSquare(cell(FORT_X, FORT_Z, 4, 7).x, cell(FORT_X, FORT_Z, 4, 7).z) !== "E-8") throw new Error("fort E-8");
+  if (yughottSquare(cell(YUG_X, YUG_Z, 4, 8).x, cell(YUG_X, YUG_Z, 4, 8).z) !== "E-9") throw new Error("yughott E-9");
+  if (grottoMap(cell(YUG_X, YUG_Z, 4, 8).x, cell(YUG_X, YUG_Z, 4, 8).z) !== 1) throw new Error("yughott map 1");
+  if (grottoMap(mid(y2K5).x, mid(y2K5).z) !== 2 || grottoMap(mid(y2J9).x, mid(y2J9).z) !== 2) throw new Error("yughott map 2");
   if (!component(OUT_ROOMS) || !component(FORT_ROOMS) || !component(YUG_ROOMS) || !component(PEAK_ROOMS)) throw new Error("a ghelsba zone is split");
   const spot = (rects: Rect[], ox: number, oz: number, col: number, row: number, label: string) => {
     const c = cell(ox, oz, col, row);
