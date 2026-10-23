@@ -2,15 +2,15 @@
  * Ghelsba Outpost and the three zones that open off it.
  * Retail grids: columns A–L are 0–11, rows 1–12 are 0–11, north is -Z.
  * Connections follow the retail maps, not a square dungeon:
- *   Ghelsba Outpost — West Ronfaure J-11, Fort Ghelsba H-8, Yughott Grotto H-11, Hut Door F-10
+ *   Ghelsba Outpost — West Ronfaure J-11, Fort Ghelsba H-8, Yughott Grotto I-11, Hut Door F-10
  *   Fort Ghelsba — Outpost E-8, Yughott G-9 / J-7 / J-8
- *   Yughott Grotto — Outpost E-9, Fort F-7 / H-7 / K-5, Horlais Peak J-9 / K-6
+ *   Yughott Grotto — Outpost E-9, Fort H-8 / F-7 / K-5, Horlais Peak J-9 / K-6
  *   Horlais Peak — the two grotto mouths, the hot spring, and the Burning Circle
  * The three dens are drawn larger than the first pass so a retail camp
  * fits in each lobe without standing on a gate. Horlais Peak is unchanged.
  */
 
-import { squareOf, ZONE_GRIDS } from "./zone-grid";
+import { gridAt, registerZoneMap, squareOf, ZONE_GRIDS } from "./zone-grid";
 
 export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
@@ -247,23 +247,28 @@ const yF9 = room(YUG_X, YUG_Z, 5, 8, 14, 14);
 const yG8 = room(YUG_X, YUG_Z, 6, 7, 22, 20);
 const yF7 = room(YUG_X, YUG_Z, 5, 6, 18, 26);
 const yH7 = room(YUG_X, YUG_Z, 7, 6, 26, 22);
+const yH8 = room(YUG_X, YUG_Z, 7, 7, 16, 16);
 const yI9 = room(YUG_X, YUG_Z, 8, 9, 28, 22);
 const yI6 = room(YUG_X, YUG_Z, 8, 6, 28, 28, 6, 0);
-// Map 2 sits south of the pool. Retail K-5 / J-6 / J-9 / K-6, joined by one hall because the engine has no elevation.
-const y2Neck: Rect = { minX: mid(yI9).x - u(5), maxX: mid(yI9).x + u(5), minZ: yI9.maxZ - u(6), maxZ: yI9.maxZ + u(34) };
-const y2J6: Rect = { minX: mid(y2Neck).x - u(26), maxX: mid(y2Neck).x + u(26), minZ: y2Neck.maxZ - u(8), maxZ: y2Neck.maxZ + u(34) };
-const y2K5: Rect = { minX: y2J6.maxX - u(2), maxX: y2J6.maxX + u(26), minZ: y2J6.minZ - u(32), maxZ: y2J6.minZ + u(2) };
-const y2K6: Rect = { minX: y2J6.maxX - u(2), maxX: y2J6.maxX + u(30), minZ: y2J6.maxZ - u(22), maxZ: y2J6.maxZ + u(8) };
-const y2J9: Rect = { minX: mid(y2J6).x - u(12), maxX: mid(y2J6).x + u(12), minZ: y2J6.maxZ - u(2), maxZ: y2J6.maxZ + u(30) };
+// Map 2 has its own retail origin. The short hall south of I-9 is the stair; there is no elevation.
+const Y2_X = -1040 - 32 * 2.05;
+const Y2_Z = 217.25 + 4 * 32 * 2.05;
+const y2J6 = room(Y2_X, Y2_Z, 9, 5, 30, 28);
+const y2K5 = room(Y2_X, Y2_Z, 10, 4, 22, 22);
+const y2K6 = room(Y2_X, Y2_Z, 10, 5, 24, 20);
+const y2J9 = room(Y2_X, Y2_Z, 9, 8, 18, 22);
+const y2Neck: Rect = { minX: mid(yI9).x - u(5), maxX: mid(yI9).x + u(5), minZ: yI9.maxZ - u(4), maxZ: y2J6.minZ + u(6) };
 
 const YUG_ROOMS: Rect[] = weld(
-  [yE9, yF9, yG8, yF7, yH7, yI9, yI6, y2Neck, y2J6, y2K5, y2K6, y2J9],
+  [yE9, yF9, yG8, yF7, yH7, yH8, yI9, yI6, y2Neck, y2J6, y2K5, y2K6, y2J9],
   [
     [yE9, yF9, 10],
     [yF9, yG8, 10],
     [yF9, yF7, 9],
     [yG8, yH7, 10],
+    [yG8, yH8, 8],
     [yG8, yI9, 10],
+    [yH7, yH8, 8],
     [yH7, yI6, 9],
     [y2J6, y2K5, 10],
     [y2J6, y2K6, 10],
@@ -305,33 +310,44 @@ function standIn(rect: Rect, gateSide: OrcGate["side"]) {
 const fortFromOut = standIn(fE8, "w");
 const outFromFort = standIn(oI8, "e");
 const yugFromOut = standIn(yE9, "w");
-const outFromYug = standIn(oH11, "w");
-const yugFromFortG9 = standIn(yF7, "n");
-const yugFromFortJ7 = standIn(yH7, "e");
-const yugFromFortJ8 = standIn(y2K5, "n");
-const fortFromYugF7 = standIn(fG9, "s");
-const fortFromYugH7 = standIn(fJ7, "e");
-const fortFromYugK5 = standIn(fJ8, "e");
+const outFromYug = standIn(oI11, "s");
+const yugFromFortG9 = standIn(yH8, "s");
+const yugFromFortJ7 = standIn(y2K5, "n");
+const yugFromFortJ8 = standIn(yF7, "n");
+const fortFromYugH8 = standIn(fG9, "s");
+const fortFromYugK5 = standIn(fJ7, "e");
+const fortFromYugF7 = standIn(fJ8, "e");
 const peakFromJ9 = standIn(mouthL, "s");
 const peakFromK6 = standIn(mouthR, "s");
 const yugFromPeakL = standIn(y2J9, "s");
 const yugFromPeakR = standIn(y2K6, "e");
 
-export const RON_TO_GHELSBA = { x: mid(oJ11).x, z: oJ11.maxZ - 14, yaw: 0, log: "Ghelsba Outpost." };
+export const RON_TO_GHELSBA = { x: mid(oJ11).x, z: OUT_Z + 11 * CELL - 22, yaw: 0, log: "Ghelsba Outpost." };
 // West Ronfaure E-4. cellX(4.37), cellZ(3.285), then 14 yalms south so the stand is off the mouth.
 const RON_FROM_GHELSBA = { x: -78.24, z: 391.68, yaw: 0, log: "West Ronfaure." };
+const RON_MOUTH_Z = OUT_Z + 11 * CELL - 6;
 
 export const ORC_GATES: readonly OrcGate[] = [
-  mouth(oJ11, "s", "West Ronfaure", "ghelsba-ron", "ronfaure-south", "West Ronfaure.", RON_FROM_GHELSBA),
+  {
+    id: "ghelsba-ron",
+    name: "West Ronfaure",
+    x: mid(oJ11).x,
+    z: RON_MOUTH_Z,
+    hx: 5.2,
+    hz: 2.4,
+    to: "ronfaure-south",
+    side: "s",
+    arrive: { x: RON_FROM_GHELSBA.x, z: RON_FROM_GHELSBA.z, yaw: 0, log: RON_FROM_GHELSBA.log },
+  },
   mouth(oI8, "e", "Fort Ghelsba", "ghelsba-fort", "fort-ghelsba", "Fort Ghelsba.", fortFromOut),
-  mouth(oH11, "w", "Yughott Grotto", "ghelsba-yughott", "yughott", "Yughott Grotto.", yugFromOut),
+  mouth(oI11, "s", "Yughott Grotto", "ghelsba-yughott", "yughott", "Yughott Grotto.", yugFromOut),
   mouth(fE8, "w", "Ghelsba Outpost", "fort-out", "ghelsba", "Ghelsba Outpost.", outFromFort),
   mouth(fG9, "s", "Yughott Grotto", "fort-yug-g9", "yughott", "Yughott Grotto.", yugFromFortG9),
   mouth(fJ7, "e", "Yughott Grotto", "fort-yug-j7", "yughott", "Yughott Grotto.", yugFromFortJ7),
   mouth(fJ8, "e", "Yughott Grotto", "fort-yug-j8", "yughott", "Yughott Grotto.", yugFromFortJ8),
   mouth(yE9, "w", "Ghelsba Outpost", "yug-out", "ghelsba", "Ghelsba Outpost.", outFromYug),
+  mouth(yH8, "s", "Fort Ghelsba", "yug-fort-h8", "fort-ghelsba", "Fort Ghelsba.", fortFromYugH8),
   mouth(yF7, "n", "Fort Ghelsba", "yug-fort-f7", "fort-ghelsba", "Fort Ghelsba.", fortFromYugF7),
-  mouth(yH7, "e", "Fort Ghelsba", "yug-fort-h7", "fort-ghelsba", "Fort Ghelsba.", fortFromYugH7),
   mouth(y2K5, "n", "Fort Ghelsba", "yug-fort-k5", "fort-ghelsba", "Fort Ghelsba.", fortFromYugK5),
   mouth(y2J9, "s", "Horlais Peak", "yug-horlais-j9", "horlais", "Horlais Peak.", peakFromJ9),
   mouth(y2K6, "e", "Horlais Peak", "yug-horlais-k6", "horlais", "Horlais Peak.", peakFromK6),
@@ -441,20 +457,35 @@ export function fortSquare(x: number, z: number): string {
 }
 
 export function yughottSquare(x: number, z: number): string {
-  return squareOf(zoneGrid("yughott"), x, z);
+  const grid = gridAt("yughott", x, z);
+  return grid ? squareOf(grid, x, z) : "?";
 }
 
-/** Map 1 is the retail grid. Map 2 is the offset rooms south of I-9, which have no grid. */
+/** Map 1 is the retail upper grotto. Map 2 is the lower grid; the neck is the stair. */
 export function grottoMap(x: number, z: number): 1 | 2 | null {
-  const map1 = hit([yE9, yF9, yG8, yF7, yH7, yI9, yI6], x, z, 0);
-  const map2 = hit([y2J6, y2K5, y2K6, y2J9], x, z, 0) || (hit([y2Neck], x, z, 0) && !map1);
+  const map1Rooms = [yE9, yF9, yG8, yF7, yH7, yH8, yI9, yI6];
+  const map2Rooms = [y2J6, y2K5, y2K6, y2J9];
+  const map1 = hit(map1Rooms, x, z, 0);
+  const map2 = hit(map2Rooms, x, z, 0) || (hit([y2Neck], x, z, 0) && !map1);
   if (map2 && !map1) return 2;
   if (map1) return 1;
-  if (hit(YUG_ROOMS, x, z, 0)) return 2;
-  return null;
+  if (!hit(YUG_ROOMS, x, z, 0)) return null;
+  const nearest = (rooms: Rect[]) => {
+    let best = Infinity;
+    for (const rect of rooms) {
+      const cx = Math.max(rect.minX, Math.min(rect.maxX, x));
+      const cz = Math.max(rect.minZ, Math.min(rect.maxZ, z));
+      const dist = Math.hypot(x - cx, z - cz);
+      if (dist < best) best = dist;
+    }
+    return best;
+  };
+  return nearest([...map2Rooms, y2Neck]) < nearest(map1Rooms) ? 2 : 1;
 }
 
-/** Map 2 has no grid origin. These are the hall and the three mouths off it. */
+registerZoneMap((zone, x, z) => (zone === "yughott" ? grottoMap(x, z) : null));
+
+/** J-6, the map 2 hall just south of I-9. */
 export function grottoHall(): { x: number; z: number } {
   return mid(y2J6);
 }
@@ -1068,18 +1099,27 @@ function component(rects: Rect[]) {
 
 export function assertGhelsba(): void {
   const expectGrid = (zone: string, x0: number, z0: number) => {
-    const grid = ZONE_GRIDS.find((g) => g.zone === zone);
+    const grid = ZONE_GRIDS.find((g) => g.zone === zone && (g.map ?? 1) === 1);
     if (!grid || grid.x0 !== x0 || grid.z0 !== z0 || grid.cell !== CELL || grid.cols !== 12 || grid.rows !== 12) throw new Error(`${zone} grid`);
   };
   expectGrid("ghelsba", OUT_X, OUT_Z);
   expectGrid("fort-ghelsba", FORT_X, FORT_Z);
   expectGrid("yughott", YUG_X, YUG_Z);
+  const yug2 = ZONE_GRIDS.find((g) => g.zone === "yughott" && g.map === 2);
+  if (!yug2 || yug2.x0 !== Y2_X || yug2.z0 !== Y2_Z || yug2.cell !== CELL || yug2.cols !== 12 || yug2.rows !== 12) throw new Error("yughott map 2 grid");
   if (ghelsbaSquare(cell(OUT_X, OUT_Z, 8, 7).x, cell(OUT_X, OUT_Z, 8, 7).z) !== "I-8") throw new Error("outpost I-8");
   if (ghelsbaSquare(cell(OUT_X, OUT_Z, 9, 10).x, cell(OUT_X, OUT_Z, 9, 10).z) !== "J-11") throw new Error("outpost J-11");
   if (fortSquare(cell(FORT_X, FORT_Z, 4, 7).x, cell(FORT_X, FORT_Z, 4, 7).z) !== "E-8") throw new Error("fort E-8");
   if (yughottSquare(cell(YUG_X, YUG_Z, 4, 8).x, cell(YUG_X, YUG_Z, 4, 8).z) !== "E-9") throw new Error("yughott E-9");
   if (grottoMap(cell(YUG_X, YUG_Z, 4, 8).x, cell(YUG_X, YUG_Z, 4, 8).z) !== 1) throw new Error("yughott map 1");
+  if (gridAt("yughott", cell(YUG_X, YUG_Z, 4, 8).x, cell(YUG_X, YUG_Z, 4, 8).z)?.map !== 1) throw new Error("E-9 map");
   if (grottoMap(mid(y2K5).x, mid(y2K5).z) !== 2 || grottoMap(mid(y2J9).x, mid(y2J9).z) !== 2) throw new Error("yughott map 2");
+  if (gridAt("yughott", mid(y2K5).x, mid(y2K5).z)?.map !== 2) throw new Error("K-5 map");
+  if (yughottSquare(mid(y2K5).x, mid(y2K5).z) !== "K-5") throw new Error("yughott K-5 square");
+  if (yughottSquare(mid(y2K5).x, y2K5.minZ + 0.2) !== "K-5") throw new Error("K-5 lip");
+  if (yughottSquare(mid(y2J6).x, mid(y2J6).z) !== "J-6") throw new Error("yughott J-6 square");
+  if (yughottSquare(mid(y2K6).x, mid(y2K6).z) !== "K-6") throw new Error("yughott K-6 square");
+  if (yughottSquare(mid(y2J9).x, mid(y2J9).z) !== "J-9") throw new Error("yughott J-9 square");
   if (!component(OUT_ROOMS) || !component(FORT_ROOMS) || !component(YUG_ROOMS) || !component(PEAK_ROOMS)) throw new Error("a ghelsba zone is split");
   const spot = (rects: Rect[], ox: number, oz: number, col: number, row: number, label: string) => {
     const c = cell(ox, oz, col, row);
@@ -1123,6 +1163,7 @@ export function assertGhelsba(): void {
   spot(YUG_ROOMS, YUG_X, YUG_Z, 4, 8, "yughott E-9");
   spot(YUG_ROOMS, YUG_X, YUG_Z, 5, 6, "yughott F-7");
   spot(YUG_ROOMS, YUG_X, YUG_Z, 7, 6, "yughott H-7");
+  spot(YUG_ROOMS, YUG_X, YUG_Z, 7, 7, "yughott H-8");
   if (!hit(YUG_ROOMS, mid(y2K5).x, mid(y2K5).z, 0.4)) throw new Error("yughott K-5");
   if (!hit(YUG_ROOMS, mid(y2J6).x, mid(y2J6).z, 0.4)) throw new Error("yughott J-6");
   if (y2J6.maxX - y2J6.minX < 36) throw new Error("home-point cavern is too narrow");
@@ -1156,7 +1197,36 @@ export function assertGhelsba(): void {
   if (!inOrc(RON_TO_GHELSBA.x, RON_TO_GHELSBA.z, 0.36)) throw new Error("ronfaure lands off the outpost");
   const back = ORC_GATES.find((gate) => gate.id === "ghelsba-ron");
   if (!back || back.to !== "ronfaure-south" || Math.hypot(back.x - RON_TO_GHELSBA.x, back.z - RON_TO_GHELSBA.z) < 8) throw new Error("outpost return");
+  if (ghelsbaSquare(back.x, back.z) !== "J-11" || ghelsbaSquare(RON_TO_GHELSBA.x, RON_TO_GHELSBA.z) !== "J-11") throw new Error("ronfaure mouth left J-11");
   if (Math.hypot(back.arrive.x + 78.24, back.arrive.z - 391.68) > 0.05) throw new Error("ronfaure stand drifted");
+  const byId = (id: string) => {
+    const gate = ORC_GATES.find((row) => row.id === id);
+    if (!gate) throw new Error(id);
+    return gate;
+  };
+  const onSquare = (id: string, square: string, fn: (x: number, z: number) => string) => {
+    const gate = byId(id);
+    const got = fn(gate.x, gate.z);
+    if (got !== square) throw new Error(`${id} is ${got}`);
+  };
+  if (ORC_GATES.some((gate) => gate.id === "yug-fort-h7")) throw new Error("H-7 fort gate");
+  onSquare("ghelsba-yughott", "I-11", ghelsbaSquare);
+  if (ghelsbaSquare(byId("yug-out").arrive.x, byId("yug-out").arrive.z) !== "I-11") throw new Error("outpost return off I-11");
+  onSquare("yug-out", "E-9", yughottSquare);
+  onSquare("yug-fort-h8", "H-8", yughottSquare);
+  onSquare("yug-fort-f7", "F-7", yughottSquare);
+  onSquare("yug-fort-k5", "K-5", yughottSquare);
+  onSquare("yug-horlais-k6", "K-6", yughottSquare);
+  onSquare("yug-horlais-j9", "J-9", yughottSquare);
+  onSquare("fort-yug-g9", "G-9", fortSquare);
+  onSquare("fort-yug-j7", "J-7", fortSquare);
+  onSquare("fort-yug-j8", "J-8", fortSquare);
+  if (yughottSquare(byId("fort-yug-g9").arrive.x, byId("fort-yug-g9").arrive.z) !== "H-8") throw new Error("G-9 lands off H-8");
+  if (yughottSquare(byId("fort-yug-j7").arrive.x, byId("fort-yug-j7").arrive.z) !== "K-5") throw new Error("J-7 lands off K-5");
+  if (yughottSquare(byId("fort-yug-j8").arrive.x, byId("fort-yug-j8").arrive.z) !== "F-7") throw new Error("J-8 lands off F-7");
+  if (fortSquare(byId("yug-fort-h8").arrive.x, byId("yug-fort-h8").arrive.z) !== "G-9") throw new Error("H-8 lands off G-9");
+  if (fortSquare(byId("yug-fort-k5").arrive.x, byId("yug-fort-k5").arrive.z) !== "J-7") throw new Error("K-5 lands off J-7");
+  if (fortSquare(byId("yug-fort-f7").arrive.x, byId("yug-fort-f7").arrive.z) !== "J-8") throw new Error("F-7 lands off J-8");
   for (const row of ORC_WATER) {
     const cx = (row.rect.minX + row.rect.maxX) / 2;
     const cz = (row.rect.minZ + row.rect.maxZ) / 2;

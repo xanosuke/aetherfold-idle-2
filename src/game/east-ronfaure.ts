@@ -2,7 +2,7 @@
  * East Ronfaure, the hunting wood east of San d'Oria.
  * Same 12 by 12 starter grid as West Ronfaure: column 0 is A, row 0 is 1,
  * each cell 48 yalms, north is -Z. The shore follows the retail map.
- *   Southern San d'Oria opens at G-6.
+ *   Southern San d'Oria opens at G-4.
  *   West Ronfaure opens at F-7 and F-9.
  *   King Ranperre's Tomb opens at H-11. J-11 only receives the one-way drop.
  *   Ranguemont Pass is the horn at K-4.
@@ -25,6 +25,10 @@ type Solid = { minX: number; maxX: number; minZ: number; maxZ: number; water?: b
 /** Shore in cell units. Each mouth is a dead end, so a gate cannot be walked around. */
 export const EAST_COAST: readonly [number, number][] = [
   [6.4, 4.5],
+  [6.22, 4.5],
+  [6.22, 3.2],
+  [6.78, 3.2],
+  [6.78, 4.35],
   [6.85, 4.22],
   [7.28, 4.3],
   [7.28, 4.02],
@@ -186,20 +190,20 @@ export function clampEast(x: number, z: number, radius = 0): { x: number; z: num
 
 /** Where a zone line drops you, a few yalms inside the mouth. */
 export const EAST_STAND = {
-  sandoria: { ...at(6.62, 5.64), yaw: 0, log: "East Ronfaure." },
+  sandoria: { ...at(6.5, 3.72), yaw: 0, log: "East Ronfaure." },
   westA: { ...at(5.7, 6.56), yaw: 0, log: "East Ronfaure." },
   westB: { ...at(5.7, 8.55), yaw: 0, log: "East Ronfaure." },
 };
 
-/** Field manuals. G-6 sits south of the San d'Oria stand, just off the road. H-9 sits west of the Cheval, beside the road. */
+/** Field manuals. The San d'Oria book stays at G-6, south of the old road pocket. H-9 sits west of the Cheval, beside the road. */
 export const EAST_MANUAL_GATE = at(6.72, 5.78);
 export const EAST_MANUAL_ROAD = at(7.42, 8.66);
 
 export const EAST_MOUTH = {
-  sandoria: { ...at(6.05, 5.64), hx: 2.6, hz: 8 },
+  sandoria: { ...at(6.5, 3.32), hx: 16, hz: 2.4 },
   westA: { ...at(5.14, 6.56), hx: 2.4, hz: 7.2 },
   westB: { ...at(5.14, 8.55), hx: 2.4, hz: 7.2 },
-  ranguemont: { ...at(10.52, 3.58), hx: 2.6, hz: 7.2, retreat: at(9.35, 4.35) },
+  ranguemont: { ...at(10.52, 3.58), hx: 2.6, hz: 7.2, retreat: at(9.35, 4.35), stand: at(10.68, 3.58) },
   tombH: { ...at(7.12, 10.84), hx: 7.2, hz: 2.4, retreat: at(7.12, 10.4) },
   tombJ: { ...at(9.36, 10.8), hx: 7.2, hz: 2.4, retreat: at(9.36, 10.32) },
   maw: { ...at(7.42, 4.14), hx: 7.2, hz: 2.2, retreat: at(6.72, 4.72) },
@@ -274,6 +278,7 @@ const MARKS = [
   EAST_MOUTH.westA,
   EAST_MOUTH.westB,
   EAST_MOUTH.ranguemont,
+  EAST_MOUTH.ranguemont.stand,
   EAST_MOUTH.tombH,
   EAST_MOUTH.tombJ,
   EAST_MOUTH.maw,
@@ -394,7 +399,7 @@ export function buildEastRonfaure(add: Add, colliders: Solid[]): void {
     if (across === "x") add(blue, 8.2, 0.42, 1.15, x, 3.85, z);
     else add(blue, 1.15, 0.42, 8.2, x, 3.85, z);
   };
-  jamb(EAST_MOUTH.sandoria.x, EAST_MOUTH.sandoria.z, "z");
+  jamb(EAST_MOUTH.sandoria.x, EAST_MOUTH.sandoria.z, "x");
   jamb(EAST_MOUTH.westA.x, EAST_MOUTH.westA.z, "z");
   jamb(EAST_MOUTH.westB.x, EAST_MOUTH.westB.z, "z");
   jamb(EAST_MOUTH.ranguemont.x, EAST_MOUTH.ranguemont.z, "z");
@@ -456,13 +461,15 @@ export function assertEast(): void {
     const got = square(colOf(point.x), rowOf(point.z));
     if (got !== expect) throw new Error(`${expect} landed on ${got}`);
   };
-  named(EAST_MOUTH.sandoria, "G-6");
-  named(EAST_STAND.sandoria, "G-6");
+  named(EAST_MOUTH.sandoria, "G-4");
+  named(EAST_STAND.sandoria, "G-4");
   named(EAST_MOUTH.westA, "F-7");
   named(EAST_STAND.westA, "F-7");
   named(EAST_MOUTH.westB, "F-9");
   named(EAST_STAND.westB, "F-9");
   named(EAST_MOUTH.ranguemont, "K-4");
+  named(EAST_MOUTH.ranguemont.stand, "K-4");
+  named(EAST_MOUTH.ranguemont.retreat, "J-5");
   named(EAST_MOUTH.tombH, "H-11");
   named(EAST_MOUTH.tombJ, "J-11");
   named(EAST_MOUTH.maw, "H-5");
@@ -477,6 +484,7 @@ export function assertEast(): void {
     EAST_MOUTH.westA,
     EAST_MOUTH.westB,
     EAST_MOUTH.ranguemont,
+    EAST_MOUTH.ranguemont.stand,
     EAST_MOUTH.tombH,
     EAST_MOUTH.tombJ,
     EAST_MOUTH.maw,
@@ -498,6 +506,8 @@ export function assertEast(): void {
   if (inEast(at(7, 12.2).x, at(7, 12.2).z)) throw new Error("south cliff is walkable");
   if (inEast(at(11.3, 3.5).x, at(11.3, 3.5).z)) throw new Error("past Ranguemont");
   if (inEast(at(5.2, 5.64).x, at(5.2, 5.64).z)) throw new Error("San d'Oria mouth can be walked around");
+  if (inEast(at(5.9, 3.45).x, at(5.9, 3.45).z)) throw new Error("San d'Oria mouth can be walked around");
+  if (inEast(at(7.05, 3.45).x, at(7.05, 3.45).z)) throw new Error("San d'Oria mouth can be walked around");
   if (inEast(at(4.75, 6.56).x, at(4.75, 6.56).z)) throw new Error("F-7 can be walked around");
   if (inEast(at(4.75, 8.55).x, at(4.75, 8.55).z)) throw new Error("F-9 can be walked around");
   if (inEast(at(7.42, 3.7).x, at(7.42, 3.7).z)) throw new Error("the maw can be walked around");
@@ -536,6 +546,7 @@ export function assertEast(): void {
   reached(EAST_STAND.westA, "F-7");
   reached(EAST_STAND.westB, "F-9");
   reached(EAST_MOUTH.ranguemont.retreat, "Ranguemont");
+  reached(EAST_MOUTH.ranguemont.stand, "Ranguemont stand");
   reached(EAST_MOUTH.tombH.retreat, "H-11 tomb");
   reached(EAST_MOUTH.tombJ.retreat, "J-11 tomb");
   reached(EAST_MOUTH.maw.retreat, "the maw");

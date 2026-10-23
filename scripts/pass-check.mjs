@@ -20,8 +20,14 @@ const probe = spawnSync(
       import { assertPass, sealedGateSpots, passSquare, inPass } from "./src/game/pass.ts";
       import { PASS_GRAPH, gridToWorld, PASS_CELL } from "./src/game/pass-graph.ts";
       import { assertWestGrid } from "./src/game/world.ts";
+      import { assertEast } from "./src/game/east-ronfaure.ts";
+      import { assertGhelsba } from "./src/game/ghelsba.ts";
+      import { assertWorldLinks } from "./src/game/world-links.ts";
       assertWestGrid();
       assertPass();
+      assertEast();
+      assertGhelsba();
+      assertWorldLinks(false);
       const poi = PASS_GRAPH.pois.find((item) => item.id === "nm_taisaijin");
       const h9 = gridToWorld(poi.gx, poi.gy);
       const gates = sealedGateSpots();

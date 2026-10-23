@@ -3,7 +3,7 @@
  * Report mode never throws and never moves a gate. Step A2 is what makes exits match.
  */
 import { inEast } from "./east-ronfaure";
-import { fortSquare, ghelsbaSquare, grottoMap, orcZoneAt, yughottSquare } from "./ghelsba";
+import { fortSquare, ghelsbaSquare, orcZoneAt, yughottSquare } from "./ghelsba";
 import { glacierSquare, inGlacier } from "./glacier";
 import { inPass, passSquare } from "./pass";
 import { inTomb, tombSquare } from "./tomb";
@@ -47,9 +47,8 @@ const CITY = new Set(["sandoria-south", "sandoria-north", "sandoria-port"]);
 
 export type LinkRow = { link: string; a: string; b: string };
 
-function hasGrid(zone: string, note?: string): boolean {
+function hasGrid(zone: string): boolean {
   if (UNBUILT.has(zone) || CITY.has(zone)) return false;
-  if (zone === "yughott" && note?.includes("Yughott map 2")) return false;
   return ZONE_GRIDS.some((g) => g.zone === zone);
 }
 
@@ -76,7 +75,6 @@ function destOk(gate: ZoneGate, dest: string, closed: boolean): boolean {
 }
 
 function squareAt(zone: string, x: number, z: number): string | null {
-  if (zone === "yughott" && grottoMap(x, z) === 2) return null;
   if (zone === "ronfaure-south" || zone === "ronfaure-north") {
     const grid = ZONE_GRIDS.find((g) => g.zone === "ronfaure-south");
     return grid ? squareOf(grid, x, z) : null;
@@ -95,7 +93,6 @@ function squareAt(zone: string, x: number, z: number): string | null {
 }
 
 function shownSquare(zone: string, x: number, z: number): string {
-  if (zone === "yughott" && grottoMap(x, z) === 2) return "map 2";
   return squareAt(zone, x, z) ?? "?";
 }
 
@@ -151,9 +148,8 @@ function matchGate(
 
 function arrivalText(gate: ZoneGate | null, link: WorldLink): string {
   if (!gate) return "WRONG (none)";
-  if (!hasGrid(link.b.zone, link.note)) return "NO GRID";
+  if (!hasGrid(link.b.zone)) return "NO GRID";
   const land = gate.arrive ?? zoneArrival(gate.to as ZoneId);
-  if (link.b.zone === "yughott" && grottoMap(land.x, land.z) === 2) return "WRONG (arrive map 2)";
   if (!inZone(land.x, land.z, link.b.zone)) return "WRONG (arrive off zone)";
   const actual = squareAt(link.b.zone, land.x, land.z);
   if (!actual || actual === "?") return `WRONG (arrive ${actual ?? "?"})`;
@@ -177,7 +173,7 @@ function reportRows(): LinkRow[] {
     let aText = "WRONG (none)";
     let aGate: ZoneGate | null = null;
     if (aSkip) aText = "skip";
-    else if (!hasGrid(link.a.zone, link.note)) aText = "NO GRID";
+    else if (!hasGrid(link.a.zone)) aText = "NO GRID";
     else {
       const found = matchGate(link.a.zone, link.b.zone, link.a.square, !!link.closed, link.note, used);
       aText = found.text;
@@ -186,7 +182,7 @@ function reportRows(): LinkRow[] {
     let bText = "WRONG (none)";
     if (bSkip) bText = "skip";
     else if (link.oneWay) bText = arrivalText(aGate, link);
-    else if (!hasGrid(link.b.zone, link.note)) bText = "NO GRID";
+    else if (!hasGrid(link.b.zone)) bText = "NO GRID";
     else {
       const found = matchGate(link.b.zone, link.a.zone, link.b.square, false, link.note, used);
       if (!found.text.startsWith("OK") || !aGate) bText = found.text;
@@ -219,7 +215,12 @@ export function assertWorldLinks(report = true): LinkRow[] {
       printRows(rows);
       return rows;
     }
-    const bad = rows.filter((row) => row.a.startsWith("WRONG") || row.b.startsWith("WRONG"));
+    const bad = rows.filter((row, index) => {
+      const link = WORLD_LINKS[index];
+      if (link.note?.includes("second gate, not built yet")) return false;
+      if (!hasGrid(link.a.zone) || !hasGrid(link.b.zone)) return false;
+      return row.a.startsWith("WRONG") || row.b.startsWith("WRONG");
+    });
     if (bad.length) throw new Error(bad.map((row) => `${row.link}: ${row.a} | ${row.b}`).join("; "));
     return rows;
   } catch (err) {

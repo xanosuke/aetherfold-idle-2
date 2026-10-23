@@ -940,6 +940,7 @@ function assertWorld(): void {
   if (!on(PORT_QUAY, -8, -386) || !on(PORT_QUAY, 2, -446)) throw new Error("quay misses the dock");
   if (on(CHATEAU_FOOT, 8, -332)) throw new Error("chateau covers its own door");
   assertWorldLinks();
+  assertWorldLinks(false);
 }
 
 export function assertWestGrid(): void {

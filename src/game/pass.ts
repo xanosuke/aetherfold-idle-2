@@ -207,7 +207,7 @@ export const PASS_GATES: readonly PassGate[] = [
     hz: 2.1,
     to: "east-ronfaure",
     side: "s",
-    arrive: { ...EAST_MOUTH.ranguemont.retreat, yaw: 0, log: "East Ronfaure." },
+    arrive: { ...EAST_MOUTH.ranguemont.stand, yaw: 0, log: "East Ronfaure." },
   },
   {
     id: "pass-beaucedine",

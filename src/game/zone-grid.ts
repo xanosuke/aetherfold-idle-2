@@ -1,11 +1,11 @@
 /**
- * Retail map squares. One grid per built zone (three for Ranperre's floors).
+ * Retail map squares. One grid per built zone (three for Ranperre, two for Yughott).
  * +X east, +Z south, column 0 = A, row 0 = row 1.
  * world x = x0 + col * cell, world z = z0 + row * cell. "C-7" is column 2, row 6.
- * Tomb labels must use tombSquare() (floor hit). These map boxes overlap, so
- * gridAt's closest-center pick is not a substitute for the floor.
+ * Tomb labels must use tombSquare() (floor hit). Yughott labels must use
+ * yughottSquare(): the two map boxes overlap, and gridAt asks the grotto which
+ * floor a point is on.
  *
- * TODO: Yughott map 2 is not a grid. The rooms sit south of I-9.
  * TODO: Horlais Peak has no retail grid.
  * TODO: San d'Oria (sandoria-south, sandoria-north, sandoria-port) has no retail grid.
  */
@@ -38,7 +38,16 @@ export const ZONE_GRIDS: readonly ZoneGrid[] = [
   { zone: "ghelsba", x0: -1520, z0: 150, cell: GHELSBA_CELL, cols: 12, rows: 12 },
   { zone: "fort-ghelsba", x0: -1520, z0: 920, cell: GHELSBA_CELL, cols: 12, rows: 12 },
   { zone: "yughott", map: 1, x0: -1040, z0: 150, cell: GHELSBA_CELL, cols: 12, rows: 12 },
+  // Map 2 origin matches ghelsba.ts Y2_X / Y2_Z. J-6 sits just south of map 1's I-9.
+  { zone: "yughott", map: 2, x0: -1040 - 32 * 2.05, z0: 217.25 + 4 * 32 * 2.05, cell: GHELSBA_CELL, cols: 12, rows: 12 },
 ];
+
+/** Grotto (and any later multi-map zone) tells gridAt which floor a point is on. */
+let pickMap: ((zone: string, x: number, z: number) => number | null) | null = null;
+
+export function registerZoneMap(fn: (zone: string, x: number, z: number) => number | null): void {
+  pickMap = fn;
+}
 
 export function parseSquare(square: string): { col: number; row: number } | null {
   const match = /^([A-P])-(\d+)$/.exec(square);
@@ -68,6 +77,11 @@ export function squareCenter(grid: ZoneGrid, square: string): { x: number; z: nu
 export function gridAt(zone: string, x: number, z: number): ZoneGrid | null {
   const rows = ZONE_GRIDS.filter((g) => g.zone === zone);
   if (!rows.length) return null;
+  const forced = pickMap?.(zone, x, z);
+  if (forced != null) {
+    const chosen = rows.find((g) => g.map === forced);
+    if (chosen) return chosen;
+  }
   if (rows.length === 1) return rows[0];
   const inside = rows.filter((g) => {
     const col = Math.floor((x - g.x0) / g.cell);
