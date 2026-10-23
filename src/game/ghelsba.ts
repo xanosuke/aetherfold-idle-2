@@ -2,7 +2,8 @@
  * Ghelsba Outpost and the three zones that open off it.
  * Retail grids: columns A–L are 0–11, rows 1–12 are 0–11, north is -Z.
  * Connections follow the retail maps, not a square dungeon:
- *   Ghelsba Outpost — West Ronfaure J-11, Fort Ghelsba H-8, Yughott Grotto I-11, Hut Door F-10
+ *   Ghelsba Outpost — traced retail floor. West Ronfaure J-11, Fort Ghelsba H-8,
+ *   Yughott Grotto I-11, Hut Door F-10. Fort Ghelsba and Yughott keep their rooms.
  *   Fort Ghelsba — Outpost E-8, Yughott G-9 / J-7 / J-8
  *   Yughott Grotto — Outpost E-9, Fort H-8 / F-7 / K-5, Horlais Peak J-9 / K-6
  *   Horlais Peak — the two grotto mouths, the hot spring, and the Burning Circle
@@ -11,6 +12,46 @@
  */
 
 import { gridAt, registerZoneMap, squareOf, ZONE_GRIDS } from "./zone-grid";
+import {
+  GHELSBA_DISCS,
+  GHELSBA_GRAPH,
+  GHELSBA_RINGS,
+  GHELSBA_SEGS,
+  clampGhelsbaGraph,
+  gridToWorld,
+} from "./ghelsba-graph";
+
+/** World box of the traced floor, padded by the widest path. Outside it, clearance cannot be positive. */
+const GRAPH_BOX = (() => {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let pad = 0;
+  const cover = (gx: number, gy: number, extra = 0) => {
+    const at = gridToWorld(gx, gy);
+    minX = Math.min(minX, at.x);
+    maxX = Math.max(maxX, at.x);
+    minZ = Math.min(minZ, at.z);
+    maxZ = Math.max(maxZ, at.z);
+    pad = Math.max(pad, extra);
+  };
+  for (const node of GHELSBA_GRAPH.nodes) cover(node.gx, node.gy, (node.r ?? 0) * 65.6);
+  for (const edge of GHELSBA_GRAPH.edges) {
+    const extra = ((edge.width ?? 0.14) * 65.6) / 2;
+    for (const [gx, gy] of edge.pts) cover(gx, gy, extra);
+  }
+  for (const area of GHELSBA_GRAPH.areas) {
+    for (const [gx, gy] of area.pts) cover(gx, gy, 0);
+    for (const hole of area.holes ?? []) for (const [gx, gy] of hole) cover(gx, gy, 0);
+  }
+  const slack = pad + 2;
+  return { minX: minX - slack, maxX: maxX + slack, minZ: minZ - slack, maxZ: maxZ + slack };
+})();
+
+function outsideGraph(x: number, z: number, radius = 0): boolean {
+  return x < GRAPH_BOX.minX - radius || x > GRAPH_BOX.maxX + radius || z < GRAPH_BOX.minZ - radius || z > GRAPH_BOX.maxZ + radius;
+}
 
 export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
@@ -137,71 +178,290 @@ function mouth(rect: Rect, side: OrcGate["side"], name: string, id: string, to: 
   };
 }
 
-// Traced canyon, not a filled block. Cell centers the F&M sheet leaves white stay cliff.
-// Short links only — a full-span weld fills the gaps and turns the lobes back into one mass.
-const oF5 = room(OUT_X, OUT_Z, 5, 4, 12, 12, 8, 8);
-const oG6 = room(OUT_X, OUT_Z, 6, 5, 26, 22);
-const oH6 = room(OUT_X, OUT_Z, 7, 5, 24, 28, -3, -8);
-const oI6 = room(OUT_X, OUT_Z, 8, 5, 22, 26, 4, -6);
-const oJ6 = room(OUT_X, OUT_Z, 9, 5, 14, 22, -8, -10);
-const oF7 = room(OUT_X, OUT_Z, 5, 6, 28, 26, 0, 2);
-const oG7 = room(OUT_X, OUT_Z, 6, 6, 10, 10, -11, 11);
-const oH7 = room(OUT_X, OUT_Z, 7, 6, 24, 20, 0, 3);
-const oI7 = room(OUT_X, OUT_Z, 8, 6, 20, 18, 3, 0);
-const oH8 = room(OUT_X, OUT_Z, 7, 7, 24, 20);
-const oI8 = room(OUT_X, OUT_Z, 8, 7, 30, 18, 2, -3);
-const oJ8 = room(OUT_X, OUT_Z, 9, 7, 12, 14, -10, -2);
-const oF9 = room(OUT_X, OUT_Z, 5, 8, 12, 14, 7, -5);
-const oG9 = room(OUT_X, OUT_Z, 6, 8, 24, 20, 0, 2);
-const oH9 = room(OUT_X, OUT_Z, 7, 8, 12, 16, 8, -6);
-const oI9 = room(OUT_X, OUT_Z, 8, 8, 22, 12, 0, -9);
-const oJ9 = room(OUT_X, OUT_Z, 9, 8, 12, 12, -8, 7);
-const oK9 = room(OUT_X, OUT_Z, 10, 8, 10, 10, -8, 4);
-const oF10 = room(OUT_X, OUT_Z, 5, 9, 22, 18, 0, -3);
-const oG10 = room(OUT_X, OUT_Z, 6, 9, 22, 20);
-const oH10 = room(OUT_X, OUT_Z, 7, 9, 24, 20);
-const oI10 = room(OUT_X, OUT_Z, 8, 9, 14, 18, -9, 0);
-const oH11 = room(OUT_X, OUT_Z, 7, 10, 26, 14, -2, -9);
-const oI11 = room(OUT_X, OUT_Z, 8, 10, 24, 14, 6, -9);
-const oJ11 = room(OUT_X, OUT_Z, 9, 10, 16, 30, -6, 6);
-// South lip of the pond loop, then a short drop into the north bowl. Not a path through the pool.
-const pondWalk: Rect = { minX: oF5.minX + u(0.8), maxX: mid(oG6).x + u(5), minZ: oF5.maxZ - u(3.2), maxZ: oF5.maxZ + u(0.4) };
-const pondDrop: Rect = { minX: mid(oG6).x - u(5), maxX: mid(oG6).x + u(5), minZ: oF5.maxZ - u(2.4), maxZ: oG6.minZ + u(3) };
+// Outpost walk is the traced graph. Fort, Yughott and Horlais stay on rectangles.
+type RingEdge = { ax: number; az: number; bx: number; bz: number; area: number };
+const RING_BUCKET = 24;
+const ringEdges: RingEdge[] = [];
+let ringZ0 = 0;
+let ringBuckets: RingEdge[][] = [];
+{
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  GHELSBA_RINGS.forEach((area, areaId) => {
+    for (const ring of area.rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j];
+        const b = ring[i];
+        ringEdges.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, area: areaId });
+        minZ = Math.min(minZ, a.z, b.z);
+        maxZ = Math.max(maxZ, a.z, b.z);
+      }
+    }
+  });
+  ringZ0 = Number.isFinite(minZ) ? minZ - 1 : 0;
+  const count = Math.max(1, Math.ceil(((Number.isFinite(maxZ) ? maxZ : 0) - ringZ0 + 2) / RING_BUCKET));
+  ringBuckets = Array.from({ length: count }, () => []);
+  for (const edge of ringEdges) {
+    const lo = Math.max(0, Math.floor((Math.min(edge.az, edge.bz) - ringZ0) / RING_BUCKET));
+    const hi = Math.min(count - 1, Math.floor((Math.max(edge.az, edge.bz) - ringZ0) / RING_BUCKET));
+    for (let i = lo; i <= hi; i++) ringBuckets[i].push(edge);
+  }
+}
 
-const OUT_ROOMS: Rect[] = join(
-  [oF5, pondWalk, pondDrop, oG6, oH6, oI6, oJ6, oF7, oG7, oH7, oI7, oH8, oI8, oJ8, oF9, oG9, oH9, oI9, oJ9, oK9, oF10, oG10, oH10, oI10, oH11, oI11, oJ11],
-  [
-    [oG6, oH6, 12],
-    [oH6, oI6, 12],
-    [oI6, oJ6, 9],
-    [oG6, oG7, 8],
-    [oH6, oH7, 12],
-    [oI6, oI7, 10],
-    [oF7, oG7, 10],
-    [oG7, oH7, 9],
-    [oH7, oI7, 10],
-    [oI7, oI8, 10],
-    [oH7, oH8, 12],
-    [oH8, oI8, 12],
-    [oI8, oJ8, 8],
-    [oH8, oH9, 9],
-    [oI8, oI9, 10],
-    [oH9, oI9, 9],
-    [oH10, oH9, 9],
-    [oG9, oG10, 11],
-    [oF9, oG9, 8],
-    [oF10, oF9, 8],
-    [oF10, oG10, 10],
-    [oG10, oH10, 12],
-    [oH10, oI10, 10],
-    [oI9, oJ9, 8],
-    [oJ9, oK9, 8],
-    [oH10, oH11, 9],
-    [oI11, oI10, 8],
-    [oH11, oI11, 9],
-    [oI11, oJ11, 8],
-  ],
-);
+const SEG_CELL = 32;
+const segGrid = new Map<number, (typeof GHELSBA_SEGS)[number][]>();
+const segKey = (ix: number, iz: number) => ix * 8192 + iz;
+for (const seg of GHELSBA_SEGS) {
+  const pad = seg.half + 0.05;
+  const minX = Math.floor((Math.min(seg.ax, seg.bx) - pad) / SEG_CELL);
+  const maxX = Math.floor((Math.max(seg.ax, seg.bx) + pad) / SEG_CELL);
+  const minZ = Math.floor((Math.min(seg.az, seg.bz) - pad) / SEG_CELL);
+  const maxZ = Math.floor((Math.max(seg.az, seg.bz) + pad) / SEG_CELL);
+  for (let ix = minX; ix <= maxX; ix++) {
+    for (let iz = minZ; iz <= maxZ; iz++) {
+      const key = segKey(ix, iz);
+      const list = segGrid.get(key);
+      if (list) list.push(seg);
+      else segGrid.set(key, [seg]);
+    }
+  }
+}
+
+function segsAt(x: number, z: number) {
+  return segGrid.get(segKey(Math.floor(x / SEG_CELL), Math.floor(z / SEG_CELL))) ?? [];
+}
+
+function segsAround(x: number, z: number) {
+  const ix = Math.floor(x / SEG_CELL);
+  const iz = Math.floor(z / SEG_CELL);
+  const out: (typeof GHELSBA_SEGS)[number][] = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const list = segGrid.get(segKey(ix + dx, iz + dz));
+      if (list) out.push(...list);
+    }
+  }
+  return out;
+}
+
+function nearPoint(px: number, pz: number, ax: number, az: number, bx: number, bz: number) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / len2)) : 0;
+  return { x: ax + t * dx, z: az + t * dz };
+}
+
+function ringBucket(z: number) {
+  return Math.floor((z - ringZ0) / RING_BUCKET);
+}
+
+function ringsContain(area: number, x: number, z: number) {
+  const list = ringBuckets[ringBucket(z)];
+  if (!list) return false;
+  let inside = false;
+  for (const edge of list) {
+    if (edge.area !== area) continue;
+    if (edge.az > z !== edge.bz > z && x < ((edge.bx - edge.ax) * (z - edge.az)) / (edge.bz - edge.az) + edge.ax) inside = !inside;
+  }
+  return inside;
+}
+
+function ringDistance(area: number, x: number, z: number) {
+  const idx = ringBucket(z);
+  let best = Infinity;
+  for (let rad = 0; rad < ringBuckets.length; rad++) {
+    if (rad > 0 && (rad - 1) * RING_BUCKET > best) break;
+    const ids = rad === 0 ? [idx] : [idx - rad, idx + rad];
+    for (const id of ids) {
+      const list = ringBuckets[id];
+      if (!list) continue;
+      for (const edge of list) {
+        if (edge.area !== area) continue;
+        const q = nearPoint(x, z, edge.ax, edge.az, edge.bx, edge.bz);
+        const dd = Math.hypot(x - q.x, z - q.z);
+        if (dd < best) best = dd;
+      }
+    }
+  }
+  return best;
+}
+
+function fastOnFloor(x: number, z: number) {
+  if (outsideGraph(x, z, 0)) return false;
+  for (let area = 0; area < GHELSBA_RINGS.length; area++) if (ringsContain(area, x, z)) return true;
+  const near = segsAt(x, z);
+  for (const seg of near) {
+    const q = nearPoint(x, z, seg.ax, seg.az, seg.bx, seg.bz);
+    if (Math.hypot(x - q.x, z - q.z) <= seg.half) return true;
+  }
+  for (const disc of GHELSBA_DISCS) if (Math.hypot(x - disc.x, z - disc.z) <= disc.r) return true;
+  return false;
+}
+
+function ghelsbaClearance(x: number, z: number) {
+  if (outsideGraph(x, z, 0)) return -1000;
+  let best = -Infinity;
+  for (const seg of segsAround(x, z)) {
+    const q = nearPoint(x, z, seg.ax, seg.az, seg.bx, seg.bz);
+    best = Math.max(best, seg.half - Math.hypot(x - q.x, z - q.z));
+  }
+  for (const disc of GHELSBA_DISCS) best = Math.max(best, disc.r - Math.hypot(x - disc.x, z - disc.z));
+  for (let area = 0; area < GHELSBA_RINGS.length; area++) {
+    const dist = ringDistance(area, x, z);
+    best = Math.max(best, ringsContain(area, x, z) ? dist : -dist);
+  }
+  return best;
+}
+
+function inGhelsbaGraph(x: number, z: number, radius = 0) {
+  if (radius <= 0) return !outsideGraph(x, z, 0) && fastOnFloor(x, z);
+  return ghelsbaClearance(x, z) >= radius;
+}
+
+function buildGhelsbaMask(res = 16) {
+  const n = 12 * res;
+  const data = new Uint8Array(n * n);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const at = gridToWorld((i + 0.5) / res, (j + 0.5) / res);
+      if (fastOnFloor(at.x, at.z)) data[j * n + i] = 1;
+    }
+  }
+  return { res, n, data };
+}
+
+function ghelsbaMaskRects(res = 16): Rect[] {
+  const mask = buildGhelsbaMask(res);
+  const cell = CELL / res;
+  const out: Rect[] = [];
+  for (let j = 0; j < mask.n; j++) {
+    let i = 0;
+    while (i < mask.n) {
+      if (!mask.data[j * mask.n + i]) {
+        i++;
+        continue;
+      }
+      const start = i;
+      while (i < mask.n && mask.data[j * mask.n + i]) i++;
+      out.push({
+        minX: OUT_X + start * cell,
+        maxX: OUT_X + i * cell,
+        minZ: OUT_Z + j * cell,
+        maxZ: OUT_Z + (j + 1) * cell,
+      });
+    }
+  }
+  return out;
+}
+
+const OUT_FLOOR: Rect[] = ghelsbaMaskRects(16);
+
+function graphNode(id: string) {
+  const node = GHELSBA_GRAPH.nodes.find((row) => row.id === id);
+  if (!node) throw new Error(id);
+  return node;
+}
+
+function nodeAt(id: string) {
+  const node = graphNode(id);
+  return gridToWorld(node.gx, node.gy);
+}
+
+function poiAt(id: string) {
+  const poi = GHELSBA_GRAPH.pois.find((row) => row.id === id);
+  if (!poi) throw new Error(id);
+  return gridToWorld(poi.gx, poi.gy);
+}
+
+function distSeg(px: number, pz: number, ax: number, az: number, bx: number, bz: number) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / len2)) : 0;
+  return Math.hypot(px - (ax + t * dx), pz - (az + t * dz));
+}
+
+/** Walk back along an edge from a node, in yalms. The stand stays on the traced path. */
+function retreatAlong(edgeId: string, fromId: string, yards: number) {
+  const edge = GHELSBA_GRAPH.edges.find((row) => row.id === edgeId);
+  const from = graphNode(fromId);
+  if (!edge) throw new Error(edgeId);
+  let pts = edge.pts.map(([gx, gy]) => ({ gx, gy }));
+  const start = pts[0];
+  const end = pts[pts.length - 1];
+  const atEnd = Math.hypot(end.gx - from.gx, end.gy - from.gy) <= Math.hypot(start.gx - from.gx, start.gy - from.gy);
+  if (!atEnd) pts.reverse();
+  let left = yards;
+  for (let i = pts.length - 1; i > 0; i--) {
+    const a = gridToWorld(pts[i].gx, pts[i].gy);
+    const b = gridToWorld(pts[i - 1].gx, pts[i - 1].gy);
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    if (len >= left) {
+      const t = len ? left / len : 0;
+      return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    }
+    left -= len;
+  }
+  return gridToWorld(pts[0].gx, pts[0].gy);
+}
+
+function onEdgeCenter(x: number, z: number, pad: number) {
+  for (const edge of GHELSBA_GRAPH.edges) {
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      if (distSeg(x, z, a.x, a.z, b.x, b.z) <= pad) return true;
+    }
+  }
+  return false;
+}
+
+const POND_NODES = ["pond_nw", "pond_sw", "pool_j10"] as const;
+
+function inOutpostWater(x: number, z: number) {
+  for (const id of POND_NODES) {
+    const node = graphNode(id);
+    const at = gridToWorld(node.gx, node.gy);
+    if (Math.hypot(x - at.x, z - at.z) < (node.r ?? 0.1) * CELL * 0.82) return true;
+  }
+  for (const stream of GHELSBA_GRAPH.streams) {
+    for (let i = 0; i + 1 < stream.length; i++) {
+      const a = gridToWorld(stream[i][0], stream[i][1]);
+      const b = gridToWorld(stream[i + 1][0], stream[i + 1][1]);
+      if (distSeg(x, z, a.x, a.z, b.x, b.z) < 1.7) return true;
+    }
+  }
+  return false;
+}
+
+function outpostWaterRects(): Rect[] {
+  const water: Rect[] = [];
+  for (const id of ["pond_nw", "pond_sw"] as const) {
+    const node = graphNode(id);
+    const at = gridToWorld(node.gx, node.gy);
+    const r = (node.r ?? 0.1) * CELL * 0.7;
+    water.push({ minX: at.x - r, maxX: at.x + r, minZ: at.z - r, maxZ: at.z + r });
+  }
+  for (const stream of GHELSBA_GRAPH.streams) {
+    for (let i = 0; i + 1 < stream.length; i++) {
+      const a = gridToWorld(stream[i][0], stream[i][1]);
+      const b = gridToWorld(stream[i + 1][0], stream[i + 1][1]);
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.ceil(len / 8));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const x = a.x + (b.x - a.x) * t;
+        const z = a.z + (b.z - a.z) * t;
+        if (!inGhelsbaGraph(x, z, 0)) continue;
+        water.push({ minX: x - 1.6, maxX: x + 1.6, minZ: z - 1.6, maxZ: z + 1.6 });
+      }
+    }
+  }
+  return water;
+}
+
+const OUT_WATER_MARKS = outpostWaterRects();
 
 const fE8 = room(FORT_X, FORT_Z, 4, 7, 26, 26);
 const fF8 = room(FORT_X, FORT_Z, 5, 7, 16, 16);
@@ -291,13 +551,6 @@ function eastPool(rect: Rect): Rect {
 
 const pool = eastPool(yI9);
 const spring: Rect = { minX: PEAK_X + 14, maxX: PEAK_X + 26, minZ: PEAK_Z - 14, maxZ: PEAK_Z - 2 };
-// F&M trace: the northwest loop at F-5 is a pond, not just a spur.
-const pond: Rect = {
-  minX: mid(oF5).x - u(2.6),
-  maxX: mid(oF5).x + u(2.2),
-  minZ: oF5.minZ + u(0.7),
-  maxZ: mid(oF5).z - u(1.2),
-};
 
 function standIn(rect: Rect, gateSide: OrcGate["side"]) {
   const c = mid(rect);
@@ -307,10 +560,27 @@ function standIn(rect: Rect, gateSide: OrcGate["side"]) {
   return { x: rect.maxX - 14, z: c.z };
 }
 
+function gateAt(id: string, name: string, gateId: string, to: string, log: string, stand: { x: number; z: number }, side: OrcGate["side"]): OrcGate {
+  const at = nodeAt(id);
+  const across = side === "n" || side === "s";
+  return {
+    id: gateId,
+    name,
+    x: at.x,
+    z: at.z,
+    hx: across ? 5.2 : 2.4,
+    hz: across ? 2.4 : 5.2,
+    to,
+    side,
+    arrive: { x: stand.x, z: stand.z, yaw: 0, log },
+  };
+}
+
 const fortFromOut = standIn(fE8, "w");
-const outFromFort = standIn(oI8, "e");
+const outFromFort = nodeAt("fort_arrival_i8");
 const yugFromOut = standIn(yE9, "w");
-const outFromYug = standIn(oI11, "s");
+const outFromYug = retreatAlong("e_yug_hook", "exit_yughott", 10);
+const hutStand = retreatAlong("e_hut_door", "door_hut", 9);
 const yugFromFortG9 = standIn(yH8, "s");
 const yugFromFortJ7 = standIn(y2K5, "n");
 const yugFromFortJ8 = standIn(yF7, "n");
@@ -322,25 +592,27 @@ const peakFromK6 = standIn(mouthR, "s");
 const yugFromPeakL = standIn(y2J9, "s");
 const yugFromPeakR = standIn(y2K6, "e");
 
-export const RON_TO_GHELSBA = { x: mid(oJ11).x, z: OUT_Z + 11 * CELL - 22, yaw: 0, log: "Ghelsba Outpost." };
+const ronIn = poiAt("zone_in_default");
+export const RON_TO_GHELSBA = { x: ronIn.x, z: ronIn.z, yaw: 0, log: "Ghelsba Outpost." };
 // West Ronfaure E-4. cellX(4.37), cellZ(3.285), then 14 yalms south so the stand is off the mouth.
 const RON_FROM_GHELSBA = { x: -78.24, z: 391.68, yaw: 0, log: "West Ronfaure." };
-const RON_MOUTH_Z = OUT_Z + 11 * CELL - 6;
+const ronMouth = nodeAt("exit_west_ronfaure");
 
 export const ORC_GATES: readonly OrcGate[] = [
   {
     id: "ghelsba-ron",
     name: "West Ronfaure",
-    x: mid(oJ11).x,
-    z: RON_MOUTH_Z,
+    x: ronMouth.x,
+    z: ronMouth.z,
     hx: 5.2,
     hz: 2.4,
     to: "ronfaure-south",
     side: "s",
     arrive: { x: RON_FROM_GHELSBA.x, z: RON_FROM_GHELSBA.z, yaw: 0, log: RON_FROM_GHELSBA.log },
   },
-  mouth(oI8, "e", "Fort Ghelsba", "ghelsba-fort", "fort-ghelsba", "Fort Ghelsba.", fortFromOut),
-  mouth(oI11, "s", "Yughott Grotto", "ghelsba-yughott", "yughott", "Yughott Grotto.", yugFromOut),
+  gateAt("exit_fort_ghelsba", "Fort Ghelsba", "ghelsba-fort", "fort-ghelsba", "Fort Ghelsba.", fortFromOut, "e"),
+  gateAt("exit_yughott", "Yughott Grotto", "ghelsba-yughott", "yughott", "Yughott Grotto.", yugFromOut, "s"),
+  gateAt("door_hut", "Hut Door", "ghelsba-hut", "closed", "The hut door is sealed.", hutStand, "w"),
   mouth(fE8, "w", "Ghelsba Outpost", "fort-out", "ghelsba", "Ghelsba Outpost.", outFromFort),
   mouth(fG9, "s", "Yughott Grotto", "fort-yug-g9", "yughott", "Yughott Grotto.", yugFromFortG9),
   mouth(fJ7, "e", "Yughott Grotto", "fort-yug-j7", "yughott", "Yughott Grotto.", yugFromFortJ7),
@@ -357,42 +629,7 @@ export const ORC_GATES: readonly OrcGate[] = [
 
 const GHELSBA_RETURN = ORC_GATES[0];
 
-function shore(rect: Rect, side: "n" | "s" | "e" | "w", depth: number): Rect {
-  const lip = u(0.35);
-  const inset = u(1.6);
-  if (side === "e") return { minX: rect.maxX - depth, maxX: rect.maxX - lip, minZ: rect.minZ + inset, maxZ: rect.maxZ - inset };
-  if (side === "w") return { minX: rect.minX + lip, maxX: rect.minX + depth, minZ: rect.minZ + inset, maxZ: rect.maxZ - inset };
-  if (side === "n") return { minX: rect.minX + inset, maxX: rect.maxX - inset, minZ: rect.minZ + lip, maxZ: rect.minZ + depth };
-  return { minX: rect.minX + inset, maxX: rect.maxX - inset, minZ: rect.maxZ - depth, maxZ: rect.maxZ - lip };
-}
-
-function ford(rect: Rect, z: number, gap: number): Rect[] {
-  const low = z - gap / 2;
-  const high = z + gap / 2;
-  const parts: Rect[] = [];
-  if (low - rect.minZ > u(1.2)) parts.push({ ...rect, maxZ: low });
-  if (rect.maxZ - high > u(1.2)) parts.push({ ...rect, minZ: high });
-  return parts;
-}
-
-// East bank of the canyon. Water is the cutoff: it hugs the cliff side and does not cross the fort path.
-// J-8 is the channel just east of I-8, so the mouth itself stays dry.
-// The I-6 and J-9 paths cross that bank, so each one keeps a dry ford.
-const OUT_STREAM: Rect[] = [
-  ...ford(shore(oI6, "e", u(3.6)), mid(oI6).z, u(12)),
-  shore(oI7, "e", u(3.6)),
-  shore(oJ6, "e", u(3.4)),
-  shore(oJ8, "e", u(8.4)),
-  ...ford(shore(oJ9, "e", u(4.2)), mid(oJ9).z, u(12)),
-  shore(oK9, "e", u(3.2)),
-];
-const j11River = shore(oJ11, "e", u(3.4));
-j11River.maxZ = Math.min(j11River.maxZ, oJ11.maxZ - u(22));
-
 export const ORC_WATER: { rect: Rect; kind: "stream" | "pool" | "spring" }[] = [
-  ...OUT_STREAM.map((rect) => ({ rect, kind: "stream" as const })),
-  { rect: j11River, kind: "stream" },
-  { rect: pond, kind: "pool" },
   { rect: pool, kind: "pool" },
   { rect: spring, kind: "spring" },
 ];
@@ -401,8 +638,19 @@ export function ghelsbaReturnStand(): { x: number; z: number } {
   return { x: GHELSBA_RETURN.x, z: GHELSBA_RETURN.z };
 }
 
+export function seatGhelsbaSave(x: number, z: number): { x: number; z: number } | null {
+  const col = Math.floor((x - OUT_X) / CELL);
+  const row = Math.floor((z - OUT_Z) / CELL);
+  if (col < 0 || col >= 12 || row < 0 || row >= 12) return null;
+  if (inFort(x, z, 0) || inYughott(x, z, 0)) return null;
+  if (inGhelsbaGraph(x, z, 0.2)) return { x, z };
+  const snapped = clampGhelsbaGraph(x, z, 0.36);
+  if (inGhelsbaGraph(snapped.x, snapped.z, 0)) return snapped;
+  return null;
+}
+
 export const ORC_ZONES: { id: string; name: string; rects: Rect[]; fog: "canyon" | "cave" | "peak" }[] = [
-  { id: "ghelsba", name: "Ghelsba Outpost", rects: OUT_ROOMS, fog: "canyon" },
+  { id: "ghelsba", name: "Ghelsba Outpost", rects: OUT_FLOOR, fog: "canyon" },
   { id: "fort-ghelsba", name: "Fort Ghelsba", rects: FORT_ROOMS, fog: "canyon" },
   { id: "yughott", name: "Yughott Grotto", rects: YUG_ROOMS, fog: "cave" },
   { id: "horlais", name: "Horlais Peak", rects: PEAK_ROOMS, fog: "peak" },
@@ -414,8 +662,12 @@ function hit(rects: readonly Rect[], x: number, z: number, r: number) {
 
 export function orcZoneAt(x: number, z: number, radius = 0): (typeof ORC_ZONES)[number] | null {
   const r = Math.max(0, radius);
-  for (const zone of ORC_ZONES) if (hit(zone.rects, x, z, r)) return zone;
-  return null;
+  for (const zone of ORC_ZONES) {
+    if (zone.id === "ghelsba") continue;
+    if (hit(zone.rects, x, z, r)) return zone;
+  }
+  if (outsideGraph(x, z, r) || !inGhelsbaGraph(x, z, r)) return null;
+  return ORC_ZONES[0];
 }
 
 export function inOrc(x: number, z: number, radius = 0): boolean {
@@ -509,12 +761,13 @@ export function inYughott(x: number, z: number, radius = 0): boolean {
 }
 
 function inOrcWater(x: number, z: number): boolean {
+  if (inOutpostWater(x, z)) return true;
   return ORC_WATER.some((row) => x > row.rect.minX + 0.4 && x < row.rect.maxX - 0.4 && z > row.rect.minZ + 0.4 && z < row.rect.maxZ - 0.4);
 }
 
 export function ghelsbaDry(x: number, z: number): boolean {
-  if (!inGhelsba(x, z, 0.35)) return false;
-  return !inOrcWater(x, z);
+  if (outsideGraph(x, z, 0.35) || !inGhelsbaGraph(x, z, 0.35)) return false;
+  return !inOutpostWater(x, z);
 }
 
 /** Any orc zone, off the water. The grotto pool and the outpost streams stay empty. */
@@ -534,6 +787,7 @@ export function clampOrc(x: number, z: number, radius = 0): { x: number; z: numb
   let best: Rect | null = null;
   let bestD = Infinity;
   for (const zone of ORC_ZONES) {
+    if (zone.id === "ghelsba") continue;
     for (const rect of zone.rects) {
       const dist = rectDist(x, z, rect);
       if (dist < bestD) {
@@ -542,15 +796,21 @@ export function clampOrc(x: number, z: number, radius = 0): { x: number; z: numb
       }
     }
   }
-  if (!best || bestD > 70) return null;
-  const spanX = best.maxX - best.minX;
-  const spanZ = best.maxZ - best.minZ;
-  const insetX = Math.min(r, Math.max(0, spanX / 2 - 0.05));
-  const insetZ = Math.min(r, Math.max(0, spanZ / 2 - 0.05));
-  return {
-    x: Math.max(best.minX + insetX, Math.min(best.maxX - insetX, x)),
-    z: Math.max(best.minZ + insetZ, Math.min(best.maxZ - insetZ, z)),
-  };
+  const graph = clampGhelsbaGraph(x, z, r);
+  const graphD = inGhelsbaGraph(x, z, r) ? 0 : Math.hypot(graph.x - x, graph.z - z);
+  const graphOk = graphD <= 70 && inGhelsbaGraph(graph.x, graph.z, 0);
+  if (best && bestD <= 70 && (!graphOk || bestD <= graphD)) {
+    const spanX = best.maxX - best.minX;
+    const spanZ = best.maxZ - best.minZ;
+    const insetX = Math.min(r, Math.max(0, spanX / 2 - 0.05));
+    const insetZ = Math.min(r, Math.max(0, spanZ / 2 - 0.05));
+    return {
+      x: Math.max(best.minX + insetX, Math.min(best.maxX - insetX, x)),
+      z: Math.max(best.minZ + insetZ, Math.min(best.maxZ - insetZ, z)),
+    };
+  }
+  if (graphOk) return graph;
+  return null;
 }
 
 export function orcArrival(to: string): { x: number; z: number; yaw: number; log: string } | null {
@@ -586,10 +846,18 @@ export function orcLayout(region: string): OrcChart | null {
     maxZ = Math.max(maxZ, rect.maxZ);
   }
   const pad = 18;
-  const marks = ORC_GATES.filter((gate) => hit(zone.rects, gate.x, gate.z, 0)).map((gate) => ({ x: gate.x, z: gate.z, name: gate.name }));
+  const marks = ORC_GATES.filter((gate) => (zone.id === "ghelsba" ? inGhelsbaGraph(gate.x, gate.z, 0) : hit(zone.rects, gate.x, gate.z, 0))).map((gate) => ({
+    x: gate.x,
+    z: gate.z,
+    name: gate.name,
+  }));
   if (region === "Ghelsba Outpost") {
-    marks.push({ x: mid(oF10).x, z: mid(oF10).z, name: "Hut Door" });
-    marks.push({ x: (pond.minX + pond.maxX) / 2, z: (pond.minZ + pond.maxZ) / 2, name: "Pond" });
+    for (const poi of GHELSBA_GRAPH.pois) {
+      const at = gridToWorld(poi.gx, poi.gy);
+      const name = poi.label.split(" (")[0];
+      if (marks.some((mark) => Math.hypot(mark.x - at.x, mark.z - at.z) < 6 && mark.name === name)) continue;
+      marks.push({ x: at.x, z: at.z, name });
+    }
   }
   if (region === "Horlais Peak") marks.push({ x: PEAK_X, z: PEAK_Z, name: "Burning Circle" });
   const outGrid = ZONE_GRIDS.find((g) => g.zone === "ghelsba");
@@ -602,7 +870,9 @@ export function orcLayout(region: string): OrcChart | null {
         : null;
   return {
     rects: zone.rects,
-    water: ORC_WATER.filter((row) => hit(zone.rects, (row.rect.minX + row.rect.maxX) / 2, (row.rect.minZ + row.rect.maxZ) / 2, 0)).map((row) => row.rect),
+    water: region === "Ghelsba Outpost"
+      ? OUT_WATER_MARKS
+      : ORC_WATER.filter((row) => hit(zone.rects, (row.rect.minX + row.rect.maxX) / 2, (row.rect.minZ + row.rect.maxZ) / 2, 0)).map((row) => row.rect),
     bounds: { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad },
     marks,
     grid,
@@ -770,16 +1040,60 @@ function sheet(add: Add, rect: Rect, color: number, y = 0.05) {
   add(color, w, 0.05, d, (rect.minX + rect.maxX) / 2, y, (rect.minZ + rect.maxZ) / 2);
 }
 
+function cutsCenter(x: number, z: number, w: number, d: number): boolean {
+  const rect = { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 };
+  for (const edge of GHELSBA_GRAPH.edges) {
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.ceil(len / 1.5));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = a.x + (b.x - a.x) * t;
+        const pz = a.z + (b.z - a.z) * t;
+        const cx = Math.max(rect.minX, Math.min(rect.maxX, px));
+        const cz = Math.max(rect.minZ, Math.min(rect.maxZ, pz));
+        if (Math.hypot(px - cx, pz - cz) < 2.7 && inGhelsbaGraph(px, pz, 0)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function safeBox(add: Add, colliders: Solid[] | null, color: number, w: number, h: number, d: number, x: number, y: number, z: number) {
+  add(color, w, h, d, x, y, z);
+  if (colliders && !cutsCenter(x, z, w, d)) colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+}
+
 function hut(add: Add, colliders: Solid[], x: number, z: number) {
   const wood = 6964012;
-  box(add, colliders, wood, 9.2, 2.3, 0.45, x, 1.15, z - 4.2);
-  box(add, colliders, wood, 9.2, 2.3, 0.45, x, 1.15, z + 4.2);
-  box(add, colliders, wood, 0.45, 2.3, 8.4, x - 4.4, 1.15, z);
+  safeBox(add, colliders, wood, 9.2, 2.3, 0.45, x, 1.15, z - 4.2);
+  safeBox(add, colliders, wood, 9.2, 2.3, 0.45, x, 1.15, z + 4.2);
+  safeBox(add, colliders, wood, 0.45, 2.3, 8.4, x - 4.4, 1.15, z);
   add(9127187, 1.4, 0.7, 1.4, x + 1.4, 0.15, z);
   add(14927226, 0.7, 0.35, 0.7, x + 1.4, 0.55, z);
 }
 
-const hutSpot = mid(oF10);
+function besideFloor(id: string, yards: number) {
+  const at = nodeAt(id);
+  let best = at;
+  let score = -Infinity;
+  for (let k = 0; k < 24; k++) {
+    const ang = (k / 24) * Math.PI * 2;
+    const x = at.x + Math.cos(ang) * yards;
+    const z = at.z + Math.sin(ang) * yards;
+    if (!inGhelsbaGraph(x, z, 0.5) || onEdgeCenter(x, z, 3.4)) continue;
+    const room = ghelsbaClearance(x, z);
+    if (room > score) {
+      score = room;
+      best = { x, z };
+    }
+  }
+  return best;
+}
+
+const hutSpot = besideFloor("door_hut", 5.2);
 export const HUT_ROOF = { x: hutSpot.x, z: hutSpot.z, w: 10, d: 9.2, y: 2.45, h: 0.35, color: 5257770 };
 
 export function underHutRoof(x: number, z: number): boolean {
@@ -787,7 +1101,7 @@ export function underHutRoof(x: number, z: number): boolean {
 }
 
 function tent(add: Add, colliders: Solid[], x: number, z: number) {
-  box(add, colliders, 9072712, 3.6, 1.45, 2.8, x, 0.72, z);
+  safeBox(add, colliders, 9072712, 3.6, 1.45, 2.8, x, 0.72, z);
   add(9251362, 0.16, 1.9, 0.16, x, 0.95, z);
 }
 
@@ -880,20 +1194,22 @@ function watchstand(add: Add, colliders: Solid[], x: number, z: number) {
 }
 
 function shrub(add: Add, x: number, z: number) {
-  if (!hit(OUT_ROOMS, x, z, 1.4)) return;
+  if (!inGhelsbaGraph(x, z, 1.2)) return;
+  if (onEdgeCenter(x, z, 2.4)) return;
   if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 7 || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < 5)) return;
   if (Math.hypot(x - RON_TO_GHELSBA.x, z - RON_TO_GHELSBA.z) < 6) return;
-  if (ORC_WATER.some((row) => x > row.rect.minX - 1 && x < row.rect.maxX + 1 && z > row.rect.minZ - 1 && z < row.rect.maxZ + 1)) return;
+  if (inOutpostWater(x, z)) return;
   add(2058808, 1.35, 0.65, 1.15, x, 0.32, z);
   add(3111488, 0.75, 0.4, 0.65, x + 0.2, 0.7, z);
 }
 
 function boulder(add: Add, colliders: Solid[], x: number, z: number) {
-  if (!hit(OUT_ROOMS, x, z, 1.2)) return;
+  if (!inGhelsbaGraph(x, z, 1.1)) return;
+  if (onEdgeCenter(x, z, 3.2)) return;
   if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 8 || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < 5)) return;
   if (Math.hypot(x - RON_TO_GHELSBA.x, z - RON_TO_GHELSBA.z) < 6) return;
   const h = 0.85 + (Math.abs(Math.round(x + z)) % 3) * 0.28;
-  box(add, colliders, 6050130, 1.15, h, 0.95, x, h / 2, z);
+  safeBox(add, colliders, 6050130, 1.15, h, 0.95, x, h / 2, z);
 }
 
 function lip(add: Add, colliders: Solid[], rect: Rect, open: OrcGate["side"]) {
@@ -1004,27 +1320,23 @@ function towerFoot(x: number, z: number): boolean {
   const half = 1.5;
   for (const dx of [-half, 0, half]) {
     for (const dz of [-half, 0, half]) {
-      if (hit(OUT_ROOMS, x + dx, z + dz, 0)) return false;
+      if (ghelsbaClearance(x + dx, z + dz) > -0.15) return false;
     }
   }
-  let near = Infinity;
-  for (const rect of OUT_ROOMS) near = Math.min(near, rectDist(x, z, rect));
-  if (near > 3.6 || near < 0.35) return false;
-  if (!propClear(x, z, 7) && ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 7)) return false;
-  if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 6.5 || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < 6)) return false;
+  const room = ghelsbaClearance(x, z);
+  if (room > -0.45 || room < -3.8) return false;
+  if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 7 || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < 6)) return false;
   if (Math.hypot(x - RON_TO_GHELSBA.x, z - RON_TO_GHELSBA.z) < 7) return false;
-  if (ORC_WATER.some((row) => x > row.rect.minX - 2 && x < row.rect.maxX + 2 && z > row.rect.minZ - 2 && z < row.rect.maxZ + 2)) return false;
+  if (inOutpostWater(x, z)) return false;
   return true;
 }
 
-function seekRim(ax: number, az: number, dx: number, dz: number): { x: number; z: number } | null {
-  const alongX = -dz;
-  const alongZ = dx;
-  const outs = [3.3, 4.4, 5.5, 8, 12, 16.8, 17.6, 18.4, 19.2, 20];
-  for (const along of [0, 6, -6, 9, -9, 12, -12, 15, -15, 18, -18]) {
-    for (const out of outs) {
-      const x = ax + dx * out + alongX * along;
-      const z = az + dz * out + alongZ * along;
+function seekRim(ax: number, az: number): { x: number; z: number } | null {
+  for (const out of [4.2, 5.5, 7, 9, 12, 15, 18]) {
+    for (let k = 0; k < 28; k++) {
+      const ang = (k / 28) * Math.PI * 2;
+      const x = ax + Math.cos(ang) * out;
+      const z = az + Math.sin(ang) * out;
       if (towerFoot(x, z)) return { x, z };
     }
   }
@@ -1036,7 +1348,8 @@ export function orcTowers(): { x: number; z: number }[] {
   const fort = ORC_GATES.find((gate) => gate.id === "ghelsba-fort");
   const ron = ORC_GATES.find((gate) => gate.id === "ghelsba-ron");
   if (!fort || !ron) return [];
-  const found = [seekRim(fort.x, fort.z, 1, 0), seekRim(mid(oH8).x, oH8.minZ, 0, -1), seekRim(ron.x, ron.z, 0, 1)];
+  const north = { x: fort.x, z: fort.z - 8 };
+  const found = [seekRim(fort.x, fort.z), seekRim(north.x, north.z), seekRim(ron.x, ron.z)];
   const out: { x: number; z: number }[] = [];
   for (const spot of found) {
     if (!spot) continue;
@@ -1046,11 +1359,30 @@ export function orcTowers(): { x: number; z: number }[] {
   return out.slice(0, 3);
 }
 
+function fireSpot(id: string): { x: number; z: number } | null {
+  const at = nodeAt(id);
+  for (const reach of [0, 3.5, 5.5, 7.5]) {
+    const turns = reach === 0 ? 1 : 12;
+    for (let k = 0; k < turns; k++) {
+      const ang = (k / turns) * Math.PI * 2;
+      const x = at.x + Math.cos(ang) * reach;
+      const z = at.z + Math.sin(ang) * reach;
+      if (ghelsbaClearance(x, z) < 4) continue;
+      if (onEdgeCenter(x, z, 3)) continue;
+      if (inOutpostWater(x, z)) continue;
+      if (ORC_GATES.some((gate) => Math.hypot(gate.x - x, gate.z - z) < 4 || Math.hypot(gate.arrive.x - x, gate.arrive.z - z) < 4)) continue;
+      if (Math.hypot(x - RON_TO_GHELSBA.x, z - RON_TO_GHELSBA.z) < 4) continue;
+      return { x, z };
+    }
+  }
+  return null;
+}
+
 const FIRE_CANDIDATES: { zone: string; x: number; z: number }[] = [
-  { zone: "ghelsba", x: mid(oH7).x + 1.8, z: mid(oH7).z + 2.6 },
-  { zone: "ghelsba", x: mid(oG9).x - 4.2, z: mid(oG9).z + 3.4 },
-  { zone: "ghelsba", x: mid(oH6).x + 4.5, z: mid(oH6).z + 2.2 },
-  { zone: "ghelsba", x: mid(oF7).x + 4.8, z: mid(oF7).z - 3.6 },
+  ...(["area_plateau", "area_trench_h7", "area_hut", "area_camp_i6", "area_f7_room", "area_south_basin"] as const).flatMap((id) => {
+    const spot = fireSpot(id);
+    return spot ? [{ zone: "ghelsba", x: spot.x, z: spot.z }] : [];
+  }),
   { zone: "fort-ghelsba", x: mid(fG6).x + 1.4, z: mid(fG6).z + 2.2 },
   { zone: "fort-ghelsba", x: mid(fH7).x - 2.4, z: mid(fH7).z + 2.6 },
   { zone: "fort-ghelsba", x: mid(fJ6).x + 1.2, z: mid(fJ6).z - 2.2 },
@@ -1065,7 +1397,7 @@ function watchtower(add: Add, colliders: Solid[], x: number, z: number) {
   const roof = 5257770;
   const s = 1.15;
   for (const [dx, dz] of [[-s, -s], [s, -s], [-s, s], [s, s]] as const) {
-    box(add, colliders, wood, 0.36, 4.4, 0.36, x + dx, 2.2, z + dz);
+    safeBox(add, colliders, wood, 0.36, 4.4, 0.36, x + dx, 2.2, z + dz);
   }
   add(deck, s * 2 + 0.45, 0.16, s * 2 + 0.45, x, 3.72, z);
   add(roof, s * 2 + 1.2, 0.2, s * 2 + 0.85, x, 4.62, z, 0, 0.4);
@@ -1073,22 +1405,187 @@ function watchtower(add: Add, colliders: Solid[], x: number, z: number) {
   add(ORC_RED, 0.1, 0.72, 0.95, x + 0.15, 5.6, z + 0.32);
 }
 
-function palisadeRun(add: Add, rect: Rect, side: "n" | "s" | "e" | "w") {
+function lobeStakes(add: Add, id: string) {
   const wood = 6964012;
   const tip = 5255210;
-  const horizontal = side === "n" || side === "s";
-  const edge = side === "n" ? rect.minZ : side === "s" ? rect.maxZ : side === "w" ? rect.minX : rect.maxX;
-  const full: [number, number] = horizontal ? [rect.minX + 1.6, rect.maxX - 1.6] : [rect.minZ + 1.6, rect.maxZ - 1.6];
-  const inset = 1.2;
-  const pitch = side === "n" ? -0.22 : 0.22;
-  const yaw = horizontal ? 0 : Math.PI / 2;
-  for (let t = full[0]; t <= full[1]; t += 1.15) {
-    const x = horizontal ? t : edge + (side === "w" ? inset : -inset);
-    const z = horizontal ? edge + (side === "n" ? inset : -inset) : t;
-    if (!hit(OUT_ROOMS, x, z, 0.15)) continue;
-    if (!propClear(x, z, 6)) continue;
-    add(wood, 0.2, 2.6, 0.2, x, 1.22, z, yaw, pitch);
-    add(tip, 0.08, 0.32, 0.08, x, 2.55, z, yaw, pitch);
+  const at = nodeAt(id);
+  for (let k = 0; k < 7; k++) {
+    const ang = (k / 7) * Math.PI * 2;
+    const x = at.x + Math.cos(ang) * 4.2;
+    const z = at.z + Math.sin(ang) * 4.2;
+    if (!inGhelsbaGraph(x, z, 0.2) || onEdgeCenter(x, z, 2.2) || inOutpostWater(x, z)) continue;
+    add(wood, 0.2, 2.2, 0.2, x, 1.05, z);
+    add(tip, 0.08, 0.28, 0.08, x, 2.2, z);
+  }
+}
+
+type V2 = { x: number; z: number };
+
+function outpostWalls(add: Add, colliders: Solid[], fade?: Add) {
+  const mask = buildGhelsbaMask(16);
+  const cell = CELL / mask.res;
+  const { n, data } = mask;
+  const sx = (i: number) => OUT_X + (i + 0.5) * cell;
+  const sz = (j: number) => OUT_Z + (j + 0.5) * cell;
+  const on = (i: number, j: number) => i >= 0 && j >= 0 && i < n && j < n && data[j * n + i] === 1;
+  const segs: [V2, V2][] = [];
+  for (let j = 0; j < n - 1; j++) {
+    for (let i = 0; i < n - 1; i++) {
+      const code = (on(i, j) ? 1 : 0) | (on(i + 1, j) ? 2 : 0) | (on(i + 1, j + 1) ? 4 : 0) | (on(i, j + 1) ? 8 : 0);
+      if (code === 0 || code === 15) continue;
+      const north: V2 = { x: (sx(i) + sx(i + 1)) / 2, z: sz(j) };
+      const south: V2 = { x: (sx(i) + sx(i + 1)) / 2, z: sz(j + 1) };
+      const west: V2 = { x: sx(i), z: (sz(j) + sz(j + 1)) / 2 };
+      const east: V2 = { x: sx(i + 1), z: (sz(j) + sz(j + 1)) / 2 };
+      const pair = (a: V2, b: V2) => segs.push([a, b]);
+      const centerIn = inGhelsbaGraph((sx(i) + sx(i + 1)) / 2, (sz(j) + sz(j + 1)) / 2);
+      if (code === 5) {
+        if (centerIn) {
+          pair(north, east);
+          pair(west, south);
+        } else {
+          pair(north, west);
+          pair(east, south);
+        }
+        continue;
+      }
+      if (code === 10) {
+        if (centerIn) {
+          pair(north, west);
+          pair(east, south);
+        } else {
+          pair(north, east);
+          pair(west, south);
+        }
+        continue;
+      }
+      const table: Record<number, [V2, V2]> = {
+        1: [north, west],
+        2: [north, east],
+        3: [west, east],
+        4: [east, south],
+        6: [north, south],
+        7: [west, south],
+        8: [west, south],
+        9: [north, south],
+        11: [east, south],
+        12: [east, west],
+        13: [north, east],
+        14: [north, west],
+      };
+      const hit = table[code];
+      if (hit) pair(hit[0], hit[1]);
+    }
+  }
+  const rockLight = 10126180;
+  const rockDark = 3948594;
+  const tall = 12.4;
+  const thick = 2.4;
+  const gates = ORC_GATES.filter((gate) => inGhelsbaGraph(gate.x, gate.z, 0));
+  let band = 0;
+  for (let i = 0; i < segs.length; i++) {
+    const a = segs[i][0];
+    const b = segs[i][1];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.2) continue;
+    const mx = (a.x + b.x) / 2;
+    const mz = (a.z + b.z) / 2;
+    if (gates.some((gate) => Math.hypot(gate.x - mx, gate.z - mz) < 8)) continue;
+    const nx = -dz / len;
+    const nz = dx / len;
+    const into = ghelsbaClearance(mx + nx * 2, mz + nz * 2) >= ghelsbaClearance(mx - nx * 2, mz - nz * 2) ? { x: nx, z: nz } : { x: -nx, z: -nz };
+    const outward = { x: -into.x, z: -into.z };
+    const lip = outward.z > 0.28;
+    const cx = mx + outward.x * (thick / 2 + 0.35);
+    const cz = mz + outward.z * (thick / 2 + 0.35);
+    const yaw = -Math.atan2(dz, dx);
+    if (lip) {
+      if (!fade) continue;
+      const lipH = 0.72;
+      fade(rockDark, len + 0.35, lipH, thick, cx, lipH / 2, cz, yaw);
+      continue;
+    }
+    const body = tall * 0.68;
+    const capH = tall - body;
+    const color = band % 2 === 0 ? rockLight : rockDark;
+    band += 1;
+    const c = Math.abs(Math.cos(yaw));
+    const s = Math.abs(Math.sin(yaw));
+    const bw = (len + 0.35) * c + thick * s;
+    const bd = (len + 0.35) * s + thick * c;
+    add(color, len + 0.35, body, thick, cx, body / 2 - 0.12, cz, yaw);
+    if (!cutsCenter(cx, cz, bw, bd)) colliders.push({ minX: cx - bw / 2, maxX: cx + bw / 2, minZ: cz - bd / 2, maxZ: cz + bd / 2 });
+    if (capH > 0.35) add(rockDark, len + 0.35, capH, thick, cx, body + capH / 2 - 0.1, cz, yaw);
+  }
+}
+
+function paintStream(add: Add, color: number, moss: number) {
+  for (const stream of GHELSBA_GRAPH.streams) {
+    for (let i = 0; i + 1 < stream.length; i++) {
+      const a = gridToWorld(stream[i][0], stream[i][1]);
+      const b = gridToWorld(stream[i + 1][0], stream[i + 1][1]);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.4) continue;
+      const mx = (a.x + b.x) / 2;
+      const mz = (a.z + b.z) / 2;
+      add(color, len, 0.05, 3.2, mx, 0.02, mz, -Math.atan2(dz, dx));
+      add(moss, len, 0.04, 1.1, mx, 0.03, mz, -Math.atan2(dz, dx));
+    }
+  }
+  for (const id of POND_NODES) {
+    const node = graphNode(id);
+    const at = gridToWorld(node.gx, node.gy);
+    const r = (node.r ?? 0.1) * CELL * 1.6;
+    add(color, r, 0.05, r, at.x, 0.02, at.z);
+  }
+}
+
+function paintBridges(add: Add) {
+  const plank = 8020548;
+  for (const edge of GHELSBA_GRAPH.edges) {
+    if (edge.level !== "bridge") continue;
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.4) continue;
+      const mx = (a.x + b.x) / 2;
+      const mz = (a.z + b.z) / 2;
+      const yaw = -Math.atan2(dz, dx);
+      add(plank, len, 0.1, 3.4, mx, 0.12, mz, yaw);
+      add(ROPE, len, 0.08, 0.1, mx, 1.05, mz, yaw);
+      add(6964012, 0.22, 1.2, 0.22, a.x, 0.6, a.z);
+      add(6964012, 0.22, 1.2, 0.22, b.x, 0.6, b.z);
+    }
+  }
+}
+
+function cliffRails(add: Add, colliders: Solid[]) {
+  for (const line of GHELSBA_GRAPH.cliffs) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const a = gridToWorld(line[i][0], line[i][1]);
+      const b = gridToWorld(line[i + 1][0], line[i + 1][1]);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.8) continue;
+      const mx = (a.x + b.x) / 2;
+      const mz = (a.z + b.z) / 2;
+      if (!inGhelsbaGraph(mx, mz, 0) || onEdgeCenter(mx, mz, 2.6)) continue;
+      const yaw = -Math.atan2(dz, dx);
+      add(3948594, len, 0.9, 0.35, mx, 0.45, mz, yaw);
+      const c = Math.abs(Math.cos(yaw));
+      const s = Math.abs(Math.sin(yaw));
+      const bw = len * c + 0.35 * s;
+      const bd = len * s + 0.35 * c;
+      if (!cutsCenter(mx, mz, bw, bd)) colliders.push({ minX: mx - bw / 2, maxX: mx + bw / 2, minZ: mz - bd / 2, maxZ: mz + bd / 2 });
+    }
   }
 }
 
@@ -1176,7 +1673,7 @@ export function buildOrcLands(add: Add, colliders: Solid[], fade?: Add) {
   const plank = 8020548;
   const moss = 4156216;
   const grass = 6974788;
-  for (const rect of OUT_ROOMS) floor(add, rect, grass);
+  for (const rect of OUT_FLOOR) floor(add, rect, grass);
   for (const rect of FORT_ROOMS) floor(add, rect, dirtDark);
   for (const rect of YUG_ROOMS) floor(add, rect, cave);
   for (const rect of PEAK_ROOMS) floor(add, rect, dirtDark);
@@ -1184,81 +1681,43 @@ export function buildOrcLands(add: Add, colliders: Solid[], fade?: Add) {
   if (yard) sheet(add, yard, plank, 0.045);
   sheet(add, boxAt(mid(y2J6).x, mid(y2J6).z, 6.5, 6.5), dirtDark, 0.045);
   sheet(add, boxAt(PEAK_X, PEAK_Z, 5.6, 5.6), 3811874, 0.04);
+  paintStream(add, water, moss);
   for (const row of ORC_WATER) {
     const color = row.kind === "spring" ? springColor : water;
     sheet(add, row.rect, color, 0.02);
     colliders.push({ minX: row.rect.minX, maxX: row.rect.maxX, minZ: row.rect.minZ, maxZ: row.rect.maxZ });
-    if (row.kind === "stream") sheet(add, { minX: row.rect.minX - 1.5, maxX: row.rect.minX, minZ: row.rect.minZ, maxZ: row.rect.maxZ }, moss, 0.04);
   }
-  const outGates = ORC_GATES.filter((gate) => hit(OUT_ROOMS, gate.x, gate.z, 0));
   const fortGates = ORC_GATES.filter((gate) => hit(FORT_ROOMS, gate.x, gate.z, 0));
   const yugGates = ORC_GATES.filter((gate) => hit(YUG_ROOMS, gate.x, gate.z, 0));
   const peakGates = ORC_GATES.filter((gate) => hit(PEAK_ROOMS, gate.x, gate.z, 0));
-  cliffWall(add, colliders, OUT_ROOMS, outGates, "canyon", fade);
+  outpostWalls(add, colliders, fade);
+  cliffRails(add, colliders);
   cliffWall(add, colliders, FORT_ROOMS, fortGates, "timber");
   cliffWall(add, colliders, YUG_ROOMS, yugGates, "cave");
   cliffWall(add, colliders, PEAK_ROOMS, peakGates, "rock");
-  for (const gate of ORC_GATES) apron(add, gate, cave);
-  const door = mid(oF10);
-  hut(add, colliders, door.x, door.z);
-  const camp = mid(oH7);
-  tent(add, colliders, camp.x - 7.2, camp.z + 4.2);
-  tent(add, colliders, camp.x + 7.4, camp.z - 4.6);
-  banner(add, camp.x - 7.2, camp.z - 5.2);
-  banner(add, camp.x + 5.2, camp.z + 5.4);
-  watchstand(add, colliders, camp.x + 8.2, camp.z + 1.4);
-  for (const dz of [-6.5, -3.4, 3.6, 6.4]) {
-    const px = camp.x - 11.2;
-    box(add, colliders, timber, 0.34, 2.3, 0.34, px, 1.15, camp.z + dz);
-    add(ORC_RED, 0.4, 0.26, 0.4, px, 2.05, camp.z + dz);
-  }
-  add(9127187, 1.5, 0.35, 1.5, camp.x - 2.4, 0.18, camp.z + 1.6);
-  add(14927226, 0.55, 0.4, 0.55, camp.x - 2.4, 0.5, camp.z + 1.6);
-  const fortMouth = ORC_GATES.find((gate) => gate.id === "ghelsba-fort");
-  if (fortMouth) {
-    for (const side of [-1, 1]) {
-      const z = fortMouth.z + side * 6.6;
-      box(add, colliders, timber, 0.4, 2.8, 0.4, fortMouth.x - 1.5, 1.4, z);
-      add(ORC_RED, 0.48, 0.3, 0.48, fortMouth.x - 1.5, 2.35, z);
-    }
-    add(timber, 0.28, 0.28, 10.4, fortMouth.x - 1.5, 2.7, fortMouth.z);
-  }
-  const ronMouth = ORC_GATES.find((gate) => gate.id === "ghelsba-ron");
-  if (ronMouth) {
-    ropeBridge(add, colliders, ronMouth.x, ronMouth.z - 3.8, ronMouth.z - 16.8);
-    palisadeMouth(add, colliders, ronMouth.x, ronMouth.z - 17.6);
-  }
-  torch(add, mid(oH8).x - 6.5, mid(oH8).z - 6);
-  torch(add, mid(oJ11).x - 3.2, mid(oJ11).z - 6);
-  const lookout = mid(oH6);
-  pine(add, colliders, lookout.x - 6, lookout.z + 2);
-  pine(add, colliders, lookout.x + 5, lookout.z - 4);
-  pine(add, colliders, mid(oF7).x - 8, mid(oF7).z + 4);
-  lip(add, colliders, pond, "s");
-  const dress: [number, number][] = [
-    [mid(oG6).x - 7, mid(oG6).z + 4],
-    [mid(oI6).x + 3, mid(oI6).z - 5],
-    [mid(oF7).x + 7, mid(oF7).z - 6],
-    [mid(oH8).x - 6, mid(oH8).z + 4],
-    [mid(oI8).x - 8, mid(oI8).z + 2],
-    [mid(oG9).x + 6, mid(oG9).z - 4],
-    [mid(oH10).x - 6, mid(oH10).z + 5],
-    [mid(oG10).x + 5, mid(oG10).z - 5],
-    [mid(oJ9).x - 2, mid(oJ9).z + 2],
-  ];
-  for (const [x, z] of dress) shrub(add, x, z);
-  boulder(add, colliders, mid(oG6).x + 7, mid(oG6).z - 5);
-  boulder(add, colliders, mid(oF7).x - 8, mid(oF7).z - 5);
-  boulder(add, colliders, mid(oH10).x + 6, mid(oH10).z - 4);
-  boulder(add, colliders, mid(oG9).x - 6, mid(oG9).z + 4);
+  for (const gate of ORC_GATES) if (!inGhelsbaGraph(gate.x, gate.z, 0)) apron(add, gate, cave);
+  paintBridges(add);
+  hut(add, colliders, hutSpot.x, hutSpot.z);
+  const camp = besideFloor("area_plateau", 6);
+  tent(add, colliders, camp.x - 4.2, camp.z + 2.4);
+  tent(add, colliders, camp.x + 4.4, camp.z - 2.2);
+  banner(add, camp.x - 3.2, camp.z - 3.2);
+  banner(add, camp.x + 3.4, camp.z + 3.2);
+  add(9127187, 1.5, 0.35, 1.5, camp.x - 1.2, 0.18, camp.z + 1.2);
+  add(14927226, 0.55, 0.4, 0.55, camp.x - 1.2, 0.5, camp.z + 1.2);
+  const look = nodeAt("area_nw_snake");
+  shrub(add, look.x + 4, look.z + 2);
+  shrub(add, nodeAt("area_f7_room").x + 3, nodeAt("area_f7_room").z - 2);
+  shrub(add, nodeAt("area_hut").x + 4, nodeAt("area_hut").z - 3);
+  boulder(add, colliders, nodeAt("area_south_basin").x + 5, nodeAt("area_south_basin").z - 3);
+  boulder(add, colliders, nodeAt("area_camp_i6").x - 4, nodeAt("area_camp_i6").z + 3);
   for (const spot of orcTowers()) watchtower(add, colliders, spot.x, spot.z);
-  palisadeRun(add, oF7, "w");
-  palisadeRun(add, oK9, "e");
-  palisadeRun(add, oF5, "n");
-  palisadeRun(add, oJ6, "n");
-  if (propClear(camp.x - 4.2, camp.z + 0.6, 3.2)) drum(add, camp.x - 4.2, camp.z + 0.6);
-  if (propClear(camp.x + 4.6, camp.z - 1.2, 3.2)) weaponRack(add, camp.x + 4.6, camp.z - 1.2);
-  if (propClear(camp.x - 0.8, camp.z - 4.4, 3.2)) skullPole(add, camp.x - 0.8, camp.z - 4.4);
+  lobeStakes(add, "pond_sw");
+  lobeStakes(add, "pond_nw");
+  lobeStakes(add, "warmachine_i5");
+  if (propClear(camp.x - 2.2, camp.z + 0.4, 3.2) && !onEdgeCenter(camp.x - 2.2, camp.z + 0.4, 2.4)) drum(add, camp.x - 2.2, camp.z + 0.4);
+  if (propClear(camp.x + 2.4, camp.z - 0.6, 3.2) && !onEdgeCenter(camp.x + 2.4, camp.z - 0.6, 2.4)) weaponRack(add, camp.x + 2.4, camp.z - 0.6);
+  if (propClear(camp.x, camp.z - 2.8, 3.2) && !onEdgeCenter(camp.x, camp.z - 2.8, 2.4)) skullPole(add, camp.x, camp.z - 2.8);
   for (const fire of ORC_FIRES) if (fire.zone === "ghelsba") campfire(add, fire.x, fire.z);
   const siege = mid(fI10);
   catapult(add, colliders, siege.x, siege.z - 4);
@@ -1342,40 +1801,15 @@ export function assertGhelsba(): void {
   if (yughottSquare(mid(y2J6).x, mid(y2J6).z) !== "J-6") throw new Error("yughott J-6 square");
   if (yughottSquare(mid(y2K6).x, mid(y2K6).z) !== "K-6") throw new Error("yughott K-6 square");
   if (yughottSquare(mid(y2J9).x, mid(y2J9).z) !== "J-9") throw new Error("yughott J-9 square");
-  if (!component(OUT_ROOMS) || !component(FORT_ROOMS) || !component(YUG_ROOMS) || !component(PEAK_ROOMS)) throw new Error("a ghelsba zone is split");
+  if (!component(FORT_ROOMS) || !component(YUG_ROOMS) || !component(PEAK_ROOMS)) throw new Error("a ghelsba zone is split");
   const spot = (rects: Rect[], ox: number, oz: number, col: number, row: number, label: string) => {
     const c = cell(ox, oz, col, row);
     if (!hit(rects, c.x, c.z, 0.4)) throw new Error(`${label} is not walkable`);
   };
-  const outSpots: [number, number, string][] = [
-    [5, 6, "F-7"], [5, 9, "F-10"],
-    [6, 5, "G-6"], [6, 8, "G-9"], [6, 9, "G-10"],
-    [7, 5, "H-6"], [7, 6, "H-7"], [7, 7, "H-8"], [7, 9, "H-10"],
-    [8, 5, "I-6"], [8, 6, "I-7"], [8, 7, "I-8"],
-  ];
-  for (const [col, row, label] of outSpots) spot(OUT_ROOMS, OUT_X, OUT_Z, col, row, label);
-  const cliff = (col: number, row: number, label: string) => {
-    const c = cell(OUT_X, OUT_Z, col, row);
-    if (hit(OUT_ROOMS, c.x, c.z, 0)) throw new Error(`${label} should stay cliff`);
-  };
-  cliff(5, 4, "F-5");
-  cliff(5, 5, "F-6");
-  cliff(5, 7, "F-8");
-  cliff(5, 8, "F-9");
-  cliff(6, 4, "G-5");
-  cliff(6, 6, "G-7");
-  cliff(6, 7, "G-8");
-  cliff(7, 4, "H-5");
-  cliff(7, 8, "H-9");
-  cliff(7, 10, "H-11");
-  cliff(8, 4, "I-5");
-  cliff(8, 8, "I-9");
-  cliff(8, 9, "I-10");
-  cliff(8, 10, "I-11");
-  cliff(9, 5, "J-6");
-  cliff(9, 6, "J-7");
-  cliff(9, 7, "J-8");
-  cliff(4, 7, "E-8");
+  for (const node of GHELSBA_GRAPH.nodes) {
+    const at = gridToWorld(node.gx, node.gy);
+    if (!inGhelsbaGraph(at.x, at.z, 0)) throw new Error(`${node.id} left the floor`);
+  }
   const fortSpots: [number, number, string][] = [
     [4, 7, "E-8"], [5, 7, "F-8"], [6, 5, "G-6"], [6, 6, "G-7"], [6, 7, "G-8"], [6, 8, "G-9"],
     [7, 6, "H-7"], [7, 7, "H-8"], [7, 8, "H-9"], [7, 9, "H-10"], [8, 7, "I-8"], [8, 9, "I-10"],
@@ -1394,7 +1828,7 @@ export function assertGhelsba(): void {
   if (!hit(PEAK_ROOMS, PEAK_X, PEAK_Z, 0.4)) throw new Error("burning circle");
   if (!hit(PEAK_ROOMS, (spring.minX + spring.maxX) / 2, (spring.minZ + spring.maxZ) / 2, 0.2)) throw new Error("hot spring");
   const overlaps = (a: Rect, b: Rect) => a.minX < b.maxX - 0.5 && a.maxX > b.minX + 0.5 && a.minZ < b.maxZ - 0.5 && a.maxZ > b.minZ + 0.5;
-  const groups = [OUT_ROOMS, FORT_ROOMS, YUG_ROOMS, PEAK_ROOMS];
+  const groups = [OUT_FLOOR, FORT_ROOMS, YUG_ROOMS, PEAK_ROOMS];
   for (let i = 0; i < groups.length; i++) {
     for (let j = i + 1; j < groups.length; j++) {
       for (const a of groups[i]) for (const b of groups[j]) if (overlaps(a, b)) throw new Error("orc zones overlap");
@@ -1409,6 +1843,11 @@ export function assertGhelsba(): void {
   for (const gate of ORC_GATES) {
     if (!inOrc(gate.x, gate.z, 0.2)) throw new Error(`${gate.id} gate is off the ground`);
     if (gate.id === "ghelsba-ron") continue;
+    if (gate.to === "closed") {
+      if (!inGhelsbaGraph(gate.arrive.x, gate.arrive.z, 0.2)) throw new Error(`${gate.id} stand left the outpost`);
+      if (Math.hypot(gate.x - gate.arrive.x, gate.z - gate.arrive.z) < 8) throw new Error(`${gate.id} stand is on the door`);
+      continue;
+    }
     const landed = orcZoneAt(gate.arrive.x, gate.arrive.z, 0.36);
     if (!landed || landed.id !== gate.to) throw new Error(`${gate.id} lands in ${landed?.id ?? "nothing"}`);
     if (Math.hypot(gate.x - gate.arrive.x, gate.z - gate.arrive.z) < 8) throw new Error(`${gate.id} arrival stands on the line`);
@@ -1433,6 +1872,10 @@ export function assertGhelsba(): void {
   };
   if (ORC_GATES.some((gate) => gate.id === "yug-fort-h7")) throw new Error("H-7 fort gate");
   onSquare("ghelsba-yughott", "I-11", ghelsbaSquare);
+  onSquare("ghelsba-hut", "F-10", ghelsbaSquare);
+  const fortMouthSq = ghelsbaSquare(byId("ghelsba-fort").x, byId("ghelsba-fort").z);
+  if (fortMouthSq !== "H-8" && fortMouthSq !== "I-8") throw new Error(`ghelsba-fort is ${fortMouthSq}`);
+  if (ghelsbaSquare(byId("fort-out").arrive.x, byId("fort-out").arrive.z) !== "I-8") throw new Error("fort arrival left I-8");
   if (ghelsbaSquare(byId("yug-out").arrive.x, byId("yug-out").arrive.z) !== "I-11") throw new Error("outpost return off I-11");
   onSquare("yug-out", "E-9", yughottSquare);
   onSquare("yug-fort-h8", "H-8", yughottSquare);
@@ -1456,39 +1899,33 @@ export function assertGhelsba(): void {
     if (!inOrc(cx, cz, 0.2)) throw new Error(`${row.kind} is off the floor`);
   }
   const fortGate = ORC_GATES.find((gate) => gate.id === "ghelsba-fort");
-  if (!fortGate || fortGate.side !== "e") throw new Error("fort mouth should open east of I-8");
-  if (ORC_WATER.some((row) => fortGate.x > row.rect.minX - 1 && fortGate.x < row.rect.maxX + 1 && fortGate.z > row.rect.minZ - 1 && fortGate.z < row.rect.maxZ + 1)) {
-    throw new Error("river covers the fort mouth");
-  }
-  const wet = (x: number, z: number) => ORC_WATER.some((row) => x > row.rect.minX && x < row.rect.maxX && z > row.rect.minZ && z < row.rect.maxZ);
-  const i8 = cell(OUT_X, OUT_Z, 8, 7);
-  if (wet(i8.x, i8.z)) throw new Error("river crosses the fort approach");
-  const dry = (x: number, z: number) => hit(OUT_ROOMS, x, z, 0.45) && !wet(x, z);
+  if (!fortGate || fortGate.side !== "e") throw new Error("fort mouth should open east");
+  if (inOutpostWater(fortGate.x, fortGate.z)) throw new Error("river covers the fort mouth");
   const goals = [
     fortGate,
     ORC_GATES.find((gate) => gate.id === "ghelsba-yughott")!,
-    { x: mid(oH8).x, z: mid(oH8).z },
-    { x: mid(oF7).x, z: mid(oF7).z },
-    { x: mid(oF10).x, z: mid(oF10).z + 6.5 },
+    ORC_GATES.find((gate) => gate.id === "ghelsba-hut")!,
+    nodeAt("fort_arrival_i8"),
+    nodeAt("area_plateau"),
   ];
   const seen = new Set<string>();
   const queue: [number, number][] = [[RON_TO_GHELSBA.x, RON_TO_GHELSBA.z]];
-  const key = (x: number, z: number) => `${Math.round(x * 2)}:${Math.round(z * 2)}`;
+  const key = (x: number, z: number) => `${Math.round(x)}:${Math.round(z)}`;
   seen.add(key(RON_TO_GHELSBA.x, RON_TO_GHELSBA.z));
-  const step = 1.8;
+  const step = 2;
   for (let i = 0; i < queue.length; i++) {
     const [x, z] = queue[i];
-    for (const [dx, dz] of [[step, 0], [-step, 0], [0, step], [0, -step]] as const) {
+    for (const [dx, dz] of [[step, 0], [-step, 0], [0, step], [0, -step], [step, step], [step, -step], [-step, step], [-step, -step]] as const) {
       const nx = x + dx;
       const nz = z + dz;
       const k = key(nx, nz);
-      if (seen.has(k) || !dry(nx, nz)) continue;
+      if (seen.has(k) || !inGhelsbaGraph(nx, nz, 0)) continue;
       seen.add(k);
       queue.push([nx, nz]);
     }
   }
   for (const goal of goals) {
-    if (!queue.some(([x, z]) => Math.hypot(x - goal.x, z - goal.z) < 3.4)) throw new Error("water cuts off the outpost");
+    if (!queue.some(([x, z]) => Math.hypot(x - goal.x, z - goal.z) < 4)) throw new Error("outpost floor is split");
   }
   for (let i = 0; i < ORC_GATES.length; i++) {
     for (let j = i + 1; j < ORC_GATES.length; j++) {
@@ -1511,16 +1948,40 @@ export function assertGhelsba(): void {
   if (towers.length < 2 || towers.length > 3) throw new Error(`watchtowers ${towers.length}`);
   const post = 1.15;
   for (const spot of towers) {
-    if (hit(OUT_ROOMS, spot.x, spot.z, 0)) throw new Error("watchtower on the floor");
+    if (inGhelsbaGraph(spot.x, spot.z, 0)) throw new Error("watchtower on the floor");
     for (const [dx, dz] of [[-post, -post], [post, -post], [-post, post], [post, post]] as const) {
-      if (hit(OUT_ROOMS, spot.x + dx, spot.z + dz, -0.2)) throw new Error("watchtower post on the floor");
+      if (ghelsbaClearance(spot.x + dx, spot.z + dz) > -0.05) throw new Error("watchtower post on the floor");
     }
   }
   const firesIn = (zone: string) => ORC_FIRES.filter((fire) => fire.zone === zone).length;
   if (firesIn("ghelsba") < 1 || firesIn("fort-ghelsba") < 1) throw new Error("camp fires missing");
   if (firesIn("ghelsba") > 6 || firesIn("fort-ghelsba") > 6 || firesIn("yughott") > 0) throw new Error("camp fire cap");
+  for (const edge of GHELSBA_GRAPH.edges) {
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.ceil(len / 2));
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const nx = len ? -dz / len : 0;
+      const nz = len ? dx / len : 0;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = a.x + dx * t;
+        const pz = a.z + dz * t;
+        for (const off of [0, 2, -2]) {
+          const x = px + nx * off;
+          const z = pz + nz * off;
+          if (!inGhelsbaGraph(x, z, 0)) continue;
+          if (blocked(x, z)) throw new Error(`${edge.id} has a collider on the path`);
+        }
+      }
+    }
+  }
   const walks = [
-    mid(oH7), mid(oH8), mid(oI8), mid(oJ11), mid(oG6), mid(oF7), mid(oF10),
+    nodeAt("area_plateau"), nodeAt("exit_fort_ghelsba"), nodeAt("fort_arrival_i8"), nodeAt("exit_west_ronfaure"),
+    nodeAt("area_nw_snake"), nodeAt("area_f7_room"), nodeAt("door_hut"),
     mid(fE8), mid(fG8), mid(fI8),
     mid(yE9), mid(yF7), mid(yH8), mid(y2J6), mid(y2Neck), mid(y2K5),
   ];

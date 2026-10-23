@@ -358,6 +358,18 @@ export const RON_MARKS = {
 };
 
 function orcZoneGate(gate: OrcGate): ZoneGate {
+  if (gate.to === "closed") {
+    return {
+      id: gate.id,
+      name: gate.name,
+      x: gate.x,
+      z: gate.z,
+      hx: gate.hx,
+      hz: gate.hz,
+      to: "closed",
+      retreat: { x: gate.arrive.x, z: gate.arrive.z },
+    };
+  }
   if (gate.id === "ghelsba-ron") {
     return {
       id: gate.id,

@@ -160,6 +160,18 @@ export function partnerOnLine(
   return best?.id ?? null;
 }
 
+/**
+ * A trust can stand in for Trick Attack when she is near you.
+ * `yards` is distance to the training hare, which is the whole zone away
+ * during a field fight. `party` is distance to you.
+ */
+export function trickAllyPresent(place: { yards?: number; party?: number } | null | undefined): boolean {
+  if (!place) return false;
+  const party = place.party ?? 99;
+  const yards = place.yards ?? 99;
+  return party < 90 || yards < 90;
+}
+
 export function chaseWaitLeft(
   wait: number,
   wasOut: boolean,
@@ -347,4 +359,8 @@ export function assertEnmity(): void {
   if (partnerOnLine(0, 0, 0, 6, [{ id: "side", x: 2.2, z: 3 }]) !== null) throw new Error("off the line is not trick");
   if (partnerOnLine(0, 0, 0, 6, [{ id: "back", x: 0, z: -1 }]) !== null) throw new Error("behind you is not trick");
   if (partnerOnLine(0, 0, 0, 6, []) !== null) throw new Error("no partner");
+  if (!trickAllyPresent({ yards: 800, party: 2.4 })) throw new Error("field trick drops the trust");
+  if (trickAllyPresent({ yards: 800, party: 120 })) throw new Error("a distant trust stood in");
+  if (!trickAllyPresent({ yards: 6, party: 400 })) throw new Error("hare-yard trust");
+  if (trickAllyPresent(null)) throw new Error("missing trust");
 }

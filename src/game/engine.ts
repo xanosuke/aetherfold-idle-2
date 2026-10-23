@@ -8,7 +8,7 @@ import { assertRarab, chooseRarabMove } from "./rarab";
 import { assertDefense, DEFENSE_FRONT } from "./defense";
 import { HUMANOID_STRIDE, assertGait, bindDriver, carriedOutOfCombat, familyOf, gripEuler, makeDrawClip, makeHareClip, makeHumanoidClip, makeSwordSkillClip, makeAxeSkillClip, makeClubSkillClip, makeWeaponAttack, oneHandAuto } from "./clips";
 import { assertFormulas, attackRound, dualWieldMarks, hitRate, rollSwordPdif, swingTiming } from "./formulas";
-import { useGame, awardDefeat, noteRegimeCredit, saveSettings, creditPackBlow, dropPackFight, gambitClosing, noteDistance, noteBehind, noteCone, noteStands, noteHarePair, noteKinYards, peekTrickHand, endTrickRound, playerIsBehind, noteTrustPlace, clearTrustPlace, takeTrustFloater, trustCastClock, trustEngaged, trustSwingClock, rangedShotClock, takeShotMark, takeQuickDrawMark, releaseHeldQuickDraw, trustStep, trustSpot, peekWyvern, noteWyvernPlace, peekLuopan, peekAvatar, noteAvatarPlace, peekJug, noteJugPlace, peekAutomaton, noteAutomatonPlace, peekSparePets, noteSparePlace, peekCharm, peekPackCharm, takeCharmAim, peekRepairLeft, takeAutomatonActs, hareIsCharmed, wildHuntsPet, playerFoe, grantPlayerFoeTp, takeCharmFx, takeCharmAct, takeWildAct, takePetFloaters, takeRollFx, takeSambaFx, takeWaltzFx, takeStepFx, takeJigFx, takeFlourishFx, takeRuneFlash, assertSpellMark, readPackFace, readPackStatuses } from "./store";
+import { useGame, awardDefeat, noteRegimeCredit, saveSettings, creditPackBlow, dropPackFight, gambitClosing, noteDistance, noteBehind, noteCone, noteStands, noteHarePair, noteKinYards, peekTrickHand, endTrickRound, playerIsBehind, readThiefQuery, noteTrustPlace, clearTrustPlace, takeTrustFloater, trustCastClock, trustEngaged, trustSwingClock, rangedShotClock, takeShotMark, takeQuickDrawMark, releaseHeldQuickDraw, trustStep, trustSpot, peekWyvern, noteWyvernPlace, peekLuopan, peekAvatar, noteAvatarPlace, peekJug, noteJugPlace, peekAutomaton, noteAutomatonPlace, peekSparePets, noteSparePlace, peekCharm, peekPackCharm, takeCharmAim, peekRepairLeft, takeAutomatonActs, hareIsCharmed, wildHuntsPet, playerFoe, grantPlayerFoeTp, takeCharmFx, takeCharmAct, takeWildAct, takePetFloaters, takeRollFx, takeSambaFx, takeWaltzFx, takeStepFx, takeJigFx, takeFlourishFx, takeRuneFlash, assertSpellMark, readPackFace, readPackStatuses } from "./store";
 import { assertAbilities, meleeStats, retaliationProcs } from "./abilities";
 import { assertWeaponSkills, axeByName, clubByName, daggerByName, greatAxeByName, greatKatanaByName, greatSwordByName, handByName, katanaByName, polearmByName, scytheByName, staffByName } from "./weaponskills";
 import { assertStats } from "./stats";
@@ -26,7 +26,7 @@ import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustF
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch } from "./world";
-import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc, ORC_FIRES, orcZoneAt } from "./ghelsba";
+import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave } from "./ghelsba";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -4319,7 +4319,7 @@ export function createYard(canvas) {
 		bornX = land.x;
 		bornZ = land.z;
 	} else if (!inWorld(bornX, bornZ, .2)) {
-		const seated = seatPassSave(bornX, bornZ);
+		const seated = seatPassSave(bornX, bornZ) ?? seatGhelsbaSave(bornX, bornZ);
 		if (seated) {
 			bornX = seated.x;
 			bornZ = seated.z;
@@ -4372,7 +4372,7 @@ export function createYard(canvas) {
 	}
 	function tryZone(gate) {
 		if (gate.to === "closed") {
-			useGame.getState().pushLog(`${gate.name} is not open.`, "info");
+			useGame.getState().pushLog(gate.id === "ghelsba-hut" ? "The hut door is sealed." : `${gate.name} is not open.`, "info");
 			const back = gate.retreat || { x: RON_X0 + 288, z: 508 };
 			const len = Math.hypot(back.x - gate.x, back.z - gate.z) || 1;
 			let x = px;
@@ -4886,6 +4886,9 @@ export function createYard(canvas) {
 		const sheet = s.sheet;
 		const clock = vanadielTime();
 		const here = inRonfaure(px, pz) || inEast(px, pz) || inOrc(px, pz) || inTomb(px, pz) || inPass(px, pz);
+		const fieldPeek = readField();
+		if (fieldPeek && fieldPeek.claimed && here) noteStands({ x: px, z: pz }, { x: fieldPeek.x, z: fieldPeek.z });
+		const thiefQ = fieldPeek && fieldPeek.claimed && here ? readThiefQuery() : null;
 		const events = tickField({
 			playerX: px,
 			playerZ: pz,
@@ -4901,6 +4904,7 @@ export function createYard(canvas) {
 			fog: ronfaureFog(clock.hour),
 			treasureHunter: Math.max(0, Math.floor(sheet?.treasureHunter ?? 0)),
 			gilfinder: !!sheet?.gilfinder,
+			thief: thiefQ && (thiefQ.sneak || thiefQ.trick || thiefQ.hidden) ? thiefQ : null,
 			sheet: sheet ? {
 				attack: sheet.attack,
 				accuracy: sheet.accuracy,
@@ -4934,6 +4938,7 @@ export function createYard(canvas) {
 		for (const ev of events) if (ev.type === "log") s.pushLog(ev.text, ev.tone);
 		else if (ev.type === "float") spawnFloater(ev.text, ev.crit, ev.x, 1.45, ev.z, ev.color);
 		else if (ev.type === "swing") fieldWantSwing = true;
+		else if (ev.type === "thief") useGame.getState().commitThiefLine(ev.line);
 		else if (ev.type === "tp" && ev.amount > 0) {
 			const live = useGame.getState();
 			if (!live.ko && !live.buffs.some((buff) => buff.name === "Meikyo Shisui")) {
@@ -10987,7 +10992,7 @@ export function createYard(canvas) {
 			let landX = next.x;
 			let landZ = next.z;
 			if (!inWorld(landX, landZ, .2)) {
-				const seated = seatPassSave(landX, landZ);
+				const seated = seatPassSave(landX, landZ) ?? seatGhelsbaSave(landX, landZ);
 				if (seated) {
 					landX = seated.x;
 					landZ = seated.z;
@@ -12298,6 +12303,20 @@ export function createYard(canvas) {
 				z: -Math.cos(packAim.yaw)
 			};
 			noteBehind(isBehind(angleFromForward(nosePack.x, nosePack.z, px - packAim.x, pz - packAim.z)));
+		}
+		if (fieldOn && fieldNow) {
+			const noseField = {
+				x: -Math.sin(fieldNow.yaw),
+				z: -Math.cos(fieldNow.yaw)
+			};
+			noteBehind(isBehind(angleFromForward(noseField.x, noseField.z, px - fieldNow.x, pz - fieldNow.z)));
+			noteStands({
+				x: px,
+				z: pz
+			}, {
+				x: fieldNow.x,
+				z: fieldNow.z
+			});
 		}
 		tickHeal(dt);
 		const engaged = now.engaged;

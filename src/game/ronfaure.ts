@@ -36,6 +36,7 @@ import { dStatMagicAccuracy } from "./magic";
 import { rankAt, mainJobHp, subjobHp } from "./rarab";
 import { skillCap, type SkillRank } from "./skills";
 import { aggros, angleFromForward, SIGHT_ANGLE, SIGHT_RANGE, SOUND_RANGE, TRUE_SOUND_RANGE, type Detect } from "./aggro";
+import { isBehind, thiefStrike } from "./enmity";
 import { checkCon, checkLine } from "./commands";
 import { dropRate, type DropTier } from "./drops";
 import { clampWorld, EXITS, inRonfaure, ronCell, zoneArrival, zoneTouch } from "./world";
@@ -820,6 +821,7 @@ export type FieldEvent =
   | { type: "float"; text: string; crit: boolean; x: number; z: number; color: string }
   | { type: "hurt"; amount: number }
   | { type: "swing" }
+  | { type: "thief"; line: ReturnType<typeof thiefStrike> }
   | { type: "tp"; amount: number }
   | { type: "burst"; x: number; z: number; color: number; scale: number }
   | { type: "defeat"; id: string; name: string; level: number; x: number; z: number; gil: number; crystal: string | null; items: FieldLoot[]; species: string; family: string; west: boolean; east: boolean };
@@ -845,6 +847,17 @@ export type FieldSheet = {
   tpHit: number;
 };
 
+export type FieldThief = {
+  hidden: boolean;
+  sneak: boolean;
+  trick: boolean;
+  partner: boolean;
+  dex: number;
+  agi: number;
+  mainThief: boolean;
+  assassin: boolean;
+};
+
 export type FieldInput = {
   playerX: number;
   playerZ: number;
@@ -861,6 +874,8 @@ export type FieldInput = {
   sheet: FieldSheet | null;
   treasureHunter: number;
   gilfinder: boolean;
+  /** Sneak Attack, Trick Attack, and Hide. Behind is read from this mob, not the training hare. */
+  thief?: FieldThief | null;
 };
 
 const WATERS = [
@@ -2312,10 +2327,10 @@ export function liveField(): readonly FieldBody[] {
   return live;
 }
 
-export function readField(): { id: string; name: string; hp: number; max: number; level: number; claimed: boolean; x: number; z: number; look: string; nm: boolean } | null {
+export function readField(): { id: string; name: string; hp: number; max: number; level: number; claimed: boolean; x: number; z: number; yaw: number; look: string; nm: boolean } | null {
   const body = find(selectedId);
   if (!body || body.hp <= 0 || body.away || buried(body)) return null;
-  return { id: body.id, name: body.name, hp: body.hp, max: body.maxHp, level: body.level, claimed: claimedId === body.id, x: body.x, z: body.z, look: body.look, nm: body.nm };
+  return { id: body.id, name: body.name, hp: body.hp, max: body.maxHp, level: body.level, claimed: claimedId === body.id, x: body.x, z: body.z, yaw: body.yaw, look: body.look, nm: body.nm };
 }
 
 export function fieldPlateY(look: string): number {
@@ -3144,28 +3159,51 @@ function defeat(body: FieldBody, input: FieldInput, events: FieldEvent[]): void 
 
 function playerHits(body: FieldBody, input: FieldInput, events: FieldEvent[]): void {
   const sheet = input.sheet;
-  if (!sheet || input.playerKo || ailment.sleep > 0) return;
+  if (!sheet || input.playerKo || ailment.sleep > 0 || body.hp <= 0) return;
   events.push({ type: "swing" });
+  const nose = forward(body.yaw);
+  const behind = isBehind(angleFromForward(nose.x, nose.z, input.playerX - body.x, input.playerZ - body.z));
+  const thief = input.thief;
+  const lined = thief && (thief.sneak || thief.trick || thief.hidden) ? thiefStrike({
+    kind: "melee",
+    behind,
+    hidden: thief.hidden,
+    sneak: thief.sneak,
+    trick: thief.trick,
+    partner: thief.partner,
+    dex: thief.dex,
+    agi: thief.agi,
+    mainThief: thief.mainThief,
+    assassin: thief.assassin,
+  }) : null;
+  if (lined && (lined.tell || lined.spendSa || lined.spendTa || lined.dropHide)) events.push({ type: "thief", line: lined });
   const blows = 1 + (Math.random() < sheet.doubleAttack ? 1 : 0);
   for (let i = 0; i < blows; i++) {
     if (body.hp <= 0) return;
-    if (ailment.blind > 0 && Math.random() < 0.3) {
+    const opening = i === 0 ? lined : null;
+    const cannotMiss = !!(opening && opening.hit);
+    const bonus = opening ? opening.dex + opening.agi : 0;
+    if (ailment.blind > 0 && !cannotMiss && Math.random() < 0.3) {
       events.push({ type: "float", text: "Miss", crit: false, x: body.x, z: body.z, color: "#d7e7f7" });
       continue;
     }
     const ratio = sheet.attack / Math.max(1, body.defense * body.buffDef);
-    const crit = Math.random() * 100 < critRate(sheet.dex, body.agi);
+    const crit = !!(opening && opening.sure) || Math.random() * 100 < critRate(sheet.dex, body.agi);
     const chance = hitRate(sheet.accuracy, body.evasion, body.level - input.playerLevel);
-    if (Math.random() * 100 >= chance) {
+    if (!cannotMiss && Math.random() * 100 >= chance) {
       events.push({ type: "float", text: "Miss", crit: false, x: body.x, z: body.z, color: "#d7e7f7" });
       continue;
     }
     const pdif = rollSwordPdif(ratio, crit, Math.random, sheet.pdifCap || 3.25);
-    const damage = autoAttackDamage(Math.max(1, sheet.dmg), fStr(sheet.str - body.vit, 0), pdif);
+    const damage = autoAttackDamage(Math.max(1, sheet.dmg + bonus), fStr(sheet.str - body.vit, 0), pdif);
     body.hp -= damage;
     body.tp = Math.min(3000, body.tp + monsterTpGain(tpPerHit(Math.max(180, sheet.delay))));
     if (sheet.tpHit > 0) events.push({ type: "tp", amount: sheet.tpHit });
     events.push({ type: "float", text: crit ? `${damage}!` : String(damage), crit, x: body.x, z: body.z, color: crit ? "#e3c57a" : "#ff4d57" });
+    if (opening?.via) {
+      const extra = `${opening.dex > 0 ? ` +${opening.dex} DEX` : ""}${opening.agi > 0 ? ` +${opening.agi} AGI` : ""}`;
+      events.push({ type: "log", text: `${opening.via}${extra}.`, tone: "hit" });
+    }
     provoke(body);
     if (body.hp <= 0) defeat(body, input, events);
   }
@@ -3891,6 +3929,71 @@ function assertFieldPlayerTp(): void {
     }
     if (!bare) throw new Error("zero tp hit never connected");
   } finally {
+    body.hp = snap.hp;
+    body.maxHp = snap.max;
+    body.tp = snap.tp;
+    body.claimed = snap.claimed;
+    body.mode = snap.mode;
+    claimedId = claimed;
+    selectedId = selected;
+    fightAge.delete(body.id);
+  }
+}
+
+/** Sneak Attack on a field mob uses that mob's nose, not the training hare. */
+function assertFieldSneak(): void {
+  const body = live.find((row) => row.hp > 0);
+  if (!body) throw new Error("sneak body");
+  const snap = { x: body.x, z: body.z, yaw: body.yaw, hp: body.hp, max: body.maxHp, tp: body.tp, claimed: body.claimed, mode: body.mode };
+  const claimed = claimedId;
+  const selected = selectedId;
+  const sheet: FieldSheet = {
+    attack: 80, accuracy: 0, defense: 200, evasion: 250,
+    str: 20, dex: 20, vit: 20, agi: 20, int: 20, mnd: 20,
+    dmg: 10, delay: 183, seconds: 3.05, doubleAttack: 0, pdifCap: 3.25, reach: 3.9, tpHit: 0,
+  };
+  const thief: FieldThief = { hidden: false, sneak: true, trick: false, partner: false, dex: 40, agi: 0, mainThief: true, assassin: false };
+  const swing = (z: number): FieldInput => ({
+    playerX: 40000, playerZ: z, playerLevel: 75, playerKo: false, hpRatio: 1,
+    invisible: false, sneak: false, deodorize: false, castingMagic: false,
+    inZone: true, hour: 12, fog: false, treasureHunter: 0, gilfinder: false,
+    sheet, thief,
+  });
+  try {
+    body.x = 40000;
+    body.z = 40000;
+    body.yaw = 0;
+    body.hp = 500000;
+    body.maxHp = 500000;
+    const behind: FieldEvent[] = [];
+    playerHits(body, swing(40002), behind);
+    const lined = behind.find((ev) => ev.type === "thief");
+    const blow = behind.find((ev) => ev.type === "float");
+    if (!lined || lined.type !== "thief" || !lined.line.spendSa || !lined.line.sure || lined.line.dex !== 40 || lined.line.tell) {
+      throw new Error("sneak from behind a field mob");
+    }
+    if (!blow || blow.type !== "float" || !blow.crit || blow.text === "Miss") throw new Error("sneak behind missed");
+    body.hp = 500000;
+    const front: FieldEvent[] = [];
+    playerHits(body, swing(39998), front);
+    const kept = front.find((ev) => ev.type === "thief");
+    if (!kept || kept.type !== "thief" || kept.line.spendSa || kept.line.sure || kept.line.tell !== "sa") throw new Error("frontal sneak was spent");
+    body.hp = 500000;
+    const trick: FieldEvent[] = [];
+    playerHits(body, {
+      ...swing(40002),
+      thief: { hidden: false, sneak: false, trick: true, partner: true, dex: 40, agi: 55, mainThief: true, assassin: false },
+    }, trick);
+    const handed = trick.find((ev) => ev.type === "thief");
+    const trickBlow = trick.find((ev) => ev.type === "float");
+    if (!handed || handed.type !== "thief" || !handed.line.spendTa || !handed.line.hit || handed.line.agi !== 55 || handed.line.tell) {
+      throw new Error("trick in front of a field mob");
+    }
+    if (!trickBlow || trickBlow.type !== "float" || trickBlow.text === "Miss") throw new Error("trick attack missed");
+  } finally {
+    body.x = snap.x;
+    body.z = snap.z;
+    body.yaw = snap.yaw;
     body.hp = snap.hp;
     body.maxHp = snap.max;
     body.tp = snap.tp;
@@ -4818,6 +4921,7 @@ export function assertRonfaure(): void {
     if (selectedId === harePh.id) selectedId = null;
   }
   assertFieldPlayerTp();
+  assertFieldSneak();
   assertFieldFacing();
   if (selectedId || claimedId) throw new Error("field assert left a target");
   const tombNeed: [string, number][] = [

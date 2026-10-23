@@ -20,7 +20,7 @@ import { blockKept, blockRate, blockTaken, guardedPdif, guardRate, shieldSize } 
 import { autoAttackRange } from "./distance";
 import { breathElement, elementalBreathAccuracy, healingBreathAmount, healingBreathTier, healingThreshold, removeBreathFor, SPIRIT_LINK_DOTS, spiritBondSplit, spiritLinkHeal, spiritLinkRegen, WYVERN_DAMAGE_TAKEN, wyvernBreathChoice, wyvernBreathDamage, wyvernDefense, wyvernKind, wyvernMaxHp, wyvernMeleeDamage, wyvernSwingSeconds } from "./drg";
 import { consumeManaAdd, occultTp, souleaterStrike } from "./drk";
-import { ceLostOnHit, cureEnmity, damageEnmity, foldHate, HATE_DEAGGRO_SECONDS, HATE_NEAR_YARDS, holdClaim, partnerOnLine, thiefStrike, topHate } from "./enmity";
+import { ceLostOnHit, cureEnmity, damageEnmity, foldHate, HATE_DEAGGRO_SECONDS, HATE_NEAR_YARDS, holdClaim, partnerOnLine, thiefStrike, topHate, trickAllyPresent } from "./enmity";
 import { accuracyFrom, fStr, hitRate, monsterTpGain, rollSwordPdif, swingTiming, tpPerHit, tpTakenPhysical } from "./formulas";
 import { armGambitYield, blankBoard, blankBook, GAMBIT_MEMBER, gambitApproach, gambitDistance, gambitPinsWeaponSkill, saveGambitBook, scanGambit, takeGambitYield } from "./gambits";
 import { addendumHold, archeryBar, canUse, findAction, hotbarGroups, marksmanshipBar, rangedBar } from "./hotbar";
@@ -2716,6 +2716,22 @@ export function trustCastClock(id = KUPIPI_ID) {
 export function noteBehind(behind) {
 	playerBehind = behind;
 }
+/** Buffs a field swing needs. The mob's nose is applied by the caller. */
+export function readThiefQuery() {
+	const state = useGame.getState();
+	const sheet = state.sheet;
+	const buffs = state.buffs || [];
+	return {
+		hidden: buffs.some((buff) => buff.name === "Hide"),
+		sneak: buffs.some((buff) => buff.name === "Sneak Attack"),
+		trick: buffs.some((buff) => buff.name === "Trick Attack"),
+		partner: trickTarget() != null,
+		dex: sheet?.dex ?? 0,
+		agi: sheet?.agi ?? 0,
+		mainThief: sheet?.job === "THF",
+		assassin: !!sheet?.assassin
+	};
+}
 /** The fight target is inside the blue cone. Claw Cyclone and Poison Breath read this. */
 export function noteCone(inFan) {
 	playerCone = inFan;
@@ -3428,7 +3444,7 @@ function trickTarget() {
 	for (const id of state.party.summoned) {
 		const trust = liveTrusts[id];
 		const place = trustPlaces[id];
-		if (!trust || trust.ko || !place || place.yards >= 90) continue;
+		if (!trust || trust.ko || !trickAllyPresent(place)) continue;
 		allies.push({
 			id,
 			x: place.x,
@@ -15051,12 +15067,16 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				mainThief: sheet.job === "THF",
 				assassin: sheet.assassin
 			});
+			return useGame.getState().commitThiefLine(lined);
+		},
+		commitThiefLine: (lined) => {
+			const partner = trickTarget();
 			if (lined.spendTa && partner) {
 				trickHateTo = partner;
 				trickHand = {
 					hit: true,
 					agi: lined.agi,
-					crit: sheet.assassin
+					crit: useGame.getState().sheet.assassin
 				};
 				useGame.getState().pushLog(`Trick Attack. ${trustName(partner)} takes the enmity.`, "info");
 			}
