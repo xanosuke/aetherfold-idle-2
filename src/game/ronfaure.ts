@@ -48,9 +48,9 @@ import type { FieldLook } from "./field-mesh";
 const WALK = 2.4;
 const RUN = 4.4;
 const RESPAWN = 300;
-/** Notorious Monster window. Shorter than a retail multi-hour timer, still a wait. */
+/** Notorious Monster window. A flat half hour, then a placeholder may become the NM. */
 const NM_MIN = 30 * 60;
-const NM_MAX = 60 * 60;
+const NM_MAX = 30 * 60;
 /** Once that window is open, a placeholder respawn rolls this chance to be the NM. */
 const LOTTERY_CHANCE = 0.25;
 const LEASH = 28;
@@ -141,7 +141,7 @@ type Move = {
   buff?: "attack" | "defense";
 };
 
-type Drop = { id: string; found: string; tier?: DropTier; always?: boolean };
+type Drop = { id: string; found: string; tier?: DropTier; always?: boolean; slot?: string; weight?: number };
 
 type Species = {
   id: string;
@@ -273,6 +273,7 @@ const jet: Move = { name: "Jet Stream", kind: "magical", anim: "cast", pot: 24 }
 const deathScissors: Move = { name: "Death Scissors", kind: "physical", anim: "skill", ftp: 2 };
 const deathRay: Move = { name: "Death Ray", kind: "magical", anim: "cast", pot: 40 };
 const eyesOnMe: Move = { name: "Eyes On Me", kind: "magical", anim: "cast", pot: 55 };
+const blindEye: Move = { name: "Blind Eye", kind: "status", anim: "skill", status: "blind" };
 const water: Move = { name: "Water", kind: "magical", anim: "cast", pot: 16 };
 const aero: Move = { name: "Aero", kind: "magical", anim: "cast", pot: 16 };
 const fire: Move = { name: "Fire", kind: "magical", anim: "cast", pot: 16 };
@@ -732,10 +733,10 @@ twin("pass-giant-scorpion", "tomb-scorpion", {
   moves: [pincer, venom, deathScissors], drops: [{ id: "harvester", found: "harvester", tier: "rare" }, ...scorDrops], respawn: 720,
 });
 SPECIES["pass-bat-eye"] = { id: "pass-bat-eye", name: "Bat Eye", look: "ahriman", variant: "bat", family: "Ahriman", job: "BLM", levelMin: 42, levelMax: 44, window: "always", detect: SIGHT_SOUND, links: false, crystal: "dark", hpMod: 1.7, delay: 240, ranks: AHRIMAN, moves: [hypo, mindBreak, binding, deathRay], spells: [], drops: [...eyeDrops, { id: "storm-axe", found: "storm axe", tier: "rare" }], nm: true, respawn: 720 };
-SPECIES["pass-mucoid"] = { id: "pass-mucoid", name: "Mucoid Mass", look: "slime", variant: "mass", family: "Slime", job: "DRK", levelMin: 45, levelMax: 48, window: "always", detect: SOUND_SCENT, links: false, crystal: "water", hpMod: 2.1, delay: 270, ranks: SLIME, moves: [fluid, ooze], spells: [drainSpell], drops: [{ id: "slime-oil", found: "slime oil", tier: "common" }, { id: "spellcasters-ecu", found: "spellcaster's ecu", tier: "very-rare" }], nm: true, respawn: 0 };
-SPECIES["pass-taisaijin"] = { id: "pass-taisaijin", name: "Taisaijin", look: "hecteyes", variant: "jin", family: "Hecteyes", job: "BLM", levelMin: 60, levelMax: 63, window: "always", detect: SOUND, links: true, crystal: "dark", hpMod: 2.6, delay: 250, ranks: EYES, moves: [hexEye, cataract, deathRay, eyesOnMe], spells: [stone2, water2, aero, sleepSpell], drops: [...hectDrops, { id: "spelunkers-hat", found: "spelunker's hat", tier: "very-rare" }, { id: "scroll-of-refresh", found: "scroll of refresh", tier: "rare" }, { id: "scroll-of-refresh-ii", found: "scroll of refresh ii", tier: "ultra-rare" }], nm: true, respawn: 0 };
-SPECIES["pass-gloom"] = { id: "pass-gloom", name: "Gloom Eye", look: "ahriman", variant: "gloom", family: "Ahriman", job: "WAR", levelMin: 73, levelMax: 74, window: "always", detect: SIGHT_SOUND, links: false, crystal: "dark", hpMod: 2.2, delay: 240, ranks: AHRIMAN, moves: [hypo, mindBreak, binding, eyesOnMe], spells: [], drops: [...eyeDrops, { id: "wit-pendant", found: "wit pendant", tier: "very-rare" }], nm: true, respawn: 0 };
-SPECIES["pass-hyakume"] = { id: "pass-hyakume", name: "Hyakume", look: "hecteyes", variant: "hyaku", family: "Hecteyes", job: "BLM", levelMin: 43, levelMax: 45, window: "always", detect: SOUND, links: false, crystal: "dark", hpMod: 2, delay: 250, ranks: EYES, moves: [hexEye, cataract, deathRay, eyesOnMe], spells: [stone2, water2], drops: [...hectDrops, { id: "booster-earring", found: "booster earring", tier: "very-rare" }], nm: true, respawn: 0 };
+SPECIES["pass-mucoid"] = { id: "pass-mucoid", name: "Mucoid Mass", look: "slime", variant: "mass", family: "Slime", job: "DRK", levelMin: 45, levelMax: 48, window: "always", detect: SOUND_SCENT, links: false, crystal: "water", hpMod: 2.1, delay: 270, ranks: SLIME, moves: [fluid, ooze], spells: [drainSpell], drops: [{ id: "slime-oil", found: "slime oil", tier: "common" }, { id: "spellcasters-ecu", found: "spellcaster's ecu", tier: "common" }], nm: true, respawn: 0 };
+SPECIES["pass-taisaijin"] = { id: "pass-taisaijin", name: "Taisaijin", look: "hecteyes", variant: "jin", family: "Hecteyes", job: "BLM", levelMin: 60, levelMax: 63, window: "always", detect: SOUND, links: true, crystal: "dark", hpMod: 2.6, delay: 250, ranks: EYES, moves: [hexEye, cataract, deathRay, eyesOnMe], spells: [stone2, water2, aero, sleepSpell], drops: [...hectDrops, { id: "spelunkers-hat", found: "spelunker's hat", tier: "very-rare" }, { id: "scroll-of-refresh", found: "scroll of refresh", slot: "refresh", weight: 4 }, { id: "scroll-of-refresh-ii", found: "scroll of refresh ii", slot: "refresh", weight: 1 }], nm: true, respawn: 0 };
+SPECIES["pass-gloom"] = { id: "pass-gloom", name: "Gloom Eye", look: "ahriman", variant: "gloom", family: "Ahriman", job: "WAR", levelMin: 73, levelMax: 74, window: "always", detect: SIGHT_SOUND, links: false, crystal: "dark", hpMod: 2.2, delay: 240, ranks: AHRIMAN, moves: [blindEye, eyesOnMe], spells: [], drops: [...eyeDrops, { id: "wit-pendant", found: "wit pendant", tier: "very-rare" }], nm: true, respawn: 0 };
+SPECIES["pass-hyakume"] = { id: "pass-hyakume", name: "Hyakume", look: "hecteyes", variant: "hyaku", family: "Hecteyes", job: "BLM", levelMin: 43, levelMax: 45, window: "always", detect: SOUND, links: false, crystal: "dark", hpMod: 2, delay: 250, ranks: EYES, moves: [hexEye, cataract, deathRay, eyesOnMe], spells: [stone2, water2], drops: [...hectDrops, { id: "booster-earring", found: "booster earring", tier: "common" }], nm: true, respawn: 0 };
 
 export type FieldBody = {
   id: string;
@@ -2525,9 +2526,30 @@ function moveToward(body: FieldBody, tx: number, tz: number, pace: number, dt: n
 
 function rollLoot(spec: Species, th: number, gilfinder: boolean, level: number, rng: () => number, held?: { items?: ReadonlySet<string>; gil?: boolean }): { gil: number; crystal: string | null; items: FieldLoot[] } {
   const items: FieldLoot[] = [];
+  const slots = new Map<string, Drop[]>();
   for (const drop of spec.drops) {
     if (held?.items?.has(drop.id)) continue;
+    if (drop.slot) {
+      const pile = slots.get(drop.slot) ?? [];
+      pile.push(drop);
+      slots.set(drop.slot, pile);
+      continue;
+    }
     if (drop.always || (drop.tier && rng() < dropRate(drop.tier, th))) items.push({ id: drop.id, found: drop.found });
+  }
+  for (const pile of slots.values()) {
+    const total = pile.reduce((sum, drop) => sum + Math.max(0, drop.weight ?? 1), 0);
+    if (total <= 0) continue;
+    let roll = rng() * total;
+    let picked = pile[pile.length - 1];
+    for (const drop of pile) {
+      roll -= Math.max(0, drop.weight ?? 1);
+      if (roll < 0) {
+        picked = drop;
+        break;
+      }
+    }
+    if (picked) items.push({ id: picked.id, found: picked.found });
   }
   const gil = held?.gil ? 0 : Math.floor((level * 4 + rng() * (level * 2 + 1)) * (gilfinder ? 1.5 : 1));
   const crystal = rng() < 0.1 ? spec.crystal : null;
@@ -2832,45 +2854,81 @@ function nmWait(rng: () => number = Math.random): number {
  * How a Notorious Monster comes back. Add a row for the next zone.
  * Lottery waits out the window, then a placeholder's own respawn rolls LOTTERY_CHANCE
  * to be the NM instead. The placeholder stays down until the NM dies.
- * Timed NMs have no placeholder. They return on the same 30 to 60 minute window.
+ * Timed NMs have no placeholder. They return on the same 30 minute window.
  * Vrukwuk and Fogweaver share one point and trade places on that window.
  * Panzer is timed. Its death rolls Byakzak at the same chance, or an Orcish Fighter if the roll misses.
  */
 type LotteryRow = {
   nm: string;
   ph: FieldBody["ph"];
+  /** Species the placeholder is. The camp and the field use this same row. */
+  species: string;
   at?: (ph: FieldBody) => { x: number; z: number };
 };
 
 const LOTTERY: readonly LotteryRow[] = [
   // Forest Hare at G-9, H-9, and H-10. Retail keeps one hare in that pocket as the placeholder.
-  { nm: "jaggedy-eared-jack", ph: "jack" },
+  { nm: "jaggedy-eared-jack", ph: "jack", species: "forest-hare" },
   // Scarab Beetle in H-8. The beetle pops a square east, toward I-8.
-  { nm: "fungus-beetle", ph: "beetle", at: () => {
+  { nm: "fungus-beetle", ph: "beetle", species: "scarab-beetle", at: () => {
     const spot = ronCell(8, 7);
     return { x: spot.x + 8, z: spot.z + 4 };
   } },
   // Various orcs toward J-6 / J-7.
-  { nm: "thousandarm-deshglesh", ph: "desh" },
+  { nm: "thousandarm-deshglesh", ph: "desh", species: "ghelsba-fodder" },
   // Orcs beside Fort G-9.
-  { nm: "hundredscar-hajwaj", ph: "haj" },
+  { nm: "hundredscar-hajwaj", ph: "haj", species: "fort-fodder" },
   // Orcish Grunt or Orcish Stonechucker.
-  { nm: "ashmaker-gotblut", ph: "ash" },
+  { nm: "ashmaker-gotblut", ph: "ash", species: "yug-grunt" },
   // Carrion Worms at I-7 and I-9.
-  { nm: "bigmouth-billy", ph: "billy" },
+  { nm: "bigmouth-billy", ph: "billy", species: "east-carrion" },
   // Pugils along the Cheval at I-8 and I-10.
-  { nm: "swamfisk", ph: "swam" },
+  { nm: "swamfisk", ph: "swam", species: "east-pugil" },
   // Tomb Bat in the upper crypt. The ghost takes that bat's stone.
-  { nm: "tomb-crypt-ghost", ph: "crypt" },
+  { nm: "tomb-crypt-ghost", ph: "crypt", species: "tomb-bat" },
   // Nachzehrer in the hall. Gwyllgi lotteries off one of them.
-  { nm: "tomb-gwyllgi", ph: "gwyll" },
+  { nm: "tomb-gwyllgi", ph: "gwyll", species: "tomb-nach" },
   // Taisai in the glacier neck. Taisaijin takes one if the window is open.
-  { nm: "pass-taisaijin", ph: "taisai" },
+  { nm: "pass-taisaijin", ph: "taisai", species: "pass-taisai" },
   // Seeker Bats. Gloom Eye lotteries off a marked flock.
-  { nm: "pass-gloom", ph: "gloom" },
+  { nm: "pass-gloom", ph: "gloom", species: "pass-seeker" },
   // Hecteyes. Hyakume lotteries off a marked eye.
-  { nm: "pass-hyakume", ph: "hyaku" },
+  { nm: "pass-hyakume", ph: "hyaku", species: "pass-hecteyes" },
 ];
+
+/** Placeholder species, cooldown, and pop chance for one Notorious Monster. Null when the id is not an NM. */
+export type NmCampModel = {
+  nm: string;
+  /** Placeholder species. Null means the NM is timed and has no placeholder. */
+  ph: string | null;
+  /** Seconds until the window opens again. The same value nmWait returns. */
+  cooldown: number;
+  /** Chance a placeholder respawn becomes the NM once the window is open. Timed NMs pop on the window. */
+  popChance: number;
+};
+
+/** Live lottery and the camp read this. A missing or non-NM id returns null. */
+export function nmCampModel(nmId: string): NmCampModel | null {
+  const spec = SPECIES[nmId];
+  if (!spec?.nm) return null;
+  const row = LOTTERY.find((entry) => entry.nm === nmId);
+  return {
+    nm: nmId,
+    ph: row ? row.species : null,
+    cooldown: nmWait(() => 0),
+    popChance: row ? LOTTERY_CHANCE : 1,
+  };
+}
+
+/** Lottery rows the camp uses to list an NM that is not standing until it pops. */
+export function lotteryCamps(): { nm: string; ph: string }[] {
+  return LOTTERY.map((row) => ({ nm: row.nm, ph: row.species }));
+}
+
+/** Item drops only. Gil and crystals stay with the live defeat. A slot still yields exactly one item. */
+export function rollSpeciesItems(id: string, th: number, rng: () => number): { id: string; found: string }[] {
+  return rollLoot(specOf(id), th, false, specOf(id).levelMin, rng).items;
+}
 
 const ALTERNATE: Record<string, string> = {
   "bloody-vrukwuk": "fogweaver-mozzfuzz",
@@ -4707,12 +4765,14 @@ export function assertRonfaure(): void {
     fightAge.delete(fodder.id);
     fightAge.delete(grap.id);
   }
-  if (LOTTERY_CHANCE !== 0.25 || NM_MIN !== 30 * 60 || NM_MAX !== 60 * 60) throw new Error("nm window");
+  if (LOTTERY_CHANCE !== 0.25 || NM_MIN !== 30 * 60 || NM_MAX !== 30 * 60) throw new Error("nm window");
   if (nmWait(() => 0) !== NM_MIN || nmWait(() => 1) !== NM_MAX) throw new Error("nm wait");
   for (const row of LOTTERY) {
     if (!SPECIES[row.nm]?.nm) throw new Error(`lottery nm ${row.nm}`);
-    if (!live.some((body) => body.ph === row.ph)) throw new Error(`missing ph ${row.ph}`);
+    if (!live.some((body) => body.ph === row.ph && body.species === row.species)) throw new Error(`missing ph ${row.ph}`);
     if (seen.has(row.nm)) throw new Error(`lottery spawned early ${row.nm}`);
+    const model = nmCampModel(row.nm);
+    if (!model || model.ph !== row.species || model.popChance !== LOTTERY_CHANCE || model.cooldown !== 30 * 60) throw new Error(`camp model ${row.nm}`);
   }
   const harePh = live.find((body) => body.ph === "jack" && body.hp > 0);
   if (!harePh) throw new Error("jack placeholder");
@@ -4861,9 +4921,23 @@ export function assertRonfaure(): void {
   if (SPECIES["pass-wind"].detect.aggressive) throw new Error("wind bats aggro");
   if (SPECIES["pass-pathfinder"].job !== "BST" || SPECIES["pass-furrier"].job !== "RNG" || SPECIES["pass-smithy"].job !== "WAR") throw new Error("goblin jobs");
   if (!SPECIES["pass-taisaijin"].moves.some((move) => move.name === "Eyes On Me") || SPECIES["pass-taisaijin"].levelMin !== 60) throw new Error("taisaijin kit");
-  if (!SPECIES["pass-gloom"].drops.some((drop) => drop.id === "wit-pendant") || SPECIES["pass-gloom"].levelMin !== 73) throw new Error("gloom eye");
-  if (!SPECIES["pass-hyakume"].drops.some((drop) => drop.id === "booster-earring")) throw new Error("hyakume");
-  if (!SPECIES["pass-mucoid"].drops.some((drop) => drop.id === "spellcasters-ecu") || SPECIES["pass-mucoid"].job !== "DRK") throw new Error("mucoid mass");
+  const taisaiDrops = SPECIES["pass-taisaijin"].drops;
+  const refresh = taisaiDrops.filter((drop) => drop.slot === "refresh");
+  const refreshI = refresh.find((drop) => drop.id === "scroll-of-refresh");
+  const refreshII = refresh.find((drop) => drop.id === "scroll-of-refresh-ii");
+  if (refresh.length !== 2 || !refreshI || !refreshII || (refreshI.weight ?? 0) <= (refreshII.weight ?? 0) || refresh.some((drop) => drop.tier)) throw new Error("taisaijin scroll");
+  const taisaiRolls = [0, 0.2, 0.79, 0.8, 0.99].map((n) => rollSpeciesItems("pass-taisaijin", 0, () => n).filter((item) => item.id.startsWith("scroll-of-refresh")));
+  if (taisaiRolls.some((pile) => pile.length !== 1)) throw new Error("taisaijin scroll count");
+  if (taisaiRolls[0]?.[0]?.id !== "scroll-of-refresh" || taisaiRolls[4]?.[0]?.id !== "scroll-of-refresh-ii") throw new Error("taisaijin scroll weight");
+  if (SPECIES["pass-gloom"].moves.map((move) => move.name).join(",") !== "Blind Eye,Eyes On Me" || SPECIES["pass-gloom"].levelMin !== 73) throw new Error("gloom eye");
+  if (!SPECIES["pass-gloom"].drops.some((drop) => drop.id === "wit-pendant")) throw new Error("gloom eye");
+  const booster = SPECIES["pass-hyakume"].drops.find((drop) => drop.id === "booster-earring");
+  if (!booster || booster.tier !== "common" || dropRate(booster.tier, 0) !== 0.15) throw new Error("hyakume");
+  const ecu = SPECIES["pass-mucoid"].drops.find((drop) => drop.id === "spellcasters-ecu");
+  if (!ecu || ecu.tier !== "common" || dropRate(ecu.tier, 0) !== 0.15 || SPECIES["pass-mucoid"].job !== "DRK") throw new Error("mucoid mass");
+  const mucoid = nmCampModel("pass-mucoid");
+  if (!mucoid || mucoid.ph !== null || mucoid.popChance !== 1 || mucoid.cooldown !== 30 * 60) throw new Error("mucoid camp");
+  if (nmCampModel("forest-hare") !== null) throw new Error("hare is not an nm");
   if (!SPECIES["pass-bat-eye"].drops.some((drop) => drop.id === "storm-axe") || !SPECIES["pass-bat-eye"].nm) throw new Error("bat eye");
   if (!SPECIES["pass-cave-scorpion"].drops.some((drop) => drop.id === "frostreaper") || !SPECIES["pass-giant-scorpion"].drops.some((drop) => drop.id === "harvester")) throw new Error("scorpion steel");
   const batEye = live.find((body) => body.species === "pass-bat-eye");

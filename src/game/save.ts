@@ -264,6 +264,14 @@ function sanitizeAfkFarm(raw: unknown): AfkFarmSave | null {
     preyWeapon: preyLevel != null ? finite(row.preyWeapon, 1, 1, 999) : undefined,
     preyDelay: preyLevel != null ? finite(row.preyDelay, 240, 60, 2000) : undefined,
     preyDrops: preyLevel != null ? farmDrops(row.preyDrops) : undefined,
+    ...(row.mode === "nm"
+      ? {
+          fillerId: typeof row.fillerId === "string" && /^[a-z0-9-]{1,64}$/.test(row.fillerId) ? row.fillerId : undefined,
+          fillerName: typeof row.fillerName === "string" ? row.fillerName.slice(0, 80) : undefined,
+          nmCanKill: row.nmCanKill !== false,
+          nmPerHour: finite(row.nmPerHour, 0, 0, 60),
+        }
+      : {}),
   };
 }
 

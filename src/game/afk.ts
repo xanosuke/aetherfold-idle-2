@@ -2,7 +2,8 @@
  * Offline camp. Elapsed time becomes kills against one monster group
  * placed in the zone the player is standing in. Towns and instances refuse.
  * The camp does not move the player. An old town id loads as West Ronfaure
- * and hunts the nearest group there.
+ * and hunts the nearest group there. Notorious-monster mode uses the same
+ * window, placeholder, and drop table the field uses.
  */
 import { dropRate, type DropTier } from "./drops";
 import { checkCon, type Con } from "./commands";
@@ -14,7 +15,7 @@ import { ORC_ZONES } from "./ghelsba";
 import { findAction } from "./hotbar";
 import { inPass, passSquare } from "./pass";
 import { nearestPassCamp, PASS_CAMPS, PASS_GRAPH, gridToWorld } from "./pass-graph";
-import { placedBodies, speciesFarm } from "./ronfaure";
+import { placedBodies, speciesFarm, nmCampModel, lotteryCamps, rollSpeciesItems } from "./ronfaure";
 import { pointsFromExp, crystalChance } from "./signet";
 import { TOMB_FOYER } from "./tomb";
 import { FISHER, RON_SIZE, RON_X0, RON_Z0, regionName } from "./world";
@@ -24,8 +25,11 @@ export const MAX_AFK_HOURS = 12;
 
 export type ZoneKind = "town" | "instance" | "field" | "dungeon";
 
-/** Experience camp is this step. Notorious-monster camp is the next one. */
+/** Experience camp is saved as exp. Notorious-monster camp is saved as nm. */
 export type CampMode = "exp" | "nm";
+
+/** Shown when the zone has no Notorious Monster the camp can wait on. */
+export const NO_NM = "No notorious monsters here.";
 
 export type CheckRating =
   | "Too Weak"
@@ -118,6 +122,12 @@ export type PreyGroup = {
   x: number;
   z: number;
   dist: number;
+};
+
+/** One Notorious Monster the zone can camp. Lottery NMs are listed from their placeholder. */
+export type NmRow = PreyGroup & {
+  phId: string | null;
+  phName: string | null;
 };
 
 function orcMid(name: string): { x: number; z: number } {
@@ -332,6 +342,95 @@ export function zoneGroups(x: number, z: number): PreyGroup[] {
   return groups;
 }
 
+function groupFrom(species: string, x: number, z: number, dist: number): PreyGroup {
+  const farm = speciesFarm(species);
+  return {
+    id: species,
+    name: farm.name,
+    family: farm.family,
+    levelMin: farm.levelMin,
+    levelMax: farm.levelMax,
+    level: farm.level,
+    hpNatural: farm.hpNatural,
+    weaponDamage: farm.weaponDamage,
+    delay: farm.delay,
+    drops: farm.drops,
+    x,
+    z,
+    dist,
+  };
+}
+
+/** Notorious Monsters this zone can camp. A lottery NM is listed when its placeholder stands here. */
+export function zoneNms(x: number, z: number): NmRow[] {
+  const groups = zoneGroups(x, z);
+  if (groups.length === 0 && regionKind(regionName(x, z)) !== "field" && regionKind(regionName(x, z)) !== "dungeon") return [];
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const rows: NmRow[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    const model = nmCampModel(group.id);
+    if (!model) continue;
+    const ph = model.ph ? byId.get(model.ph) : undefined;
+    rows.push({ ...group, phId: ph?.id ?? model.ph, phName: ph?.name ?? (model.ph ? speciesFarm(model.ph).name : null) });
+    seen.add(group.id);
+  }
+  for (const camp of lotteryCamps()) {
+    if (seen.has(camp.nm)) continue;
+    const ph = byId.get(camp.ph);
+    if (!ph || !nmCampModel(camp.nm)) continue;
+    const card = groupFrom(camp.nm, ph.x, ph.z, ph.dist);
+    rows.push({ ...card, phId: ph.id, phName: ph.name });
+    seen.add(camp.nm);
+  }
+  rows.sort((a, b) => a.levelMin - b.levelMin || a.name.localeCompare(b.name));
+  return rows;
+}
+
+/** Closest Notorious Monster. A tie takes the earlier name. */
+export function nearestNm(x: number, z: number): NmRow | null {
+  let best: NmRow | null = null;
+  for (const row of zoneNms(x, z)) {
+    if (!best || row.dist < best.dist || (row.dist === best.dist && row.name.localeCompare(best.name) < 0)) best = row;
+  }
+  return best;
+}
+
+/**
+ * What the camp kills while an NM window is shut.
+ * A lottery NM uses its placeholder. A timed NM prefers the closest same-family
+ * monster that is not itself an NM, then the closest other group.
+ */
+export function nmFiller(nmId: string, x: number, z: number): PreyGroup | null {
+  const model = nmCampModel(nmId);
+  if (!model) return null;
+  const groups = zoneGroups(x, z);
+  if (model.ph) {
+    const placed = groups.find((group) => group.id === model.ph);
+    if (placed) return placed;
+    const nm = groups.find((group) => group.id === nmId) ?? zoneNms(x, z).find((row) => row.id === nmId);
+    return groupFrom(model.ph, nm?.x ?? x, nm?.z ?? z, nm?.dist ?? 0);
+  }
+  const nm = speciesFarm(nmId);
+  const ordinary = groups.filter((group) => group.id !== nmId && !nmCampModel(group.id));
+  const family = ordinary.filter((group) => group.family === nm.family);
+  const pile = family.length > 0 ? family : ordinary;
+  let best: PreyGroup | null = null;
+  for (const group of pile) {
+    if (!best || group.dist < best.dist || (group.dist === best.dist && group.name.localeCompare(best.name) < 0)) best = group;
+  }
+  return best;
+}
+
+/** Expected NM kills per hour. Zero when the fight would be lost. */
+export function nmPace(phKpm: number, nmKpm: number, model: { ph: string | null; cooldown: number; popChance: number }, canKill: boolean): number {
+  if (!canKill || nmKpm <= 0) return 0;
+  const cooldownMin = model.cooldown / 60;
+  const wait = model.ph ? (1 / Math.max(0.0001, model.popChance)) / Math.max(0.05, phKpm) : 0;
+  const cycle = cooldownMin + wait + 1 / nmKpm;
+  return Math.round((60 / cycle) * 10) / 10;
+}
+
 /** Closest placed body. A tie takes the earlier name. */
 export function nearestGroup(x: number, z: number): PreyGroup | null {
   let best: PreyGroup | null = null;
@@ -380,7 +479,7 @@ export type AfkFarmSave = {
   crystalBonus: boolean;
   dies: boolean;
   sustainMinutes: number;
-  /** Experience camp is saved as exp. An nm string is kept and still pays experience. */
+  /** Experience camp is saved as exp. Notorious-monster camp is saved as nm. */
   mode: CampMode;
   /** Species the player chose. An older camp omits this and hunts the nearest group. */
   groupId?: string;
@@ -395,12 +494,19 @@ export type AfkFarmSave = {
   fovRepeat: boolean;
   fovPaidDays: Partial<Record<number, string>>;
   fovTabs: number;
-  /** Prey standing near the player when the camp started. Old saves omit this. */
+  /** Prey standing near the player when the camp started. On an NM camp this is the placeholder or filler, not the NM. */
   preyLevel?: number;
   preyHp?: number;
   preyWeapon?: number;
   preyDelay?: number;
   preyDrops?: FarmDrop[];
+  /** Filler species on an NM camp. Absent on an experience camp. */
+  fillerId?: string;
+  fillerName?: string;
+  /** False when measureFarm says the NM fight is lost. */
+  nmCanKill?: boolean;
+  /** Expected NM kills per hour, frozen when the camp started. */
+  nmPerHour?: number;
 };
 
 export type AfkPreview = {
@@ -420,6 +526,19 @@ export type AfkPreview = {
   fov: FovState | null;
   preyName: string;
   preyLevel: number;
+  /** True only when this preview ran the NM camp. */
+  nm: boolean;
+  /** Placeholder or filler kills. On an experience camp this matches kills. */
+  phKills: number;
+  nmPops: number;
+  nmKills: number;
+  nmItems: Record<string, number>;
+  fillerName: string;
+  fillerId: string;
+  /** True when the NM has a placeholder. */
+  placeholder: boolean;
+  /** Expected NM kills per hour. */
+  perHour: number;
 };
 
 const EMPTY_CLOCK: ChainClock = { count: 0, until: 0 };
@@ -567,71 +686,223 @@ function resolvedPrey(session: AfkFarmSave, stand?: { x: number; z: number }): R
   return { name: group.name, level: group.level, hpNatural: group.hpNatural, drops: group.drops };
 }
 
-export function previewAfk(session: AfkFarmSave, now = Date.now(), stand?: { x: number; z: number }): AfkPreview {
-  const prey = resolvedPrey(session, stand);
-  const cap = session.dies ? Math.min(session.sustainMinutes, MAX_AFK_HOURS * 60) : MAX_AFK_HOURS * 60;
-  const minutes = elapsedMinutes(session.startTimestamp, now, cap);
-  const kills = prey ? Math.floor(session.farmingEfficiency * minutes) : 0;
-  let level = Math.max(1, Math.floor(session.level));
-  let pool = Math.max(0, Math.floor(session.exp));
-  let gained = 0;
-  let clock: ChainClock = EMPTY_CLOCK;
-  let gil = 0;
-  let tabs = 0;
-  let rankPoints = 0;
-  let conquestPoints = 0;
-  let crystals = 0;
-  const items: Record<string, number> = {};
-  const fov: FovState | null = session.fovActive
-    ? {
-        active: true,
-        page: session.fovPage,
-        book: session.fovBook === "east" ? "east" : "west",
-        counts: session.fovCounts.slice(),
-        repeat: session.fovRepeat,
-        tabs: session.fovTabs,
-        paidDays: { ...session.fovPaidDays },
-      }
-    : null;
-  for (let i = 0; i < kills; i += 1) {
-    if (!prey) break;
-    const at = session.startTimestamp + ((i + 1) / Math.max(0.05, session.farmingEfficiency)) * 60000;
-    const kill = settleKill(level, prey.level, pool, at, clock);
-    clock = kill.clock;
-    level = kill.level;
-    pool = kill.exp;
-    gained += kill.gained;
-    const signed = session.signetLeft > 0 && at - session.startTimestamp <= session.signetLeft * 1000;
-    if (signed && kill.gained > 0) {
-      const cut = pointsFromExp(kill.gained, "battle");
-      rankPoints += cut;
-      conquestPoints += cut;
-      const chance = session.crystalBonus ? crystalChance("kingdom-aketon") : crystalChance(null);
-      if (unit(session.startTimestamp + i * 17 + 3) < chance) crystals += 1;
-    }
-    for (const drop of prey.drops) {
-      if (unit(session.startTimestamp + i * 31 + drop.id.length * 13) >= dropRate(drop.tier, session.treasureHunter)) continue;
-      items[drop.id] = (items[drop.id] ?? 0) + 1;
-    }
+type Bag = {
+  level: number;
+  pool: number;
+  gained: number;
+  gil: number;
+  tabs: number;
+  rankPoints: number;
+  conquestPoints: number;
+  crystals: number;
+  items: Record<string, number>;
+  clock: ChainClock;
+  fov: FovState | null;
+};
+
+function emptyBag(session: AfkFarmSave): Bag {
+  return {
+    level: Math.max(1, Math.floor(session.level)),
+    pool: Math.max(0, Math.floor(session.exp)),
+    gained: 0,
+    gil: 0,
+    tabs: 0,
+    rankPoints: 0,
+    conquestPoints: 0,
+    crystals: 0,
+    items: {},
+    clock: EMPTY_CLOCK,
+    fov: session.fovActive
+      ? {
+          active: true,
+          page: session.fovPage,
+          book: session.fovBook === "east" ? "east" : "west",
+          counts: session.fovCounts.slice(),
+          repeat: session.fovRepeat,
+          tabs: session.fovTabs,
+          paidDays: { ...session.fovPaidDays },
+        }
+      : null,
+  };
+}
+
+/** One placeholder or filler kill. Experience and the tier table both follow the live camp. */
+function settleCampKill(session: AfkFarmSave, bag: Bag, prey: ResolvedPrey, at: number, salt: number): void {
+  const kill = settleKill(bag.level, prey.level, bag.pool, at, bag.clock);
+  bag.clock = kill.clock;
+  bag.level = kill.level;
+  bag.pool = kill.exp;
+  bag.gained += kill.gained;
+  const signed = session.signetLeft > 0 && at - session.startTimestamp <= session.signetLeft * 1000;
+  if (signed && kill.gained > 0) {
+    const cut = pointsFromExp(kill.gained, "battle");
+    bag.rankPoints += cut;
+    bag.conquestPoints += cut;
+    const chance = session.crystalBonus ? crystalChance("kingdom-aketon") : crystalChance(null);
+    if (unit(session.startTimestamp + salt) < chance) bag.crystals += 1;
   }
+  for (const drop of prey.drops) {
+    if (unit(session.startTimestamp + salt * 3 + drop.id.length * 13) >= dropRate(drop.tier, session.treasureHunter)) continue;
+    bag.items[drop.id] = (bag.items[drop.id] ?? 0) + 1;
+  }
+}
+
+function previewShell(session: AfkFarmSave, now: number, minutes: number, prey: ResolvedPrey | null, bag: Bag, kills: number, extra: Partial<AfkPreview> = {}): AfkPreview {
   return {
     elapsedMinutes: Math.round(minutes * 10) / 10,
     remainingMinutes: Math.max(0, Math.round((MAX_AFK_HOURS * 60 - Math.min(MAX_AFK_HOURS * 60, (now - session.startTimestamp) / 60000)) * 10) / 10),
     kills,
-    exp: gained,
-    level,
-    pool,
-    gil,
-    tabs,
-    items,
-    crystals,
-    rankPoints,
-    conquestPoints,
+    exp: bag.gained,
+    level: bag.level,
+    pool: bag.pool,
+    gil: bag.gil,
+    tabs: bag.tabs,
+    items: bag.items,
+    crystals: bag.crystals,
+    rankPoints: bag.rankPoints,
+    conquestPoints: bag.conquestPoints,
     note: session.note,
-    fov,
+    fov: bag.fov,
     preyName: prey?.name ?? "",
     preyLevel: prey?.level ?? 0,
+    nm: false,
+    phKills: kills,
+    nmPops: 0,
+    nmKills: 0,
+    nmItems: {},
+    fillerName: "",
+    fillerId: "",
+    placeholder: false,
+    perHour: 0,
+    ...extra,
   };
+}
+
+/**
+ * Lottery: the window starts shut. Placeholder kills during the cooldown do not roll.
+ * After it opens, each kill rolls the pop chance. A pop restarts the window.
+ * Timed: the NM pops on the window whether or not the filler is being killed.
+ * A fight measureFarm would lose still counts as a pop and yields no kill.
+ */
+function previewNm(session: AfkFarmSave, now: number, stand?: { x: number; z: number }): AfkPreview | null {
+  const model = session.groupId ? nmCampModel(session.groupId) : null;
+  if (!model || session.mode !== "nm") return null;
+  const region = regionForZone(session.zoneId);
+  const stood = stand && region && regionName(stand.x, stand.z) === region ? stand : null;
+  const centre = region ? REGION_CENTRE[region] : undefined;
+  const at = stood ?? (centre && region && regionName(centre.x, centre.z) === region ? centre : null);
+  const filler = session.fillerId && session.preyLevel != null && session.preyHp != null
+    ? {
+        name: session.fillerName && session.fillerName.length > 0 ? session.fillerName : session.fillerId,
+        level: session.preyLevel,
+        hpNatural: session.preyHp,
+        drops: session.preyDrops ?? [],
+      }
+    : at
+      ? (() => {
+          const group = nmFiller(model.nm, at.x, at.z);
+          return group ? { name: group.name, level: group.level, hpNatural: group.hpNatural, drops: group.drops } : null;
+        })()
+      : null;
+  const nmFarm = speciesFarm(model.nm);
+  const nmPrey: ResolvedPrey = { name: nmFarm.name, level: nmFarm.level, hpNatural: nmFarm.hpNatural, drops: [] };
+  const cap = session.dies ? Math.min(session.sustainMinutes, MAX_AFK_HOURS * 60) : MAX_AFK_HOURS * 60;
+  const minutes = elapsedMinutes(session.startTimestamp, now, cap);
+  const bag = emptyBag(session);
+  const kpm = Math.max(0.05, session.farmingEfficiency);
+  const canKill = session.nmCanKill !== false;
+  let phKills = 0;
+  let nmPops = 0;
+  let nmKills = 0;
+  const nmItems: Record<string, number> = {};
+  if (model.ph) {
+    const openAt0 = model.cooldown / 60;
+    let openAt = openAt0;
+    const count = filler ? Math.floor(kpm * minutes) : 0;
+    for (let i = 0; i < count; i += 1) {
+      const t = (i + 1) / kpm;
+      if (t > minutes) break;
+      phKills += 1;
+      if (filler) settleCampKill(session, bag, filler, session.startTimestamp + t * 60000, i * 17 + 3);
+      if (t <= openAt) continue;
+      if (unit(session.startTimestamp + i * 97 + 11) >= model.popChance) continue;
+      nmPops += 1;
+      if (canKill) {
+        nmKills += 1;
+        const fight = 1 / Math.max(0.05, kpm);
+        takeNmItems(session, model.nm, nmKills, nmItems);
+        openAt = t + fight + model.cooldown / 60;
+      } else {
+        openAt = t + model.cooldown / 60;
+      }
+    }
+  } else {
+    const count = filler ? Math.floor(kpm * minutes) : 0;
+    for (let i = 0; i < count; i += 1) {
+      const t = (i + 1) / kpm;
+      if (t > minutes) break;
+      phKills += 1;
+      if (filler) settleCampKill(session, bag, filler, session.startTimestamp + t * 60000, i * 17 + 3);
+    }
+    nmPops = Math.floor(minutes / (model.cooldown / 60));
+    if (canKill) {
+      nmKills = nmPops;
+      for (let n = 1; n <= nmKills; n += 1) takeNmItems(session, model.nm, n, nmItems);
+    }
+  }
+  const note = !canKill && nmPops > 0 ? `The ${nmFarm.name} was too strong.` : session.note;
+  return previewShell(session, now, minutes, nmPrey, bag, phKills, {
+    note,
+    preyName: nmFarm.name,
+    preyLevel: nmFarm.level,
+    nm: true,
+    phKills,
+    nmPops,
+    nmKills,
+    nmItems,
+    fillerName: filler?.name ?? session.fillerName ?? "",
+    fillerId: session.fillerId ?? model.ph ?? "",
+    placeholder: model.ph != null,
+    perHour: session.nmPerHour ?? 0,
+  });
+}
+
+function itemSalt(id: string): number {
+  let n = 0;
+  for (let i = 0; i < id.length; i += 1) n = (n + id.charCodeAt(i) * (i + 1)) % 997;
+  return n;
+}
+
+/** Seeded draws for one NM's drop table. The same kill always yields the same pile. */
+function nmRng(seed: number): () => number {
+  let n = 0;
+  return () => {
+    n += 1;
+    return unit(seed + n * 0x9e3779b1);
+  };
+}
+
+function takeNmItems(session: AfkFarmSave, nmId: string, kill: number, into: Record<string, number>): void {
+  const rng = nmRng(session.startTimestamp + kill * 131 + itemSalt(nmId));
+  for (const item of rollSpeciesItems(nmId, session.treasureHunter, rng)) {
+    into[item.id] = (into[item.id] ?? 0) + 1;
+  }
+}
+
+export function previewAfk(session: AfkFarmSave, now = Date.now(), stand?: { x: number; z: number }): AfkPreview {
+  const nmPreview = previewNm(session, now, stand);
+  if (nmPreview) return nmPreview;
+  const prey = resolvedPrey(session, stand);
+  const cap = session.dies ? Math.min(session.sustainMinutes, MAX_AFK_HOURS * 60) : MAX_AFK_HOURS * 60;
+  const minutes = elapsedMinutes(session.startTimestamp, now, cap);
+  const kills = prey ? Math.floor(session.farmingEfficiency * minutes) : 0;
+  const bag = emptyBag(session);
+  for (let i = 0; i < kills; i += 1) {
+    if (!prey) break;
+    const at = session.startTimestamp + ((i + 1) / Math.max(0.05, session.farmingEfficiency)) * 60000;
+    settleCampKill(session, bag, prey, at, i * 17 + 3);
+  }
+  return previewShell(session, now, minutes, prey, bag, kills);
 }
 
 export function assertAfk(): void {
@@ -779,7 +1050,77 @@ export function assertAfk(): void {
   }, start + hourMs, westAt);
   if (blended.preyName !== near.name || blended.items["not-a-drop"] || blended.kills !== 60) throw new Error("old blend did not take the nearest group");
   const asNm = previewAfk({ ...even, mode: "nm" }, start + hourMs);
-  if (asNm.exp !== hour.exp || asNm.kills !== hour.kills) throw new Error("nm mode still camps for exp");
+  if (asNm.exp !== hour.exp || asNm.kills !== hour.kills || asNm.nm) throw new Error("nm mode still camps for exp");
+  const passAt = gridToWorld(6.25, 6.75);
+  const passNms = zoneNms(passAt.x, passAt.z);
+  const hyaku = passNms.find((row) => row.id === "pass-hyakume");
+  if (!hyaku || hyaku.phId !== "pass-hecteyes" || !hyaku.phName) throw new Error("hyakume row");
+  if (!passNms.some((row) => row.id === "pass-gloom") || !passNms.some((row) => row.id === "pass-taisaijin")) throw new Error("lottery nm missing");
+  if (passNms.some((row) => row.id === "pass-hyakume" && zoneGroups(passAt.x, passAt.z).some((group) => group.id === "pass-hyakume"))) throw new Error("hyakume was placed");
+  const hyakuModel = nmCampModel("pass-hyakume");
+  if (!hyakuModel) throw new Error("hyakume model");
+  const hyakuFiller = nmFiller("pass-hyakume", passAt.x, passAt.z);
+  if (!hyakuFiller || hyakuFiller.id !== "pass-hecteyes") throw new Error("hyakume filler");
+  const nmSession = (id: string, minutesDie = false): AfkFarmSave => {
+    const model = nmCampModel(id);
+    const filler = nmFiller(id, passAt.x, passAt.z);
+    const card = speciesFarm(id);
+    if (!model || !filler) throw new Error(`nm session ${id}`);
+    return {
+      active: true,
+      startTimestamp: start,
+      zoneId: "pass-deep",
+      mode: "nm",
+      groupId: id,
+      groupName: card.name,
+      groupFamily: card.family,
+      farmingEfficiency: 2,
+      level: card.level,
+      exp: 0,
+      job: "SAM",
+      treasureHunter: 0,
+      signetLeft: 0,
+      crystalBonus: false,
+      dies: minutesDie,
+      sustainMinutes: MAX_AFK_HOURS * 60,
+      note: "",
+      fovActive: false,
+      fovPage: 0,
+      fovCounts: [],
+      fovRepeat: false,
+      fovPaidDays: {},
+      fovTabs: 0,
+      preyLevel: filler.level,
+      preyHp: filler.hpNatural,
+      preyWeapon: filler.weaponDamage,
+      preyDelay: filler.delay,
+      preyDrops: filler.drops,
+      fillerId: filler.id,
+      fillerName: filler.name,
+      nmCanKill: true,
+      nmPerHour: nmPace(2, 2, model, true),
+    };
+  };
+  const firstHalf = previewAfk(nmSession("pass-hyakume"), start + 30 * 60 * 1000, passAt);
+  if (firstHalf.nmPops !== 0 || !firstHalf.nm || firstHalf.phKills <= 0) throw new Error("nm popped inside the window");
+  const longNm = previewAfk(nmSession("pass-hyakume"), start + MAX_AFK_HOURS * hourMs, passAt);
+  const longAgain = previewAfk(nmSession("pass-hyakume"), start + MAX_AFK_HOURS * hourMs, passAt);
+  if (longNm.nmKills <= 0 || longNm.nmKills > 24) throw new Error(`twelve hour nm kills ${longNm.nmKills}`);
+  if (JSON.stringify(longNm.nmItems) !== JSON.stringify(longAgain.nmItems) || longNm.nmKills !== longAgain.nmKills) throw new Error("nm camp is not stable");
+  const lost = previewAfk({ ...nmSession("pass-hyakume"), nmCanKill: false }, start + MAX_AFK_HOURS * hourMs, passAt);
+  if (lost.nmKills !== 0 || lost.nmPops <= 0 || !lost.note.includes("too strong")) throw new Error("lost nm still died");
+  const mucoidCard = passNms.find((row) => row.id === "pass-mucoid");
+  const mucoidBody = placedBodies().find((body) => body.species === "pass-mucoid");
+  if (!mucoidCard || mucoidCard.phId || !mucoidBody) throw new Error("mucoid row");
+  const mucoidFill = nmFiller("pass-mucoid", mucoidBody.x, mucoidBody.z);
+  if (!mucoidFill || mucoidFill.id !== "pass-ooze" || mucoidFill.name !== "Ooze") throw new Error(`mucoid filler ${mucoidFill?.id}`);
+  const mucoid = previewAfk({ ...nmSession("pass-mucoid"), fillerId: mucoidFill.id, fillerName: mucoidFill.name, preyLevel: mucoidFill.level, preyHp: mucoidFill.hpNatural, preyDrops: mucoidFill.drops }, start + MAX_AFK_HOURS * hourMs, { x: mucoidBody.x, z: mucoidBody.z });
+  if (mucoid.fillerId !== "pass-ooze" && mucoid.fillerName !== "Ooze") throw new Error("mucoid claim filler");
+  if (mucoid.nmPops !== Math.floor((MAX_AFK_HOURS * 60) / 30) || mucoid.nmKills !== mucoid.nmPops) throw new Error(`mucoid pops ${mucoid.nmPops}`);
+  const mucoidShort = previewAfk(nmSession("pass-mucoid"), start + 15 * 60 * 1000, { x: mucoidBody.x, z: mucoidBody.z });
+  if (mucoidShort.nmPops !== 0) throw new Error("mucoid popped early");
+  if (zoneNms(ice.x, ice.z).length !== 0 || NO_NM !== "No notorious monsters here.") throw new Error("glacier invented an nm");
+  if (farmZoneAt("battle", 0, 0) !== null || zoneNms(0, 0).length !== 0) throw new Error("town accepted an nm camp");
   for (const camp of PASS_CAMPS) {
     const node = PASS_GRAPH.nodes.find((row) => row.id === camp.node);
     if (!node) throw new Error(`camp node ${camp.node}`);

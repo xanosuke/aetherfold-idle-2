@@ -51,7 +51,8 @@ import { abandonTrial as dropMagianTrial, beginTrial as openMagianTrial, bonuses
 import { CONQUEST_SHOP, RARAB_CRYSTAL, crystalChance, pointsFromExp, rankFromPoints, signetHours } from "./signet";
 import { RARAB_DROPS, dropRate } from "./drops";
 import { BAG_SLOTS, bagUsed } from "./inventory";
-import { campHere, campRefusal, gambitShape, measureFarm, nearestGroup, partyHelps, previewAfk, zoneGroups, type AfkFarmSave } from "./afk";
+import { campHere, campRefusal, gambitShape, measureFarm, nearestGroup, nearestNm, nmFiller, nmPace, partyHelps, previewAfk, zoneGroups, zoneNms, NO_NM, type AfkFarmSave, type CampMode } from "./afk";
+import { nmCampModel } from "./ronfaure";
 import { scale256 } from "./war";
 import { archeryByName, axeByName, blmCanUse, bluCanUse, brdCanUse, bstCanUse, castSword, clubByName, corCanUse, daggerByName, dncCanUse, drgCanUse, drkCanUse, effectiveTp, ftpAt, greatAxeByName, greatKatanaByName, greatSwordByName, HAND_SKILLS, handByName, katanaByName, marksmanshipByName, mnkCanUse, ninCanUse, pldCanUse, polearmByName, pupCanUse, rdmCanUse, rngCanUse, samCanUse, schCanUse, scytheByName, smnCanUse, staffByName, swordByName, thfCanUse, warCanUse, warCanUseArchery, warCanUseAxe, warCanUseClub, warCanUseDagger, warCanUseGreatAxe, warCanUseGreatKatana, warCanUseGreatSword, warCanUseHand, warCanUseKatana, warCanUseMarksmanship, warCanUsePolearm, warCanUseScythe, warCanUseStaff, whmCanUse, runCanUse, geoCanUse } from "./weaponskills";
 import { clearYardSave, readYardSave, writeYardSave } from "./yard-save";
@@ -14304,7 +14305,7 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 			state.pushLog(`You buy the ${offer.name}.`, "info");
 			saveSettings(false);
 		},
-		startAfk: (groupId) => {
+		startAfk: (groupId, mode) => {
 			const state = useGame.getState();
 			if (state.afkFarm?.active) return;
 			if (state.ko) {
@@ -14317,17 +14318,14 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				state.pushLog(campRefusal(state.screen, here.x, here.z), "info");
 				return;
 			}
-			const groups = zoneGroups(here.x, here.z);
-			const chosen = (typeof groupId === "string" ? groups.find((group) => group.id === groupId) : null) ?? nearestGroup(here.x, here.z);
-			if (!chosen) {
-				state.pushLog("Nothing hunts here.", "info");
-				return;
-			}
+			const want: CampMode = mode === "nm" ? "nm" : "exp";
 			const board = state.gambits?.[state.mainJob];
 			const shape = gambitShape(board);
 			const help = partyHelps(state.party?.summoned);
 			const level = state.jobLevels?.[state.mainJob] ?? 75;
-			const measured = measureFarm({
+			const signet = state.buffs.find((buff) => buff.name === "Signet" && buff.left > 0);
+			const fov = readFov(state.fov);
+			const measure = (prey: { level: number; hpNatural: number; weaponDamage: number; delay: number; name: string }) => measureFarm({
 				dmg: state.sheet?.dmg ?? 0,
 				fstr: state.sheet?.fstr ?? 0,
 				hit: state.sheet?.hit ?? 50,
@@ -14341,14 +14339,75 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				hasHeal: shape.heal,
 				party: help.party,
 				healer: help.healer,
-				preyLevel: chosen.level,
-				preyHp: chosen.hpNatural,
-				preyWeapon: chosen.weaponDamage,
-				preyDelay: chosen.delay,
-				preyName: chosen.name,
+				preyLevel: prey.level,
+				preyHp: prey.hpNatural,
+				preyWeapon: prey.weaponDamage,
+				preyDelay: prey.delay,
+				preyName: prey.name,
 			});
-			const signet = state.buffs.find((buff) => buff.name === "Signet" && buff.left > 0);
-			const fov = readFov(state.fov);
+			if (want === "nm") {
+				const nms = zoneNms(here.x, here.z);
+				const chosen = (typeof groupId === "string" ? nms.find((row) => row.id === groupId) : null) ?? nearestNm(here.x, here.z);
+				const model = chosen ? nmCampModel(chosen.id) : null;
+				if (!chosen || !model) {
+					state.pushLog(NO_NM, "info");
+					return;
+				}
+				const filler = nmFiller(chosen.id, here.x, here.z);
+				if (!filler) {
+					state.pushLog(NO_NM, "info");
+					return;
+				}
+				const fillerPace = measure(filler);
+				const nmPaceNow = measure(chosen);
+				const canKill = !nmPaceNow.dies;
+				const session: AfkFarmSave = {
+					active: true,
+					startTimestamp: Date.now(),
+					zoneId: camp.id,
+					mode: "nm",
+					groupId: chosen.id,
+					groupName: chosen.name,
+					groupFamily: chosen.family,
+					farmingEfficiency: fillerPace.kpm,
+					level,
+					exp: state.expByJob?.[state.mainJob] ?? state.exp ?? 0,
+					job: state.mainJob,
+					treasureHunter: state.sheet?.treasureHunter ?? 0,
+					signetLeft: signet ? signet.left : 0,
+					crystalBonus: state.loadout?.body === "kingdom-aketon",
+					dies: fillerPace.dies,
+					sustainMinutes: fillerPace.sustainMinutes,
+					note: canKill ? fillerPace.note : `The ${chosen.name} was too strong.`,
+					fovActive: fov.active,
+					fovPage: fov.page,
+					fovBook: fov.book,
+					fovCounts: [...fov.counts ?? []],
+					fovRepeat: fov.repeat,
+					fovPaidDays: { ...fov.paidDays ?? {} },
+					fovTabs: fov.tabs,
+					preyLevel: filler.level,
+					preyHp: filler.hpNatural,
+					preyWeapon: filler.weaponDamage,
+					preyDelay: filler.delay,
+					preyDrops: filler.drops.map((drop) => ({ ...drop })),
+					fillerId: filler.id,
+					fillerName: filler.name,
+					nmCanKill: canKill,
+					nmPerHour: nmPace(fillerPace.kpm, nmPaceNow.kpm, model, canKill),
+				};
+				set({ afkFarm: session });
+				state.pushLog(`You make camp on ${chosen.name}.`, "info");
+				saveSettings(false);
+				return;
+			}
+			const groups = zoneGroups(here.x, here.z);
+			const chosen = (typeof groupId === "string" ? groups.find((group) => group.id === groupId) : null) ?? nearestGroup(here.x, here.z);
+			if (!chosen) {
+				state.pushLog("Nothing hunts here.", "info");
+				return;
+			}
+			const measured = measure(chosen);
 			const session: AfkFarmSave = {
 				active: true,
 				startTimestamp: Date.now(),
@@ -14405,7 +14464,7 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 			const inventory = { ...(state.inventory ?? {}) };
 			const kept = [];
 			let overflow = 0;
-			for (const [id, qty] of Object.entries(bag.items)) {
+			const grant = (id: string, qty: number) => {
 				let left = qty;
 				while (left > 0) {
 					const next = { ...inventory, [id]: (inventory[id] ?? 0) + 1 };
@@ -14418,7 +14477,9 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 					left -= 1;
 				}
 				if ((inventory[id] ?? 0) > (state.inventory?.[id] ?? 0)) kept.push(id);
-			}
+			};
+			for (const [id, qty] of Object.entries(bag.items)) grant(id, qty);
+			for (const [id, qty] of Object.entries(bag.nmItems)) grant(id, qty);
 			const crystals = { ...(state.crystals ?? emptyCrystals()) };
 			if (bag.crystals > 0) crystals[RARAB_CRYSTAL] = Math.min(9999, (crystals[RARAB_CRYSTAL] ?? 0) + bag.crystals);
 			const liveFov = readFov(state.fov);
