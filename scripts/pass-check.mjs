@@ -122,13 +122,27 @@ try {
   const panels = (audit || []).filter((row) => row.part === "panel" || row.name === "sealed-gate-panel");
   const walls = (audit || []).filter((row) => row.part === "wall" || row.name === "sealed-gate-wall");
   const steps = (audit || []).filter((row) => row.part === "step");
-  const stray = (audit || []).filter((row) => row.part !== "panel" && row.part !== "wall" && row.part !== "step");
+  const allowed = new Set(["panel", "wall", "step", "sconce", "cap", "glow"]);
+  const stray = (audit || []).filter((row) => !allowed.has(row.part));
   console.log("view", viewShot);
   console.log("doors", JSON.stringify(audit, null, 2));
   if (!audit) failed = failed || "pass audit missing";
   if (panels.length !== 2) failed = failed || `sealed panels ${panels.length}`;
   if (steps.length !== 6) failed = failed || `sealed steps ${steps.length}`;
   if (stray.length) failed = failed || `stray door mesh ${stray.map((row) => row.name || row.type).join(",")}`;
+  const sealed = (audit || []).filter((row) => allowed.has(row.part));
+  if (sealed.some((row) => !row.fade)) failed = failed || "sealed gate mesh missing from the fade";
+  const caps = (audit || []).filter((row) => row.part === "cap");
+  const glows = (audit || []).filter((row) => row.part === "glow");
+  const sconces = (audit || []).filter((row) => row.part === "sconce");
+  if (sconces.length !== 4) failed = failed || `sconces ${sconces.length}`;
+  if (caps.length !== 1 || glows.length !== 1) failed = failed || `cues cap ${caps.length} glow ${glows.length}`;
+  const exitGate = places.gates.find((gate) => gate.id === "exit");
+  const enterGate = places.gates.find((gate) => gate.id === "enter");
+  const nearGate = (row, gate) => Math.hypot((row.minX + row.maxX) / 2 - gate.x, (row.minZ + row.maxZ) / 2 - gate.z) < 10;
+  if (!caps.length || !nearGate(caps[0], exitGate) || nearGate(caps[0], enterGate)) failed = failed || "cap is not only on the edge-on door";
+  if (!glows.length || !nearGate(glows[0], exitGate) || nearGate(glows[0], enterGate)) failed = failed || "glow is not only on the edge-on door";
+  if (walls.filter((row) => nearGate(row, enterGate)).some((row) => row.opacity < 0.85)) failed = failed || "F-10 door faded from the lane";
   const tenth = 48 * 0.1;
   const tiltMax = (10 * Math.PI) / 180 + 1e-6;
   for (const gate of places.gates) {
@@ -162,7 +176,27 @@ try {
     if (Math.abs(centre - gate.at) > tenth) failed = failed || `${gate.id} centre ${centre.toFixed(2)} off ${gate.at}`;
     if (!(Math.abs(panel.tilt) <= tiltMax)) failed = failed || `${gate.id} tilt ${panel.tilt}`;
   }
-  const realErrors = [...mapErrors, ...viewErrors].filter((err) => !err.includes("chartStrips"));
+  await viewPage.close();
+  const fadePage = await browser.newPage({ viewport: { width: 440, height: 956 } });
+  const fadeErrors = await openPass(fadePage, { x: 301.4, z: -24.3 });
+  await fadePage.waitForFunction(() => {
+    const text = document.body?.innerText || "";
+    return text.includes("E-10") && text.includes("Ranguemont");
+  }, null, { timeout: 45000 });
+  await fadePage.waitForTimeout(700);
+  const fadeAudit = await fadePage.evaluate(() => (window.__passAudit ? window.__passAudit() : null));
+  const front = (fadeAudit || []).filter((row) => {
+    if (row.part !== "wall") return false;
+    const cz = (row.minZ + row.maxZ) / 2;
+    const cx = (row.minX + row.maxX) / 2;
+    return Math.hypot(cx - exitGate.x, cz - exitGate.z) < 12 && cz > exitGate.z + 2;
+  });
+  console.log("fade", JSON.stringify(front));
+  if (!front.length || front.some((row) => !(row.fade && row.opacity <= 0.55))) {
+    failed = failed || `E-10 jamb did not fade ${JSON.stringify(front)}`;
+  }
+  await fadePage.close();
+  const realErrors = [...mapErrors, ...viewErrors, ...fadeErrors].filter((err) => !err.includes("chartStrips"));
   if (realErrors.length) failed = failed || realErrors[0];
 } catch (err) {
   failed = String(err?.message || err);

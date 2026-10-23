@@ -4240,6 +4240,12 @@ export function createYard(canvas) {
 	function fadePassWalls(dt) {
 		const meshes = scene.userData.passWalls;
 		if (!meshes || !meshes.length) return;
+		let passGates = scene.userData.passGates;
+		if (!passGates) {
+			passGates = [];
+			for (let i = 0; i < meshes.length; i++) if (meshes[i].userData.sealedGate) passGates.push(meshes[i]);
+			scene.userData.passGates = passGates;
+		}
 		wallBlocking.clear();
 		if (inPass(px, pz)) {
 			const marks = [[px, 1.05, pz]];
@@ -4250,25 +4256,35 @@ export function createYard(canvas) {
 			}
 			for (let i = 0; i < marks.length; i++) {
 				const x = marks[i][0], y = marks[i][1], z = marks[i][2];
-				wallTo.set(x - camera.position.x, y - camera.position.y, z - camera.position.z);
-				const dist = wallTo.length();
-				if (dist < 0.25) continue;
-				wallTo.multiplyScalar(1 / dist);
-				wallRay.set(camera.position, wallTo);
-				wallRay.far = Math.max(0, dist - 0.2);
-				const hits = wallRay.intersectObjects(meshes, false);
-				for (let h = 0; h < hits.length; h++) wallBlocking.add(hits[h].object);
+				const sx = z - camera.position.z;
+				const sz = camera.position.x - x;
+				const sl = Math.hypot(sx, sz) || 1;
+				const pads = [0, 1.7, -1.7, 2.4, -2.4];
+				for (let p = 0; p < pads.length; p++) {
+					const pad = pads[p];
+					const tx = x + (pad * sx) / sl;
+					const tz = z + (pad * sz) / sl;
+					wallTo.set(tx - camera.position.x, y - camera.position.y, tz - camera.position.z);
+					const dist = wallTo.length();
+					if (dist < 0.25) continue;
+					wallTo.multiplyScalar(1 / dist);
+					wallRay.set(camera.position, wallTo);
+					wallRay.far = Math.max(0, dist - 0.2);
+					const hits = wallRay.intersectObjects(pad === 0 ? meshes : passGates, false);
+					for (let h = 0; h < hits.length; h++) wallBlocking.add(hits[h].object);
+				}
 			}
 		}
 		const speed = 5;
 		for (let i = 0; i < meshes.length; i++) {
 			const mat = meshes[i].material;
 			if (!mat) continue;
-			const goal = wallBlocking.has(meshes[i]) ? 0.25 : 1;
+			const base = meshes[i].userData.fadeBase == null ? 1 : meshes[i].userData.fadeBase;
+			const goal = (wallBlocking.has(meshes[i]) ? 0.25 : 1) * base;
 			const cur = mat.opacity == null ? 1 : mat.opacity;
 			let next = cur + Math.sign(goal - cur) * Math.min(Math.abs(goal - cur), speed * dt);
 			if (Math.abs(next - goal) < 0.01) next = goal;
-			const solid = next >= 0.995 && goal === 1;
+			const solid = base > 0.99 && next >= 0.995 && goal >= 0.995;
 			if (solid) next = 1;
 			mat.opacity = next;
 			const wantTransparent = !solid;
@@ -41489,6 +41505,8 @@ export function createYard(canvas) {
 				name: obj.name || "",
 				part: obj.userData.sealedGate || "",
 				red,
+				fade: !!(scene.userData.passWalls && scene.userData.passWalls.indexOf(obj) !== -1),
+				opacity: obj.material && obj.material.opacity != null ? Math.round(obj.material.opacity * 100) / 100 : 1,
 				type: geo && geo.type,
 				tilt,
 				x: Math.round(obj.position.x * 10) / 10,
@@ -46657,13 +46675,16 @@ function buildRoom(scene, toonMat, colliders) {
 		} else if (tag === "step") {
 			mesh.userData.sealedGate = "step";
 			mesh.name = "sealed-gate-step";
+		} else if (tag === "sconce") {
+			mesh.userData.sealedGate = "sconce";
+			mesh.name = "sealed-gate-sconce";
 		}
 		if (tag === "lintel") {
 			mesh.material.polygonOffset = true;
 			mesh.material.polygonOffsetFactor = -2;
 			mesh.material.polygonOffsetUnits = -2;
 		}
-		if (tag !== "step") passWalls.push(mesh);
+		passWalls.push(mesh);
 		scene.add(mesh);
 	};
 	const flagGeos = [];
@@ -46880,6 +46901,34 @@ function buildRoom(scene, toonMat, colliders) {
 		passWalls.push(mesh);
 		scene.add(mesh);
 	};
+	const addCue = (kind, w, h, d, x, y, z, yaw) => {
+		const geo = new BoxGeometry(w, h, d);
+		const mat = redMat.clone();
+		const mesh = new Mesh(geo, mat);
+		mesh.position.set(x, y, z);
+		mesh.rotation.y = yaw;
+		mesh.castShadow = false;
+		mesh.receiveShadow = false;
+		mesh.userData.made = "addCue";
+		mesh.userData.passWall = true;
+		if (kind === "glow") {
+			mat.transparent = true;
+			mat.opacity = 0.34;
+			mat.depthWrite = false;
+			mat.emissiveIntensity = 0.5;
+			mesh.userData.fadeBase = 0.34;
+			mesh.userData.sealedGate = "glow";
+			mesh.name = "sealed-gate-glow";
+		} else {
+			mat.polygonOffset = true;
+			mat.polygonOffsetFactor = -3;
+			mat.polygonOffsetUnits = -3;
+			mesh.userData.sealedGate = "cap";
+			mesh.name = "sealed-gate-cap";
+		}
+		passWalls.push(mesh);
+		scene.add(mesh);
+	};
 	scene.userData.passWalls = passWalls;
 	scene.userData.passTorches = passTorches;
 	scene.userData.passLights = passLights;
@@ -47060,7 +47109,7 @@ function buildRoom(scene, toonMat, colliders) {
 	moat(scene, toonMat, 14, spanZ + 4, sideX + 5.6, floorZ);
 	moat(scene, toonMat, 14, spanZ + 4, -sideX - 5.6, floorZ);
 	buildDistricts(add, colliders, scene, toonMat);
-	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed);
+	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
 	buildOrcLands(add, colliders);
 	const footIn = (x, z) => {
 		const near = boxesNear(colliders, x, z, .48);
@@ -47140,7 +47189,7 @@ function buildRoom(scene, toonMat, colliders) {
 		for (const g of skirtGeos) g.dispose();
 	}
 }
-function buildForest(scene, toon, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed) {
+function buildForest(scene, toon, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue) {
 	const bridgeLen = BRIDGE_Z1 - BRIDGE_Z0;
 	const mid = (BRIDGE_Z0 + BRIDGE_Z1) / 2;
 	add(12035468, BRIDGE_HALF * 2 + .9, .22, bridgeLen + .85, 0, .02, mid);
@@ -47164,7 +47213,7 @@ function buildForest(scene, toon, colliders, add, buckets, addYaw, addFlag, hang
 	buildEastRonfaure(add, colliders);
 	buildTomb(add, colliders);
 	const eye = fwd(CAM_YAW);
-	buildPass(add, colliders, addYaw, { x: -eye.x, z: -eye.z }, addFlag, hangTorch, addSkirt, addStone, addRed);
+	buildPass(add, colliders, addYaw, { x: -eye.x, z: -eye.z }, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
 	buildGlacier(add, colliders);
 }
 function pine(add, x, z, s) {

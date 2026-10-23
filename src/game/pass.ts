@@ -44,6 +44,7 @@ type HangTorch = (x: number, z: number, y?: number) => void;
 type AddSkirt = (length: number, mx: number, mz: number, ux: number, uz: number, ix: number, iz: number) => void;
 type StonePart = { w: number; h: number; d: number; x: number; y: number; z: number };
 type AddStone = (parts: readonly StonePart[], x: number, y: number, z: number, yaw: number, lean: number) => void;
+type AddCue = (kind: "cap" | "glow", w: number, h: number, d: number, x: number, y: number, z: number, yaw: number) => void;
 type AddRed = (
   w: number,
   h: number,
@@ -864,7 +865,12 @@ const CROSS_JOIN = 2.6;
 const OPEN_FRAC = 0.6;
 const OPEN_H = 5;
 
-/** Radians the panel turns out of the wall, toward the camera. Never past 10 degrees. */
+/** True when the door face is within 35° of parallel to the camera view. E-10 is, F-10 is not. */
+function faceParallel(yaw: number, cam: { x: number; z: number }): boolean {
+  const cl = Math.hypot(cam.x, cam.z) || 1;
+  const along = Math.abs(Math.sin(yaw) * (cam.x / cl) + Math.cos(yaw) * (cam.z / cl));
+  return Math.asin(Math.min(1, along)) <= (35 * Math.PI) / 180;
+}
 function doorTilt(yaw: number, cam: { x: number; z: number }): number {
   const cl = Math.hypot(cam.x, cam.z) || 1;
   const facing = Math.min(1, Math.abs(Math.sin(yaw) * (cam.x / cl) + Math.cos(yaw) * (cam.z / cl)));
@@ -952,6 +958,7 @@ export function sealedGateSpots(cam: { x: number; z: number } = { x: 0, z: 1 }):
 function sealedGate(
   addYaw: AddYaw,
   addRed: AddRed,
+  addCue: AddCue,
   hang: HangTorch,
   hung: V2[],
   gate: SealedGateSpot,
@@ -994,6 +1001,13 @@ function sealedGate(
     hung.push({ x: tx, z: tz });
     hang(tx, tz, 3.22);
   }
+  if (!faceParallel(yaw, cam)) return;
+  const at = (lx: number, lz: number) => ({ x: x + lx * c + lz * s, z: z - lx * s + lz * c });
+  const capAt = at(0, wallZ);
+  addCue("cap", openW, 0.08, CROSS_T - 0.06, capAt.x, top + 0.05, capAt.z, yaw);
+  const outer = blocked + 0.05 - 2 * (tread - 0.04) - tread;
+  const glowAt = at(0, outer - 0.2);
+  addCue("glow", openW, 0.04, 0.4, glowAt.x, 0.04, glowAt.z, yaw);
 }
 
 /** Stone still opens the old mouths. The live gates are the traced exits. */
@@ -1330,6 +1344,7 @@ export function buildPass(
   addSkirt: AddSkirt,
   addStone: AddStone,
   addRed: AddRed,
+  addCue: AddCue,
 ): void {
   for (const rect of passFloorRects()) {
     addFlag(rect.maxX - rect.minX, rect.maxZ - rect.minZ, (rect.minX + rect.maxX) / 2, (rect.minZ + rect.maxZ) / 2);
@@ -1358,7 +1373,7 @@ export function buildPass(
   }
   const hung: V2[] = [];
   for (const spot of spots) torch(add, hangTorch, spot.x, spot.z, hung);
-  for (const gate of sealedGateSpots(toCamera)) sealedGate(addYaw, addRed, hangTorch, hung, gate, toCamera);
+  for (const gate of sealedGateSpots(toCamera)) sealedGate(addYaw, addRed, addCue, hangTorch, hung, gate, toCamera);
   for (const id of junctionIds()) {
     const at = pillarAt(id);
     pillar(add, colliders, at.x, at.z, 0x6a5830);
