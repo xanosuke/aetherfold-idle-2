@@ -51,7 +51,7 @@ import { abandonTrial as dropMagianTrial, beginTrial as openMagianTrial, bonuses
 import { CONQUEST_SHOP, RARAB_CRYSTAL, crystalChance, pointsFromExp, rankFromPoints, signetHours } from "./signet";
 import { RARAB_DROPS, dropRate } from "./drops";
 import { BAG_SLOTS, bagUsed } from "./inventory";
-import { campHere, campRefusal, gambitShape, measureFarm, nearestGroup, nearestNm, nmFiller, nmPace, partyHelps, previewAfk, zoneGroups, zoneNms, NO_NM, type AfkFarmSave, type CampMode } from "./afk";
+import { campHere, campRefusal, expKpm, gambitShape, measureFarm, nearestGroup, nearestNm, nmFiller, nmPace, partyHelps, previewAfk, zoneGroups, zoneNms, NO_NM, type AfkFarmSave, type CampMode } from "./afk";
 import { nmCampModel } from "./ronfaure";
 import { scale256 } from "./war";
 import { archeryByName, axeByName, blmCanUse, bluCanUse, brdCanUse, bstCanUse, castSword, clubByName, corCanUse, daggerByName, dncCanUse, drgCanUse, drkCanUse, effectiveTp, ftpAt, greatAxeByName, greatKatanaByName, greatSwordByName, HAND_SKILLS, handByName, katanaByName, marksmanshipByName, mnkCanUse, ninCanUse, pldCanUse, polearmByName, pupCanUse, rdmCanUse, rngCanUse, samCanUse, schCanUse, scytheByName, smnCanUse, staffByName, swordByName, thfCanUse, warCanUse, warCanUseArchery, warCanUseAxe, warCanUseClub, warCanUseDagger, warCanUseGreatAxe, warCanUseGreatKatana, warCanUseGreatSword, warCanUseHand, warCanUseKatana, warCanUseMarksmanship, warCanUsePolearm, warCanUseScythe, warCanUseStaff, whmCanUse, runCanUse, geoCanUse } from "./weaponskills";
@@ -14416,7 +14416,7 @@ export var useGame: UseBoundStore<StoreApi<GameState>> = create((set, get) => {
 				groupId: chosen.id,
 				groupName: chosen.name,
 				groupFamily: chosen.family,
-				farmingEfficiency: measured.kpm,
+				farmingEfficiency: expKpm(chosen.id, measured.kpm),
 				level,
 				exp: state.expByJob?.[state.mainJob] ?? state.exp ?? 0,
 				job: state.mainJob,

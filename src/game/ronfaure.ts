@@ -732,7 +732,7 @@ twin("pass-giant-scorpion", "tomb-scorpion", {
   name: "Giant Scorpion", variant: "giant", levelMin: 38, levelMax: 40, window: "always", detect: SOUND_SCENT, links: false, hpMod: 1.45,
   moves: [pincer, venom, deathScissors], drops: [{ id: "harvester", found: "harvester", tier: "rare" }, ...scorDrops], respawn: 720,
 });
-SPECIES["pass-bat-eye"] = { id: "pass-bat-eye", name: "Bat Eye", look: "ahriman", variant: "bat", family: "Ahriman", job: "BLM", levelMin: 42, levelMax: 44, window: "always", detect: SIGHT_SOUND, links: false, crystal: "dark", hpMod: 1.7, delay: 240, ranks: AHRIMAN, moves: [hypo, mindBreak, binding, deathRay], spells: [], drops: [...eyeDrops, { id: "storm-axe", found: "storm axe", tier: "rare" }], nm: true, respawn: 720 };
+SPECIES["pass-bat-eye"] = { id: "pass-bat-eye", name: "Bat Eye", look: "ahriman", variant: "bat", family: "Ahriman", job: "WAR", levelMin: 42, levelMax: 44, window: "always", detect: SIGHT_SOUND, links: false, crystal: "dark", hpMod: 1.7, delay: 240, ranks: AHRIMAN, moves: [hypo, mindBreak, binding, deathRay], spells: [], drops: [...eyeDrops, { id: "storm-axe", found: "storm axe", tier: "rare" }], nm: false, respawn: 300 };
 SPECIES["pass-mucoid"] = { id: "pass-mucoid", name: "Mucoid Mass", look: "slime", variant: "mass", family: "Slime", job: "DRK", levelMin: 45, levelMax: 48, window: "always", detect: SOUND_SCENT, links: false, crystal: "water", hpMod: 2.1, delay: 270, ranks: SLIME, moves: [fluid, ooze], spells: [drainSpell], drops: [{ id: "slime-oil", found: "slime oil", tier: "common" }, { id: "spellcasters-ecu", found: "spellcaster's ecu", tier: "common" }], nm: true, respawn: 0 };
 SPECIES["pass-taisaijin"] = { id: "pass-taisaijin", name: "Taisaijin", look: "hecteyes", variant: "jin", family: "Hecteyes", job: "BLM", levelMin: 60, levelMax: 63, window: "always", detect: SOUND, links: true, crystal: "dark", hpMod: 2.6, delay: 250, ranks: EYES, moves: [hexEye, cataract, deathRay, eyesOnMe], spells: [stone2, water2, aero, sleepSpell], drops: [...hectDrops, { id: "spelunkers-hat", found: "spelunker's hat", tier: "very-rare" }, { id: "scroll-of-refresh", found: "scroll of refresh", slot: "refresh", weight: 4 }, { id: "scroll-of-refresh-ii", found: "scroll of refresh ii", slot: "refresh", weight: 1 }], nm: true, respawn: 0 };
 SPECIES["pass-gloom"] = { id: "pass-gloom", name: "Gloom Eye", look: "ahriman", variant: "gloom", family: "Ahriman", job: "WAR", levelMin: 73, levelMax: 74, window: "always", detect: SIGHT_SOUND, links: false, crystal: "dark", hpMod: 2.2, delay: 240, ranks: AHRIMAN, moves: [blindEye, eyesOnMe], spells: [], drops: [...eyeDrops, { id: "wit-pendant", found: "wit pendant", tier: "very-rare" }], nm: true, respawn: 0 };
@@ -3139,6 +3139,7 @@ function defeat(body: FieldBody, input: FieldInput, events: FieldEvent[]): void 
     return;
   }
   if (spec.nm) body.respawn = nmWait();
+  armShare(body);
 }
 
 function playerHits(body: FieldBody, input: FieldInput, events: FieldEvent[]): void {
@@ -4895,8 +4896,8 @@ export function assertRonfaure(): void {
     ["pass-floating-eye", 5],
     ["pass-evil-weapon", 3],
     ["pass-taisai", 3],
-    ["pass-giant-scorpion", 1],
-    ["pass-bat-eye", 1],
+    ["pass-giant-scorpion", 2],
+    ["pass-bat-eye", 0],
     ["pass-mucoid", 1],
   ];
   const passShort: string[] = [];
@@ -4938,10 +4939,36 @@ export function assertRonfaure(): void {
   const mucoid = nmCampModel("pass-mucoid");
   if (!mucoid || mucoid.ph !== null || mucoid.popChance !== 1 || mucoid.cooldown !== 30 * 60) throw new Error("mucoid camp");
   if (nmCampModel("forest-hare") !== null) throw new Error("hare is not an nm");
-  if (!SPECIES["pass-bat-eye"].drops.some((drop) => drop.id === "storm-axe") || !SPECIES["pass-bat-eye"].nm) throw new Error("bat eye");
+  const batSpec = SPECIES["pass-bat-eye"];
+  const storm = batSpec.drops.find((drop) => drop.id === "storm-axe");
+  if (!storm || storm.tier !== "rare" || batSpec.nm || batSpec.job !== "WAR" || batSpec.respawn !== RESPAWN) throw new Error("bat eye");
+  const share = live.filter((body) => body.link === H5_SHARE);
+  if (share.length !== 1) throw new Error("bat eye stand");
+  const point = share[0];
+  if (!point || passSquare(point.spawnX, point.spawnZ) !== "H-5" || passWet(point.spawnX, point.spawnZ)) throw new Error("bat eye stand");
+  if (point.species !== "pass-giant-scorpion" && point.species !== "pass-bat-eye") throw new Error("bat eye stand");
+  if (live.some((body) => body.species === "pass-bat-eye" && (body.link !== H5_SHARE || passSquare(body.spawnX, body.spawnZ) !== "H-5"))) {
+    throw new Error("bat eye stood off H-5");
+  }
+  const dedicated = live.filter((body) => body.species === "pass-giant-scorpion" && body.link !== H5_SHARE);
+  if (dedicated.length !== 1 || dedicated.some((body) => passSquare(body.spawnX, body.spawnZ) === "H-5")) throw new Error("giant scorpion deep");
+  const keptLevel = point.level;
+  restyle(point, "pass-bat-eye");
+  try {
+    if (point.species !== "pass-bat-eye" || point.nm || point.level < 42 || point.level > 44 || point.respawnMax !== RESPAWN) throw new Error("bat eye stand");
+    if (passSquare(point.spawnX, point.spawnZ) !== "H-5" || live.filter((body) => body.species === "pass-bat-eye").length !== 1) throw new Error("bat eye stood off H-5");
+  } finally {
+    restyle(point, "pass-giant-scorpion", keptLevel);
+  }
+  if (shareSpecies(() => 0) !== "pass-giant-scorpion" || shareSpecies(() => 0.749) !== "pass-giant-scorpion") throw new Error("scorpion share");
+  if (shareSpecies(() => 0.75) !== "pass-bat-eye" || shareSpecies(() => 0.99) !== "pass-bat-eye") throw new Error("bat eye share");
+  armShare(point, () => 0.9);
+  if (point.nextSpawn !== "pass-bat-eye") throw new Error("bat eye share pop");
+  point.nextSpawn = "";
+  armShare(point, () => 0);
+  if (point.nextSpawn !== "pass-giant-scorpion") throw new Error("scorpion share pop");
+  point.nextSpawn = "";
   if (!SPECIES["pass-cave-scorpion"].drops.some((drop) => drop.id === "frostreaper") || !SPECIES["pass-giant-scorpion"].drops.some((drop) => drop.id === "harvester")) throw new Error("scorpion steel");
-  const batEye = live.find((body) => body.species === "pass-bat-eye");
-  if (!batEye || batEye.level < 42 || batEye.level > 44 || passWet(batEye.spawnX, batEye.spawnZ)) throw new Error("bat eye stand");
   if (live.filter((body) => body.ph === "taisai").length < 3) throw new Error("taisai placeholders");
   if (!live.some((body) => body.ph === "gloom" && body.species === "pass-seeker")) throw new Error("gloom placeholder");
   if (!live.some((body) => body.ph === "hyaku" && body.species === "pass-hecteyes")) throw new Error("hyakume placeholder");
@@ -5047,6 +5074,48 @@ function passFill(id: string, squares: readonly string[], want: number, cluster:
   return placed;
 }
 
+/** H-5. Giant Scorpion takes the point three times in four. Bat Eye takes the rest. Only one stands. */
+const H5_SHARE = "h5-share";
+const BAT_EYE_CHANCE = 0.25;
+
+function shareSpecies(rng: () => number): string {
+  return rng() < 1 - BAT_EYE_CHANCE ? "pass-giant-scorpion" : "pass-bat-eye";
+}
+
+function armShare(body: FieldBody, rng: () => number = Math.random): void {
+  if (body.link !== H5_SHARE) return;
+  body.nextSpawn = shareSpecies(rng);
+}
+
+/** Fraction of a dedicated spawn this species occupies. Bat Eye only has the shared point. */
+export function spawnShare(speciesId: string): number {
+  return speciesId === "pass-bat-eye" ? BAT_EYE_CHANCE : 1;
+}
+
+/** Species a shared point can become, even while the other one is standing. */
+export function sharedSpawns(): { species: string; x: number; z: number }[] {
+  const body = live.find((row) => row.link === H5_SHARE);
+  if (!body) return [];
+  return [
+    { species: "pass-bat-eye", x: body.spawnX, z: body.spawnZ },
+    { species: "pass-giant-scorpion", x: body.spawnX, z: body.spawnZ },
+  ];
+}
+
+function placeH5Share(): void {
+  const grid = passGrid(["H-5"]);
+  const species = shareSpecies(() => 0);
+  for (const index of visitOrder(grid.length, 0x0b47)) {
+    const spot = grid[index];
+    if (passSquare(spot.x, spot.z) !== "H-5") continue;
+    if (!passParty([species], spot.x, spot.z, H5_SHARE, "")) continue;
+    const born = live.find((body) => body.link === H5_SHARE);
+    if (born && passSquare(born.spawnX, born.spawnZ) === "H-5") return;
+    throw new Error("h5 share moved");
+  }
+  throw new Error("h5 share");
+}
+
 /** 75-era Ranguemont Pass. Counts follow the classic field list. Later cap-99 camps stay out. */
 function fillPass(): void {
   if (live.some((body) => body.species.startsWith("pass-"))) return;
@@ -5057,8 +5126,9 @@ function fillPass(): void {
   const deep = ["F-5", "F-6", "G-6", "H-5", "H-4", "I-4", "E-6", "G-7"];
   const glacier = ["I-3", "J-3", "K-3", "K-4", "H-4", "I-4"];
   const halls = [...mid, ...deep, ...glacier];
-  passFill("pass-bat-eye", glacier, 1, 1, "", 1);
-  passFill("pass-giant-scorpion", deep, 1, 1, "", 2);
+  placeH5Share();
+  // The shared point already counts as one Giant Scorpion. This is the other deep spawn.
+  passFill("pass-giant-scorpion", deep.filter((square) => square !== "H-5"), 2, 1, "", 2);
   passFill("pass-mucoid", glacier, 1, 1, "", 3);
   passFill("pass-taisai", glacier, 3, 1, "taisai", 4);
   passFill("pass-evil-weapon", pool, 3, 1, "", 5);

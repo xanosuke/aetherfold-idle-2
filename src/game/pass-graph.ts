@@ -136,7 +136,7 @@ export const PASS_CAMPS: readonly PassCamp[] = [
     node: "chamber_mid",
     radius: 0.6,
     monsters: [
-      "pass-giant-scorpion", "pass-floating-eye", "pass-hecteyes", "pass-cave-scorpion",
+      "pass-giant-scorpion", "pass-bat-eye", "pass-floating-eye", "pass-hecteyes", "pass-cave-scorpion",
       "pass-pathfinder", "pass-bats", "pass-shaman", "pass-smithy", "pass-furrier",
       "pass-mugger", "pass-gambler", "pass-leecher", "pass-seeker", "pass-stirge",
     ],
@@ -146,7 +146,7 @@ export const PASS_CAMPS: readonly PassCamp[] = [
     id: "pass-glacier",
     node: "exit_beaucedine",
     radius: 0.75,
-    monsters: ["pass-bat-eye", "pass-mucoid", "pass-taisai", "pass-floating-eye", "pass-seeker", "pass-stirge"],
+    monsters: ["pass-mucoid", "pass-taisai", "pass-floating-eye", "pass-seeker", "pass-stirge"],
   },
 ];
 

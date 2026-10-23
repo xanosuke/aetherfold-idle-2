@@ -15,7 +15,7 @@ import { ORC_ZONES } from "./ghelsba";
 import { findAction } from "./hotbar";
 import { inPass, passSquare } from "./pass";
 import { nearestPassCamp, PASS_CAMPS, PASS_GRAPH, gridToWorld } from "./pass-graph";
-import { placedBodies, speciesFarm, nmCampModel, lotteryCamps, rollSpeciesItems } from "./ronfaure";
+import { placedBodies, speciesFarm, nmCampModel, lotteryCamps, rollSpeciesItems, sharedSpawns, spawnShare } from "./ronfaure";
 import { pointsFromExp, crystalChance } from "./signet";
 import { TOMB_FOYER } from "./tomb";
 import { FISHER, RON_SIZE, RON_X0, RON_Z0, regionName } from "./world";
@@ -319,6 +319,10 @@ export function zoneGroups(x: number, z: number): PreyGroup[] {
     if (prev && prev.dist <= dist) continue;
     nearest.set(body.species, { x: body.x, z: body.z, dist });
   }
+  for (const extra of sharedSpawns()) {
+    if (regionName(extra.x, extra.z) !== name || nearest.has(extra.species)) continue;
+    nearest.set(extra.species, { x: extra.x, z: extra.z, dist: Math.hypot(extra.x - x, extra.z - z) });
+  }
   const groups: PreyGroup[] = [];
   for (const [species, spot] of nearest) {
     const farm = speciesFarm(species);
@@ -431,7 +435,12 @@ export function nmPace(phKpm: number, nmKpm: number, model: { ph: string | null;
   return Math.round((60 / cycle) * 10) / 10;
 }
 
-/** Closest placed body. A tie takes the earlier name. */
+/** Kills per minute after a shared spawn. A dedicated point keeps the measured pace. */
+export function expKpm(speciesId: string, kpm: number): number {
+  const share = spawnShare(speciesId);
+  if (!(share > 0) || share >= 1) return kpm;
+  return Math.round(kpm * share * 100) / 100;
+}
 export function nearestGroup(x: number, z: number): PreyGroup | null {
   let best: PreyGroup | null = null;
   for (const group of zoneGroups(x, z)) {
@@ -1057,6 +1066,24 @@ export function assertAfk(): void {
   if (!hyaku || hyaku.phId !== "pass-hecteyes" || !hyaku.phName) throw new Error("hyakume row");
   if (!passNms.some((row) => row.id === "pass-gloom") || !passNms.some((row) => row.id === "pass-taisaijin")) throw new Error("lottery nm missing");
   if (passNms.some((row) => row.id === "pass-hyakume" && zoneGroups(passAt.x, passAt.z).some((group) => group.id === "pass-hyakume"))) throw new Error("hyakume was placed");
+  const nmNames = passNms.map((row) => row.name).slice().sort().join(",");
+  if (nmNames !== "Gloom Eye,Hyakume,Mucoid Mass,Taisaijin") throw new Error(`pass nms ${nmNames}`);
+  if (passNms.some((row) => row.id === "pass-bat-eye")) throw new Error("bat eye listed as nm");
+  const bat = zoneGroups(passAt.x, passAt.z).find((group) => group.id === "pass-bat-eye");
+  if (!bat || bat.family !== "Ahriman" || passSquare(bat.x, bat.z) !== "H-5") throw new Error("bat eye prey");
+  const fitBat = measureFarm({
+    dmg: 40, fstr: 8, hit: 80, delay: 240, hp: 1400, defense: 200, level: bat.level,
+    zoneId: "pass-deep", gambitOn: true, hasWeaponskill: true, hasHeal: true, party: 4, healer: true,
+    preyLevel: bat.level, preyHp: bat.hpNatural, preyWeapon: bat.weaponDamage, preyDelay: bat.delay, preyName: bat.name,
+  });
+  const paced = expKpm("pass-bat-eye", fitBat.kpm);
+  if (spawnShare("pass-bat-eye") !== 0.25 || spawnShare("pass-giant-scorpion") !== 1) throw new Error("bat eye share");
+  if (fitBat.kpm <= 0 || Math.abs(paced / fitBat.kpm - 0.25) > 0.02) throw new Error(`bat eye pace ${paced}/${fitBat.kpm}`);
+  const batHour = previewAfk({ ...sessionFor(bat, bat.level, "pass-deep"), farmingEfficiency: paced }, start + hourMs, { x: bat.x, z: bat.z });
+  const fullHour = previewAfk({ ...sessionFor(bat, bat.level, "pass-deep"), farmingEfficiency: fitBat.kpm }, start + hourMs, { x: bat.x, z: bat.z });
+  if (fullHour.kills < 4 || batHour.kills > Math.ceil(fullHour.kills * 0.3) || batHour.kills < Math.floor(fullHour.kills * 0.2)) {
+    throw new Error(`bat eye kills ${batHour.kills}/${fullHour.kills}`);
+  }
   const hyakuModel = nmCampModel("pass-hyakume");
   if (!hyakuModel) throw new Error("hyakume model");
   const hyakuFiller = nmFiller("pass-hyakume", passAt.x, passAt.z);
