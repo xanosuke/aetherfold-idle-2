@@ -39,7 +39,8 @@ const probe = spawnSync(
       for (const gate of gates) {
         const centre = gate.axis === "z" ? gate.z : gate.x;
         if (Math.abs(centre - gate.at) > PASS_CELL * 0.1) throw new Error(gate.id + " panel left the door line");
-        if (!(gate.panelW >= gate.span * 0.9)) throw new Error(gate.id + " panel is short");
+        if (!(gate.wallW >= gate.span * 0.95)) throw new Error(gate.id + " wall is short");
+        if (!(Math.abs(gate.tilt) <= 10 * Math.PI / 180 + 1e-9)) throw new Error(gate.id + " tilt");
       }
       console.log("PASSJSON " + JSON.stringify({ h9, stand, gates }));
     `,
@@ -119,25 +120,47 @@ try {
   await viewPage.screenshot({ path: viewShot });
   const audit = await viewPage.evaluate(() => (window.__passAudit ? window.__passAudit() : null));
   const panels = (audit || []).filter((row) => row.part === "panel" || row.name === "sealed-gate-panel");
-  const stones = (audit || []).filter((row) => row.part === "stone" || row.name === "sealed-gate-stone");
-  const stray = (audit || []).filter((row) => row.name !== "sealed-gate-panel" && row.name !== "sealed-gate-stone");
+  const walls = (audit || []).filter((row) => row.part === "wall" || row.name === "sealed-gate-wall");
+  const steps = (audit || []).filter((row) => row.part === "step");
+  const stray = (audit || []).filter((row) => row.part !== "panel" && row.part !== "wall" && row.part !== "step");
   console.log("view", viewShot);
   console.log("doors", JSON.stringify(audit, null, 2));
   if (!audit) failed = failed || "pass audit missing";
   if (panels.length !== 2) failed = failed || `sealed panels ${panels.length}`;
-  if (stones.length !== 4) failed = failed || `sealed stone ${stones.length}`;
+  if (steps.length !== 6) failed = failed || `sealed steps ${steps.length}`;
   if (stray.length) failed = failed || `stray door mesh ${stray.map((row) => row.name || row.type).join(",")}`;
   const tenth = 48 * 0.1;
+  const tiltMax = (10 * Math.PI) / 180 + 1e-6;
   for (const gate of places.gates) {
+    const nearWalls = walls.filter((row) => {
+      const cx = (row.minX + row.maxX) / 2;
+      const cz = (row.minZ + row.maxZ) / 2;
+      return Math.hypot(cx - gate.x, cz - gate.z) < 18;
+    });
+    if (!nearWalls.length) {
+      failed = failed || `${gate.id} cross wall missing`;
+      continue;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const row of nearWalls) {
+      minX = Math.min(minX, row.minX);
+      maxX = Math.max(maxX, row.maxX);
+      minZ = Math.min(minZ, row.minZ);
+      maxZ = Math.max(maxZ, row.maxZ);
+    }
+    const span = gate.axis === "z" ? maxX - minX : maxZ - minZ;
+    if (span < gate.span * 0.95 - 0.05) failed = failed || `${gate.id} spans ${span.toFixed(2)} of ${gate.span.toFixed(2)}`;
     const panel = panels.find((row) => Math.hypot((row.minX + row.maxX) / 2 - gate.x, (row.minZ + row.maxZ) / 2 - gate.z) < 8);
     if (!panel) {
       failed = failed || `${gate.id} panel missing from the shot`;
       continue;
     }
     const centre = gate.axis === "z" ? (panel.minZ + panel.maxZ) / 2 : (panel.minX + panel.maxX) / 2;
-    const span = gate.axis === "z" ? panel.maxX - panel.minX : panel.maxZ - panel.minZ;
     if (Math.abs(centre - gate.at) > tenth) failed = failed || `${gate.id} centre ${centre.toFixed(2)} off ${gate.at}`;
-    if (span < gate.span * 0.9) failed = failed || `${gate.id} spans ${span.toFixed(2)} of ${gate.span.toFixed(2)}`;
+    if (!(Math.abs(panel.tilt) <= tiltMax)) failed = failed || `${gate.id} tilt ${panel.tilt}`;
   }
   const realErrors = [...mapErrors, ...viewErrors].filter((err) => !err.includes("chartStrips"));
   if (realErrors.length) failed = failed || realErrors[0];

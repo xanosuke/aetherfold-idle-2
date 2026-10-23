@@ -38,9 +38,9 @@ export type PassDoor = {
 };
 
 type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number) => void;
-type AddYaw = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw: number) => void;
+type AddYaw = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw: number, tag?: string) => void;
 type AddFlag = (w: number, d: number, x: number, z: number) => void;
-type HangTorch = (x: number, z: number) => void;
+type HangTorch = (x: number, z: number, y?: number) => void;
 type AddSkirt = (length: number, mx: number, mz: number, ux: number, uz: number, ix: number, iz: number) => void;
 type StonePart = { w: number; h: number; d: number; x: number; y: number; z: number };
 type AddStone = (parts: readonly StonePart[], x: number, y: number, z: number, yaw: number, lean: number) => void;
@@ -55,6 +55,8 @@ type AddRed = (
   z: number,
   yaw: number,
   lean: number,
+  camX?: number,
+  camZ?: number,
 ) => void;
 type Solid = { minX: number; maxX: number; minZ: number; maxZ: number };
 type V2 = { x: number; z: number };
@@ -738,7 +740,10 @@ export function assertPass(): void {
   for (const gate of gates) {
     const centre = gate.axis === "z" ? gate.z : gate.x;
     if (Math.abs(centre - gate.at) > PASS_CELL * 0.1) throw new Error(`${gate.id} panel left the door line`);
-    if (!(gate.panelW >= gate.span * 0.9)) throw new Error(`${gate.id} panel spans ${gate.panelW.toFixed(2)} of ${gate.span.toFixed(2)}`);
+    if (!(gate.wallW >= gate.span * 0.95)) throw new Error(`${gate.id} wall spans ${gate.wallW.toFixed(2)} of ${gate.span.toFixed(2)}`);
+    if (!(Math.abs(gate.tilt) <= (10 * Math.PI) / 180 + 1e-9)) {
+      throw new Error(`${gate.id} tilts ${((gate.tilt * 180) / Math.PI).toFixed(2)} deg`);
+    }
   }
   logPassGraph();
 }
@@ -853,7 +858,18 @@ function torch(add: Add, hang: HangTorch, x: number, z: number, hung: V2[], forc
 }
 
 /** Red sealed doorway across the one-way line. The rule stays in PASS_DOORS. */
-const DOOR_LEAN = (-20 * Math.PI) / 180;
+const CROSS_H = 6.4;
+const CROSS_T = 2.2;
+const CROSS_JOIN = 2.6;
+const OPEN_FRAC = 0.6;
+const OPEN_H = 5;
+
+/** Radians the panel turns out of the wall, toward the camera. Never past 10 degrees. */
+function doorTilt(yaw: number, cam: { x: number; z: number }): number {
+  const cl = Math.hypot(cam.x, cam.z) || 1;
+  const facing = Math.min(1, Math.abs(Math.sin(yaw) * (cam.x / cl) + Math.cos(yaw) * (cam.z / cl)));
+  return ((2 + 7.5 * (1 - facing)) * Math.PI) / 180;
+}
 
 /** Walkable chord where the blocking line crosses the tunnel. */
 function crossSpan(axis: "x" | "z", at: number, cross: number): { mid: number; span: number } {
@@ -885,6 +901,8 @@ export type SealedGateSpot = {
   z: number;
   yaw: number;
   panelW: number;
+  wallW: number;
+  tilt: number;
   axis: "x" | "z";
   at: number;
   span: number;
@@ -897,99 +915,84 @@ export function passDoorSpot(which: "enter" | "exit", cam: { x: number; z: numbe
   return { x: gate.x, z: gate.z, yaw: gate.yaw };
 }
 
-/** The only two sealed doors. The panel sits on the blocking line and spans the tunnel. */
-export function sealedGateSpots(_cam: { x: number; z: number } = { x: 0, z: 1 }): SealedGateSpot[] {
+/** The only two sealed doors. The panel sits on the blocking line; the wall crosses the tunnel. */
+export function sealedGateSpots(cam: { x: number; z: number } = { x: 0, z: 1 }): SealedGateSpot[] {
   const enterDoor = PASS_DOORS[0];
   const exitDoor = PASS_DOORS[1];
   const enterSpan = crossSpan(enterDoor.axis, enterDoor.at, enterAt.x);
   const exitSpan = crossSpan(exitDoor.axis, exitDoor.at, exitAt.z);
+  const spot = (
+    id: "enter" | "exit",
+    x: number,
+    z: number,
+    yaw: number,
+    axis: "x" | "z",
+    at: number,
+    span: number,
+    dir: 1 | -1,
+  ): SealedGateSpot => ({
+    id,
+    x,
+    z,
+    yaw,
+    panelW: span * OPEN_FRAC,
+    wallW: span + CROSS_JOIN * 2,
+    tilt: doorTilt(yaw, cam),
+    axis,
+    at,
+    span,
+    dir,
+  });
   return [
-    {
-      id: "enter",
-      x: enterSpan.mid,
-      z: enterDoor.at,
-      yaw: 0,
-      panelW: enterSpan.span,
-      axis: enterDoor.axis,
-      at: enterDoor.at,
-      span: enterSpan.span,
-      dir: enterDoor.dir,
-    },
-    {
-      id: "exit",
-      x: exitDoor.at,
-      z: exitSpan.mid,
-      yaw: -Math.PI / 2,
-      panelW: exitSpan.span,
-      axis: exitDoor.axis,
-      at: exitDoor.at,
-      span: exitSpan.span,
-      dir: exitDoor.dir,
-    },
+    spot("enter", enterSpan.mid, enterDoor.at, 0, enterDoor.axis, enterDoor.at, enterSpan.span, enterDoor.dir),
+    spot("exit", exitDoor.at, exitSpan.mid, -Math.PI / 2, exitDoor.axis, exitDoor.at, exitSpan.span, exitDoor.dir),
   ];
 }
 
 function sealedGate(
   addYaw: AddYaw,
   addRed: AddRed,
-  addStone: AddStone,
-  add: Add,
   hang: HangTorch,
   hung: V2[],
-  x: number,
-  z: number,
-  yaw: number,
-  panelW: number,
+  gate: SealedGateSpot,
+  cam: { x: number; z: number },
 ): void {
-  const panelH = 5;
-  const border = 0.72;
-  const overlap = 0.08;
-  const openW = panelW - overlap * 2;
-  const openH = panelH - overlap * 2;
-  const outerW = openW + border * 2;
-  const outerH = openH + border * 2;
-  const depth = 0.9;
-  const barD = depth - 0.06;
-  const face = 0;
+  const { x, z, yaw } = gate;
+  const openW = gate.panelW;
+  const wallW = gate.wallW;
+  const sideW = (wallW - openW) / 2;
+  const y0 = -0.1;
+  const top = y0 + CROSS_H;
+  const openTop = y0 + OPEN_H;
+  const wallZ = 0.3 - CROSS_T / 2;
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
-  const world = (lx: number, lz: number) => ({
-    x: x + lx * c + lz * s,
-    z: z - lx * s + lz * c,
-  });
-  addStone(
-    [
-      { w: border, h: outerH, d: depth, x: -(outerW / 2 - border / 2), y: outerH / 2, z: face },
-      { w: border, h: outerH, d: depth, x: outerW / 2 - border / 2, y: outerH / 2, z: face },
-      { w: openW + 0.24, h: border, d: barD, x: 0, y: border / 2, z: face - 0.02 },
-      { w: openW + 0.24, h: border, d: barD, x: 0, y: outerH - border / 2, z: face - 0.02 },
-    ],
-    x,
-    0,
-    z,
-    yaw,
-    DOOR_LEAN,
-  );
-  addRed(panelW, panelH, 0, border + openH / 2, 0.5, x, 0, z, yaw, DOOR_LEAN);
-  const stairW = Math.min(outerW, panelW + 0.4);
-  addStone(
-    [
-      { w: stairW - 1.5, h: 0.18, d: 0.7, x: 0, y: 0.38, z: -0.95 },
-      { w: stairW - 0.8, h: 0.18, d: 1.0, x: 0, y: 0.24, z: -1.6 },
-      { w: stairW, h: 0.18, d: 1.3, x: 0, y: 0.09, z: -2.35 },
-    ],
-    x,
-    0,
-    z,
-    yaw,
-    0,
-  );
-  const plinth = world(-(outerW / 2 + 0.2), -2.15);
-  addYaw(0, 1.15, 0.14, 0.78, plinth.x, 0.07, plinth.z, yaw);
-  addYaw(0x454e58, 0.8, 0.18, 0.52, plinth.x, 0.2, plinth.z, yaw);
+  const place = (lx: number, ly: number, lz: number, w: number, h: number, d: number, tag: string) => {
+    addYaw(0, w, h, d, x + lx * c + lz * s, ly, z - lx * s + lz * c, yaw, tag);
+  };
+  const jambH = openTop - y0 + 0.05;
+  const sideX = openW / 2 + sideW / 2;
+  place(-sideX, y0 + jambH / 2, wallZ, sideW, jambH, CROSS_T, "wall");
+  place(sideX, y0 + jambH / 2, wallZ, sideW, jambH, CROSS_T, "wall");
+  const lintelH = top - openTop + 0.08;
+  place(0, (openTop - 0.08 + top) / 2, wallZ, wallW, lintelH, CROSS_T - 0.04, "lintel");
+  addRed(openW + 0.28, OPEN_H + 0.12, 0, 0, 0, x, y0 + OPEN_H / 2, z, yaw, gate.tilt, cam.x, cam.z);
+  const blocked = wallZ - CROSS_T / 2;
+  const tread = 0.74;
+  const rise = 0.16;
+  for (let i = 0; i < 3; i++) {
+    const h = rise * (3 - i);
+    const zInner = blocked + 0.05 - i * (tread - 0.04);
+    place(0, -0.06 + h / 2, zInner - tread / 2, openW, h, tread, "step");
+  }
   for (const side of [-1, 1]) {
-    const at = world(side * (panelW / 2 + 0.35), 0.2);
-    torch(add, hang, at.x, at.z, hung, true);
+    const lx = side * (openW / 2 + 0.65);
+    const lz = blocked - 0.22;
+    place(lx, 3.15, lz, 0.36, 0.18, 0.5, "sconce");
+    const tx = x + lx * c + (lz - 0.16) * s;
+    const tz = z - lx * s + (lz - 0.16) * c;
+    hung.push({ x: tx, z: tz });
+    hang(tx, tz, 3.22);
   }
 }
 
@@ -1355,9 +1358,7 @@ export function buildPass(
   }
   const hung: V2[] = [];
   for (const spot of spots) torch(add, hangTorch, spot.x, spot.z, hung);
-  for (const gate of sealedGateSpots(toCamera)) {
-    sealedGate(addYaw, addRed, addStone, add, hangTorch, hung, gate.x, gate.z, gate.yaw, gate.panelW);
-  }
+  for (const gate of sealedGateSpots(toCamera)) sealedGate(addYaw, addRed, hangTorch, hung, gate, toCamera);
   for (const id of junctionIds()) {
     const at = pillarAt(id);
     pillar(add, colliders, at.x, at.z, 0x6a5830);

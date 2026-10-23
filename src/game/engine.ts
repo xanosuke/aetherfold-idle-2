@@ -41449,6 +41449,8 @@ export function createYard(canvas) {
 		const rows = [];
 		scene.updateMatrixWorld(true);
 		const corner = new Vector3();
+		const normal = new Vector3();
+		const upright = new Vector3();
 		scene.traverse((obj) => {
 			if (!obj.isMesh) return;
 			const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
@@ -41476,11 +41478,19 @@ export function createYard(canvas) {
 							max.z = Math.max(max.z, corner.z);
 						}
 			}
+			let tilt = null;
+			if (obj.userData.sealedGate === "panel") {
+				normal.set(0, 0, 1).applyQuaternion(obj.quaternion);
+				const yaw = obj.userData.wallYaw || 0;
+				upright.set(Math.sin(yaw), 0, Math.cos(yaw));
+				tilt = Math.acos(Math.min(1, Math.max(-1, normal.dot(upright))));
+			}
 			rows.push({
 				name: obj.name || "",
 				part: obj.userData.sealedGate || "",
 				red,
 				type: geo && geo.type,
+				tilt,
 				x: Math.round(obj.position.x * 10) / 10,
 				y: Math.round(obj.position.y * 10) / 10,
 				z: Math.round(obj.position.z * 10) / 10,
@@ -46631,7 +46641,7 @@ function buildRoom(scene, toonMat, colliders) {
 		uv.needsUpdate = true;
 	};
 	const passWalls = [];
-	const addYaw = (color, w, h, d, x, y, z, yaw) => {
+	const addYaw = (color, w, h, d, x, y, z, yaw, tag) => {
 		const geo = new BoxGeometry(w, h, d);
 		stoneWallUvs(geo, w, h, d);
 		const mesh = new Mesh(geo, (color !== 0 && h < 2 ? lipBase : wallBase).clone());
@@ -46641,7 +46651,19 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.receiveShadow = true;
 		mesh.userData.passWall = true;
 		mesh.userData.made = "addYaw";
-		passWalls.push(mesh);
+		if (tag === "wall" || tag === "lintel") {
+			mesh.userData.sealedGate = "wall";
+			mesh.name = "sealed-gate-wall";
+		} else if (tag === "step") {
+			mesh.userData.sealedGate = "step";
+			mesh.name = "sealed-gate-step";
+		}
+		if (tag === "lintel") {
+			mesh.material.polygonOffset = true;
+			mesh.material.polygonOffsetFactor = -2;
+			mesh.material.polygonOffsetUnits = -2;
+		}
+		if (tag !== "step") passWalls.push(mesh);
 		scene.add(mesh);
 	};
 	const flagGeos = [];
@@ -46723,13 +46745,14 @@ function buildRoom(scene, toonMat, colliders) {
 		toneMapped: false
 	});
 	const passTorches = [];
-	const hangTorch = (x, z) => {
+	const hangTorch = (x, z, y) => {
+		const fy = y == null ? 1.6 : y;
 		const flame = new Mesh(new BoxGeometry(0.22, 0.28, 0.22), passFlame);
-		flame.position.set(x, 1.6, z);
+		flame.position.set(x, fy, z);
 		flame.castShadow = false;
 		flame.receiveShadow = false;
 		const halo = new Sprite(haloMat);
-		halo.position.set(x, 1.64, z);
+		halo.position.set(x, fy + 0.04, z);
 		halo.scale.set(0.8, 0.8, 1);
 		scene.add(flame, halo);
 		passTorches.push({ x, z });
@@ -46824,18 +46847,37 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.receiveShadow = true;
 		scene.add(mesh);
 	};
-	const addRed = (w, h, lx, ly, lz, x, y, z, yaw, lean) => {
+	const addRed = (w, h, lx, ly, lz, x, y, z, yaw, lean, camX = 0, camZ = 1) => {
 		const geo = new PlaneGeometry(w, h);
 		geo.translate(lx, ly, lz);
-		leanGeo(geo, lean);
-		const mesh = new Mesh(geo, redMat);
+		const mesh = new Mesh(geo, redMat.clone());
 		mesh.name = "sealed-gate-panel";
 		mesh.userData.sealedGate = "panel";
 		mesh.userData.made = "addRed";
+		mesh.userData.wallYaw = yaw;
+		const cl = Math.hypot(camX, camZ) || 1;
+		const nx = Math.sin(yaw);
+		const nz = Math.cos(yaw);
+		const dx = camX / cl;
+		const dy = 0.22;
+		const dz = camZ / cl;
+		const dl = Math.hypot(dx, dy, dz) || 1;
+		const Dx = dx / dl;
+		const Dy = dy / dl;
+		const Dz = dz / dl;
+		const ax = -nz * Dy;
+		const ay = nz * Dx - nx * Dz;
+		const az = nx * Dy;
+		const al = Math.hypot(ax, ay, az);
+		const qYaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw);
+		if (al > 1e-6 && lean) {
+			const qTilt = new Quaternion().setFromAxisAngle(new Vector3(ax / al, ay / al, az / al), lean);
+			mesh.quaternion.copy(qTilt).multiply(qYaw);
+		} else mesh.quaternion.copy(qYaw);
 		mesh.position.set(x, y, z);
-		mesh.rotation.y = yaw;
 		mesh.castShadow = false;
 		mesh.receiveShadow = false;
+		passWalls.push(mesh);
 		scene.add(mesh);
 	};
 	scene.userData.passWalls = passWalls;
