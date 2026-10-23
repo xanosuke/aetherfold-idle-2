@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer } from "three";
+import { Bone, Box3, BoxGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -41501,6 +41501,11 @@ export function createYard(canvas) {
 				upright.set(Math.sin(yaw), 0, Math.cos(yaw));
 				tilt = Math.acos(Math.min(1, Math.max(-1, normal.dot(upright))));
 			}
+			let ny = null;
+			if (obj.userData.sealedGate === "glow") {
+				normal.set(0, 0, 1).applyQuaternion(obj.quaternion);
+				ny = Math.round(normal.y * 100) / 100;
+			}
 			rows.push({
 				name: obj.name || "",
 				part: obj.userData.sealedGate || "",
@@ -41509,6 +41514,8 @@ export function createYard(canvas) {
 				opacity: obj.material && obj.material.opacity != null ? Math.round(obj.material.opacity * 100) / 100 : 1,
 				type: geo && geo.type,
 				tilt,
+				height: Math.round((max.y - min.y) * 100) / 100,
+				ny,
 				x: Math.round(obj.position.x * 10) / 10,
 				y: Math.round(obj.position.y * 10) / 10,
 				z: Math.round(obj.position.z * 10) / 10,
@@ -46902,27 +46909,34 @@ function buildRoom(scene, toonMat, colliders) {
 		scene.add(mesh);
 	};
 	const addCue = (kind, w, h, d, x, y, z, yaw) => {
-		const geo = new BoxGeometry(w, h, d);
-		const mat = redMat.clone();
-		const mesh = new Mesh(geo, mat);
+		const mesh = kind === "glow"
+			? new Mesh(new PlaneGeometry(w, d), new MeshBasicMaterial({
+				color: 0xb01818,
+				transparent: true,
+				opacity: 0.35,
+				depthWrite: false,
+				blending: AdditiveBlending,
+				side: DoubleSide
+			}))
+			: new Mesh(new BoxGeometry(w, h, d), redMat.clone());
 		mesh.position.set(x, y, z);
-		mesh.rotation.y = yaw;
 		mesh.castShadow = false;
 		mesh.receiveShadow = false;
 		mesh.userData.made = "addCue";
 		mesh.userData.passWall = true;
 		if (kind === "glow") {
-			mat.transparent = true;
-			mat.opacity = 0.34;
-			mat.depthWrite = false;
-			mat.emissiveIntensity = 0.5;
-			mesh.userData.fadeBase = 0.34;
+			mesh.rotation.order = "YXZ";
+			mesh.rotation.x = -Math.PI / 2;
+			mesh.rotation.y = yaw;
+			mesh.userData.fadeBase = 0.35;
 			mesh.userData.sealedGate = "glow";
 			mesh.name = "sealed-gate-glow";
 		} else {
-			mat.polygonOffset = true;
-			mat.polygonOffsetFactor = -3;
-			mat.polygonOffsetUnits = -3;
+			mesh.rotation.y = yaw;
+			mesh.material.emissiveIntensity = 0.42;
+			mesh.material.polygonOffset = true;
+			mesh.material.polygonOffsetFactor = -3;
+			mesh.material.polygonOffsetUnits = -3;
 			mesh.userData.sealedGate = "cap";
 			mesh.name = "sealed-gate-cap";
 		}

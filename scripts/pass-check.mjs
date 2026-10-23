@@ -142,6 +142,10 @@ try {
   const nearGate = (row, gate) => Math.hypot((row.minX + row.maxX) / 2 - gate.x, (row.minZ + row.maxZ) / 2 - gate.z) < 10;
   if (!caps.length || !nearGate(caps[0], exitGate) || nearGate(caps[0], enterGate)) failed = failed || "cap is not only on the edge-on door";
   if (!glows.length || !nearGate(glows[0], exitGate) || nearGate(glows[0], enterGate)) failed = failed || "glow is not only on the edge-on door";
+  if ([...caps, ...glows].some((row) => !(row.height <= 0.3))) failed = failed || "gate cue taller than 0.3";
+  if (!glows.length || glows[0].type !== "PlaneGeometry" || !(glows[0].ny >= 0.9)) {
+    failed = failed || `floor strip normal ${glows[0] ? glows[0].ny : "missing"}`;
+  }
   if (walls.filter((row) => nearGate(row, enterGate)).some((row) => row.opacity < 0.85)) failed = failed || "F-10 door faded from the lane";
   const tenth = 48 * 0.1;
   const tiltMax = (10 * Math.PI) / 180 + 1e-6;

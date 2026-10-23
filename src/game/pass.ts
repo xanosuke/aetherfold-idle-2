@@ -1004,10 +1004,10 @@ function sealedGate(
   if (!faceParallel(yaw, cam)) return;
   const at = (lx: number, lz: number) => ({ x: x + lx * c + lz * s, z: z - lx * s + lz * c });
   const capAt = at(0, wallZ);
-  addCue("cap", openW, 0.08, CROSS_T - 0.06, capAt.x, top + 0.05, capAt.z, yaw);
+  addCue("cap", openW, 0.25, 0.3, capAt.x, top + 0.125, capAt.z, yaw);
   const outer = blocked + 0.05 - 2 * (tread - 0.04) - tread;
   const glowAt = at(0, outer - 0.2);
-  addCue("glow", openW, 0.04, 0.4, glowAt.x, 0.04, glowAt.z, yaw);
+  addCue("glow", openW, 0, 0.4, glowAt.x, 0.02, glowAt.z, yaw);
 }
 
 /** Stone still opens the old mouths. The live gates are the traced exits. */
