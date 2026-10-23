@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
+import { Bone, Box3, BoxGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -47190,10 +47190,57 @@ function buildRoom(scene, toonMat, colliders) {
 	buildDistricts(add, colliders, scene, toonMat);
 	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
 	const orcWalls = [];
-	const addOrcFade = (color, w, h, d, x, y, z) => {
-		const mesh = new Mesh(new BoxGeometry(w, h, d), toonMat(color));
+	const rockVary = (hex, wx, wy, wz) => {
+		const n = Math.sin(wx * 12.9898 + wy * 78.233 + wz * 45.164) * 43758.5453;
+		const f = (n - Math.floor(n)) * 2 - 1;
+		const k = 1 + f * 0.08;
+		return [((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k];
+	};
+	const paintRock = (geo, hex, x, y, z) => {
+		const pos = geo.attributes.position;
+		const colors = new Float32Array(pos.count * 3);
+		for (let i = 0; i < pos.count; i++) {
+			const rgb = rockVary(hex, x + pos.getX(i), y + pos.getY(i), z + pos.getZ(i));
+			colors[i * 3] = rgb[0];
+			colors[i * 3 + 1] = rgb[1];
+			colors[i * 3 + 2] = rgb[2];
+		}
+		geo.setAttribute("color", new Float32BufferAttribute(colors, 3));
+	};
+	const darken = (hex, k) => {
+		const r = Math.max(0, Math.min(255, Math.round(((hex >> 16) & 255) * k)));
+		const g = Math.max(0, Math.min(255, Math.round(((hex >> 8) & 255) * k)));
+		const b = Math.max(0, Math.min(255, Math.round((hex & 255) * k)));
+		return (r << 16) | (g << 8) | b;
+	};
+	const addOrcFade = (color, w, h, d, x, y, z, yaw, band) => {
+		let geo;
+		if (band && h > 1.4) {
+			const capH = 1;
+			const body = new BoxGeometry(w, h - capH, d);
+			body.translate(0, -capH / 2, 0);
+			const cap = new BoxGeometry(w + 0.08, capH, d + 0.08);
+			cap.translate(0, (h - capH) / 2, 0);
+			if (yaw) {
+				body.rotateY(yaw);
+				cap.rotateY(yaw);
+			}
+			paintRock(body, color, x, y, z);
+			paintRock(cap, darken(color, 0.55), x, y, z);
+			geo = mergeGeometries([body, cap], false);
+			body.dispose();
+			cap.dispose();
+		} else {
+			geo = new BoxGeometry(w, h, d);
+			if (yaw) geo.rotateY(yaw);
+			paintRock(geo, color, x, y, z);
+		}
+		if (!geo) return;
+		const mat = toonMat(0xffffff);
+		mat.vertexColors = true;
+		const mesh = new Mesh(geo, mat);
 		mesh.position.set(x, y, z);
-		mesh.castShadow = false;
+		mesh.castShadow = h >= 2;
 		mesh.receiveShadow = true;
 		mesh.userData.fadeBase = 1;
 		mesh.userData.orcWall = true;

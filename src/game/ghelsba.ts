@@ -880,6 +880,7 @@ export function orcLayout(region: string): OrcChart | null {
 }
 
 type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
+type FadeAdd = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, band?: boolean) => void;
 type Solid = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 function box(add: Add, colliders: Solid[] | null, color: number, w: number, h: number, d: number, x: number, y: number, z: number) {
@@ -1421,7 +1422,112 @@ function lobeStakes(add: Add, id: string) {
 
 type V2 = { x: number; z: number };
 
-function outpostWalls(add: Add, colliders: Solid[], fade?: Add) {
+function pointKey(p: V2): string {
+  return `${p.x.toFixed(2)}:${p.z.toFixed(2)}`;
+}
+
+function distPointSeg(p: V2, a: V2, b: V2): number {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2)) : 0;
+  return Math.hypot(p.x - (a.x + t * dx), p.z - (a.z + t * dz));
+}
+
+function douglas(pts: V2[], tol: number): V2[] {
+  if (pts.length < 3) return pts.slice();
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  const closed = a.x === b.x && a.z === b.z;
+  let far = 0;
+  let idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = closed ? Math.hypot(pts[i].x - a.x, pts[i].z - a.z) : distPointSeg(pts[i], a, b);
+    if (d > far) {
+      far = d;
+      idx = i;
+    }
+  }
+  if (far <= tol) return [a, b];
+  const left = douglas(pts.slice(0, idx + 1), tol);
+  const right = douglas(pts.slice(idx), tol);
+  return [...left.slice(0, -1), ...right];
+}
+
+function chainContours(segs: [V2, V2][]): V2[][] {
+  const pts = new Map<string, V2>();
+  const adj = new Map<string, string[]>();
+  const link = (a: V2, b: V2) => {
+    const ka = pointKey(a);
+    const kb = pointKey(b);
+    if (ka === kb) return;
+    pts.set(ka, a);
+    pts.set(kb, b);
+    const la = adj.get(ka) ?? [];
+    if (!la.includes(kb)) la.push(kb);
+    adj.set(ka, la);
+    const lb = adj.get(kb) ?? [];
+    if (!lb.includes(ka)) lb.push(ka);
+    adj.set(kb, lb);
+  };
+  for (const [a, b] of segs) link(a, b);
+  const used = new Set<string>();
+  const edgeKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const loops: V2[][] = [];
+  for (const start of adj.keys()) {
+    for (const next of adj.get(start) ?? []) {
+      if (used.has(edgeKey(start, next))) continue;
+      const loop: V2[] = [pts.get(start)!];
+      let prev = start;
+      let cur = next;
+      used.add(edgeKey(prev, cur));
+      let guard = 0;
+      while (cur !== start && guard++ < segs.length + 2) {
+        loop.push(pts.get(cur)!);
+        let found = "";
+        for (const cand of adj.get(cur) ?? []) {
+          if (cand === prev || used.has(edgeKey(cur, cand))) continue;
+          found = cand;
+          break;
+        }
+        if (!found) break;
+        used.add(edgeKey(cur, found));
+        prev = cur;
+        cur = found;
+      }
+      if (loop.length < 2) continue;
+      if (cur === start) loop.push(pts.get(start)!);
+      loops.push(loop);
+    }
+  }
+  return loops;
+}
+
+/** Drop the part of a run that stands in a gate mouth, and keep the rest. */
+function cutGateGaps(a: V2, b: V2, gates: readonly { x: number; z: number }[]): [V2, V2][] {
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  const steps = Math.max(1, Math.ceil(len / 1.4));
+  const open = (p: V2) => gates.every((gate) => Math.hypot(p.x - gate.x, p.z - gate.z) >= 8);
+  const parts: [V2, V2][] = [];
+  let start: V2 | null = null;
+  let prev: V2 | null = null;
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const p = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    if (open(p)) {
+      if (!start) start = p;
+      prev = p;
+    } else if (start && prev) {
+      if (Math.hypot(prev.x - start.x, prev.z - start.z) > 0.8) parts.push([start, prev]);
+      start = null;
+      prev = null;
+    }
+  }
+  if (start && prev && Math.hypot(prev.x - start.x, prev.z - start.z) > 0.8) parts.push([start, prev]);
+  return parts;
+}
+
+function outpostWalls(add: Add, colliders: Solid[], fade?: FadeAdd) {
   const mask = buildGhelsbaMask(16);
   const cell = CELL / mask.res;
   const { n, data } = mask;
@@ -1473,52 +1579,113 @@ function outpostWalls(add: Add, colliders: Solid[], fade?: Add) {
         13: [north, east],
         14: [north, west],
       };
-      const hit = table[code];
-      if (hit) pair(hit[0], hit[1]);
+      const hitRow = table[code];
+      if (hitRow) pair(hitRow[0], hitRow[1]);
     }
   }
-  const rockLight = 10126180;
-  const rockDark = 3948594;
-  const tall = 12.4;
+  const rock = 0x6d6256;
+  const moss = 0x2c3328;
+  const tall = 6;
   const thick = 2.4;
   const gates = ORC_GATES.filter((gate) => inGhelsbaGraph(gate.x, gate.z, 0));
-  let band = 0;
-  for (let i = 0; i < segs.length; i++) {
-    const a = segs[i][0];
-    const b = segs[i][1];
+  const maskAt = (x: number, z: number) => {
+    const i = Math.floor((x - OUT_X) / cell);
+    const j = Math.floor((z - OUT_Z) / cell);
+    return i >= 0 && j >= 0 && i < n && j < n && data[j * n + i] === 1;
+  };
+  const runs: [V2, V2, V2[]][] = [];
+  for (const loop of chainContours(segs)) {
+    const simple = douglas(loop, 3.1);
+    let walked = 9;
+    for (let i = 0; i + 1 < simple.length; i++) {
+      const a = simple[i];
+      const b = simple[i + 1];
+      if (Math.hypot(b.x - a.x, b.z - a.z) < 0.35) continue;
+      for (const part of cutGateGaps(a, b, gates)) {
+        const len = Math.hypot(part[1].x - part[0].x, part[1].z - part[0].z);
+        const spots: V2[] = [];
+        walked += len;
+        while (walked >= 18 && len > 0.4) {
+          const back = walked - 18;
+          const t = Math.max(0, Math.min(1, (len - back) / len));
+          spots.push({ x: part[0].x + (part[1].x - part[0].x) * t, z: part[0].z + (part[1].z - part[0].z) * t });
+          walked = back;
+        }
+        runs.push([part[0], part[1], spots]);
+      }
+    }
+  }
+  for (const [a, b, spots] of runs) {
     const dx = b.x - a.x;
     const dz = b.z - a.z;
     const len = Math.hypot(dx, dz);
-    if (len < 0.2) continue;
+    if (len < 0.35) continue;
     const mx = (a.x + b.x) / 2;
     const mz = (a.z + b.z) / 2;
-    if (gates.some((gate) => Math.hypot(gate.x - mx, gate.z - mz) < 8)) continue;
     const nx = -dz / len;
     const nz = dx / len;
-    const into = ghelsbaClearance(mx + nx * 2, mz + nz * 2) >= ghelsbaClearance(mx - nx * 2, mz - nz * 2) ? { x: nx, z: nz } : { x: -nx, z: -nz };
+    const left = maskAt(mx + nx * 2.2, mz + nz * 2.2);
+    const right = maskAt(mx - nx * 2.2, mz - nz * 2.2);
+    let into = left && !right ? { x: nx, z: nz } : { x: -nx, z: -nz };
+    if (left === right) {
+      into = ghelsbaClearance(mx + nx * 2, mz + nz * 2) >= ghelsbaClearance(mx - nx * 2, mz - nz * 2) ? { x: nx, z: nz } : { x: -nx, z: -nz };
+    }
     const outward = { x: -into.x, z: -into.z };
     const lip = outward.z > 0.28;
     const cx = mx + outward.x * (thick / 2 + 0.35);
     const cz = mz + outward.z * (thick / 2 + 0.35);
     const yaw = -Math.atan2(dz, dx);
-    if (lip) {
-      if (!fade) continue;
-      const lipH = 0.72;
-      fade(rockDark, len + 0.35, lipH, thick, cx, lipH / 2, cz, yaw);
-      continue;
+    if (fade) {
+      if (lip) fade(rock, len + 1.4, 0.72, thick, cx, 0.36, cz, yaw, false);
+      else fade(rock, len + 1.4, tall, thick, cx, tall / 2, cz, yaw, true);
     }
-    const body = tall * 0.68;
-    const capH = tall - body;
-    const color = band % 2 === 0 ? rockLight : rockDark;
-    band += 1;
-    const c = Math.abs(Math.cos(yaw));
-    const s = Math.abs(Math.sin(yaw));
-    const bw = (len + 0.35) * c + thick * s;
-    const bd = (len + 0.35) * s + thick * c;
-    add(color, len + 0.35, body, thick, cx, body / 2 - 0.12, cz, yaw);
-    if (!cutsCenter(cx, cz, bw, bd)) colliders.push({ minX: cx - bw / 2, maxX: cx + bw / 2, minZ: cz - bd / 2, maxZ: cz + bd / 2 });
-    if (capH > 0.35) add(rockDark, len + 0.35, capH, thick, cx, body + capH / 2 - 0.1, cz, yaw);
+    for (const spot of spots) {
+      const bx = spot.x + outward.x * 0.45;
+      const bz = spot.z + outward.z * 0.45;
+      if (gates.some((gate) => Math.hypot(gate.x - bx, gate.z - bz) < 4)) continue;
+      if (onEdgeCenter(bx, bz, 1.6) || inOutpostWater(bx, bz)) continue;
+      const pick = Math.abs(Math.sin(bx * 0.17 + bz * 0.13));
+      if (pick > 0.5) {
+        const h = 0.48 + (Math.abs(Math.round(bx * 2 + bz)) % 3) * 0.16;
+        add(0x5c564e, 0.95, h, 0.78, bx, h / 2, bz);
+      } else {
+        add(0x4a3c2e, 1.05, 0.36, 0.82, bx, 0.16, bz);
+        add(0x6a5844, 0.42, 0.48, 0.34, bx + 0.12, 0.46, bz);
+      }
+    }
   }
+  if (!fade) return;
+  const rooms = [FORT_ROOMS, YUG_ROOMS, PEAK_ROOMS];
+  const inRoom = (x: number, z: number) => rooms.some((group) => group.some((room) => x >= room.minX && x <= room.maxX && z >= room.minZ && z <= room.maxZ));
+  for (let j = 0; j < n; j++) {
+    let i = 0;
+    while (i < n) {
+      const cx0 = OUT_X + (i + 0.5) * cell;
+      const cz0 = OUT_Z + (j + 0.5) * cell;
+      if (data[j * n + i] || inRoom(cx0, cz0)) {
+        i++;
+        continue;
+      }
+      const start = i;
+      while (i < n) {
+        const cx = OUT_X + (i + 0.5) * cell;
+        const cz = OUT_Z + (j + 0.5) * cell;
+        if (data[j * n + i] || inRoom(cx, cz)) break;
+        i++;
+      }
+      const rect = {
+        minX: OUT_X + start * cell,
+        maxX: OUT_X + i * cell,
+        minZ: OUT_Z + j * cell,
+        maxZ: OUT_Z + (j + 1) * cell,
+      };
+      const w = rect.maxX - rect.minX;
+      const d = rect.maxZ - rect.minZ;
+      if (w < 0.4 || d < 0.4) continue;
+      fade(moss, w, 0.4, d, (rect.minX + rect.maxX) / 2, tall - 0.2, (rect.minZ + rect.maxZ) / 2);
+    }
+  }
+  void colliders;
 }
 
 function paintStream(add: Add, color: number, moss: number) {
@@ -1580,11 +1747,6 @@ function cliffRails(add: Add, colliders: Solid[]) {
       if (!inGhelsbaGraph(mx, mz, 0) || onEdgeCenter(mx, mz, 2.6)) continue;
       const yaw = -Math.atan2(dz, dx);
       add(3948594, len, 0.9, 0.35, mx, 0.45, mz, yaw);
-      const c = Math.abs(Math.cos(yaw));
-      const s = Math.abs(Math.sin(yaw));
-      const bw = len * c + 0.35 * s;
-      const bd = len * s + 0.35 * c;
-      if (!cutsCenter(mx, mz, bw, bd)) colliders.push({ minX: mx - bw / 2, maxX: mx + bw / 2, minZ: mz - bd / 2, maxZ: mz + bd / 2 });
     }
   }
 }
@@ -1661,7 +1823,7 @@ function stairMark(add: Add) {
   add(3948594, 0.22, 0.32, span * 0.82, y2Neck.maxX - 0.45, 0.18, mid(y2Neck).z);
 }
 
-export function buildOrcLands(add: Add, colliders: Solid[], fade?: Add) {
+export function buildOrcLands(add: Add, colliders: Solid[], fade?: FadeAdd) {
   const dirt = 9269316;
   const dirtDark = 7033908;
   const cave = 4073524;
