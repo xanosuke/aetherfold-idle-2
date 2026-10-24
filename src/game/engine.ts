@@ -13448,12 +13448,21 @@ export function createYard(canvas) {
 		const inPassNow = inPass(px, pz);
 		const inCave = orcFog(px, pz) === "cave" || inTomb(px, pz) || inPassNow;
 		const onIce = inGlacier(px, pz);
+		const inGhelsbaNow = inGhelsba(px, pz);
 		if (inPassNow) {
 			hemi.color.setHex(0x8e9cb0);
 			hemi.groundColor.setHex(0x4a545c);
 			hemi.intensity = 1.45;
 			sun.intensity = 1.05;
 			if (scene.fog !== passFog) scene.fog = passFog;
+		} else if (inGhelsbaNow) {
+			// Same hemi colors by day and by night, so the night tint stays.
+			// The fill is lower and the sun is stronger, so cliff faces separate from the tops.
+			hemi.color.setHex(12969727);
+			hemi.groundColor.setHex(6983498);
+			hemi.intensity = 0.54;
+			sun.intensity = 1.9;
+			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else {
 			hemi.color.setHex(12969727);
 			hemi.groundColor.setHex(6983498);
@@ -47198,11 +47207,12 @@ function buildRoom(scene, toonMat, colliders) {
 	terrainMat.transparent = false;
 	terrainMat.side = DoubleSide;
 	terrainMat.depthWrite = true;
-	terrainMat.customProgramCacheKey = () => "ghelsba-terrain-slope";
+	terrainMat.customProgramCacheKey = () => "ghelsba-terrain-slope-half";
 	terrainMat.onBeforeCompile = (shader) => {
+		// Slope is 0.5 + 0.5 * normal.y. Grass and moss (greener than they are red) sit darker than the warm path.
 		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.65 + 0.35 * clamp(ny, 0.0, 1.0);\n}");
-		if (!shader.vertexShader.includes("vWorldNormal") || !shader.fragmentShader.includes("vWorldNormal")) throw new Error("ghelsba terrain shader");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nfloat mossy = smoothstep(0.0, 0.045, diffuseColor.g - diffuseColor.r);\ndiffuseColor.rgb *= (0.5 + 0.5 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.48, mossy);\n}");
+		if (!shader.vertexShader.includes("vWorldNormal") || !shader.fragmentShader.includes("0.5 + 0.5")) throw new Error("ghelsba terrain shader");
 	};
 	const tx0 = GHELSBA_TERRAIN.x;
 	const tz0 = GHELSBA_TERRAIN.z;

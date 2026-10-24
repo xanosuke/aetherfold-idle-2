@@ -1529,12 +1529,12 @@ function cutGateGaps(a: V2, b: V2, gates: readonly { x: number; z: number }[]): 
 /** Outpost heightfield. 12 columns by 12 rows, about 2 yalms between vertices, 64-yalm chunks. */
 export const GHELSBA_TERRAIN = { x: OUT_X, z: OUT_Z, span: 12 * CELL, step: 2, chunk: 64 };
 
-const TERRAIN_DIRT = 0x8a7350;
-const TERRAIN_GRASS = 0x6a6c44;
-const TERRAIN_ROCK = 0x7a6a58;
-const TERRAIN_MOSS = 0x3d4a32;
-/** Canyon haze. The clear color uses the same value. */
-export const GHELSBA_FOG = { color: 0x4a5040, near: 44, far: 110 };
+const TERRAIN_DIRT = 0x7a5a38;
+const TERRAIN_GRASS = 0x5f6a34;
+const TERRAIN_ROCK = 0x6e5a48;
+const TERRAIN_MOSS = 0x46583a;
+/** Canyon haze. Near enough that only the far edges tint. The clear color uses the same value. */
+export const GHELSBA_FOG = { color: 0x8a8f78, near: 70, far: 160 };
 
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
@@ -1678,14 +1678,27 @@ function bakedHeight(x: number, z: number) {
   return y00 + (y10 - y00) * tx + (y01 - y00) * tz + (y00 - y10 - y01 + y11) * tx * tz;
 }
 
+/** Low camera-side ledge. The path is north of it, and the shelf never climbs into a cliff. */
+function southLip(x: number, z: number, y: number) {
+  if (y <= 0.02 || y > 1.25) return false;
+  for (let d = 2; d <= 30; d += 2) {
+    const h = bakedHeight(x, z - d);
+    if (h > 1.55) return false;
+    if (h <= 0.05) return true;
+  }
+  return false;
+}
+
 /** Walkable floor stays at -0.06. South of a path the cliff is a lip; other cliffs rise to 6. */
 export function ghelsbaTerrainSample(x: number, z: number) {
   const y = inBuiltRoom(x, z) || (!outsideGraph(x, z, 0) && fastOnFloor(x, z)) ? -0.06 : bakedHeight(x, z);
   const color = y <= 0
-    ? mixRgb(varyRgb(TERRAIN_GRASS, x, z, 0.04), varyRgb(TERRAIN_DIRT, x, z, 0.05), pathDirt(x, z))
-    : y >= 5
-      ? varyRgb(TERRAIN_MOSS, x, z, 0.08)
-      : varyRgb(TERRAIN_ROCK, x, z, 0.08);
+    ? mixRgb(varyRgb(TERRAIN_GRASS, x, z, 0.05), varyRgb(TERRAIN_DIRT, x, z, 0.05), pathDirt(x, z))
+    : southLip(x, z, y)
+      ? mixRgb(varyRgb(TERRAIN_ROCK, x, z, 0.08), varyRgb(TERRAIN_MOSS, x, z, 0.08), smoothstep(0.42, 0.58, y))
+      : y >= 5
+        ? varyRgb(TERRAIN_MOSS, x, z, 0.08)
+        : varyRgb(TERRAIN_ROCK, x, z, 0.08);
   return { y, r: color[0], g: color[1], b: color[2] };
 }
 

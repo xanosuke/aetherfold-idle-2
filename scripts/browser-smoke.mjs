@@ -157,9 +157,13 @@ function lumOf(r, g, b) {
 }
 
 function median(values) {
+  return percentile(values, 0.5);
+}
+
+function percentile(values, q) {
   if (!values.length) return 0;
   values.sort((a, b) => a - b);
-  return values[values.length >> 1];
+  return values[Math.min(values.length - 1, Math.floor(values.length * q))];
 }
 
 function canvasStats(png) {
@@ -239,14 +243,46 @@ function canvasStats(png) {
     return vals;
   };
   // Ground just east of the hero, below the shirt, is the path under their feet.
-  const pathVals = hits > 40
-    ? collect(maxX + 70, maxX + 180, maxY + 36, maxY + 84)
-    : collect(Math.floor(width * 0.55), Math.floor(width * 0.68), Math.floor(sceneBottom * 0.78), sceneBottom - 4);
+  // If that box falls into the dark HUD band, slide it up onto the floor.
+  let pathX0 = hits > 40 ? maxX + 70 : Math.floor(width * 0.55);
+  let pathX1 = hits > 40 ? maxX + 180 : Math.floor(width * 0.68);
+  let pathY0 = hits > 40 ? maxY + 36 : Math.floor(sceneBottom * 0.78);
+  let pathY1 = hits > 40 ? maxY + 84 : sceneBottom - 4;
+  if (pathY0 > sceneBottom - 12) {
+    const shift = pathY0 - (sceneBottom - 52);
+    pathY0 -= shift;
+    pathY1 -= shift;
+  }
+  const pathVals = collect(pathX0, pathX1, pathY0, pathY1);
   const top = Math.max(12, Math.floor(sceneBottom * 0.22));
   const side = Math.floor(width * 0.22);
   const plateauVals = [...collect(8, side, 6, top), ...collect(width - side, width - 8, 6, top)];
   const pathLum = median(pathVals);
-  const plateauLum = median(plateauVals);
+  // Upper corners mix the dark plateau with a lighter shoulder. The plateau
+  // pixel is the darker part of that sample, not the bright shoulder.
+  const plateauLum = percentile(plateauVals, 0.45);
+  const cliffVals = [];
+  const cliffY0 = Math.floor(sceneBottom * 0.2);
+  const cliffY1 = Math.floor(sceneBottom * 0.68);
+  const playerX0 = hits > 40 ? minX - 20 : -1;
+  const playerX1 = hits > 40 ? maxX + 20 : -1;
+  const playerY0 = hits > 40 ? minY - 12 : -1;
+  const playerY1 = hits > 40 ? Math.min(maxY + 8, sceneBottom) : -1;
+  for (let y = cliffY0; y < cliffY1; y += 2) {
+    for (let x = Math.floor(width * 0.06); x < width - Math.floor(width * 0.06); x += 2) {
+      if (x > playerX0 && x < playerX1 && y > playerY0 && y < playerY1) continue;
+      const [r, g, b] = at(x, y);
+      if (r === 10 && g === 12 && b === 16) continue;
+      if (b > r + 16 && b > g + 6 && b < 130) continue;
+      if (r > 200 && g > 165 && b < 190) continue;
+      if (r > 225 && g > 205 && b > 185) continue;
+      const L = lumOf(r, g, b);
+      if (L < 35 || L > 185) continue;
+      cliffVals.push(L);
+    }
+  }
+  cliffVals.sort((a, b) => a - b);
+  const cliffLum = cliffVals.length ? cliffVals[Math.floor(cliffVals.length * 0.08)] : 0;
   return {
     width,
     height,
@@ -255,6 +291,8 @@ function canvasStats(png) {
     pathLum: Math.round(pathLum * 10) / 10,
     plateauLum: Math.round(plateauLum * 10) / 10,
     lumDelta: Math.round(Math.abs(pathLum - plateauLum) * 10) / 10,
+    cliffLum: Math.round(cliffLum * 10) / 10,
+    cliffDelta: Math.round(Math.abs(pathLum - cliffLum) * 10) / 10,
     sceneBottom,
     playerHits: hits,
   };
@@ -357,6 +395,12 @@ async function checkGhelsba(browser, url) {
       }
       if (stats.playerHits < 40) {
         return { ok: false, error: `${stand.name} +${step} player occluded (${stats.playerHits})`, nodes: places.nodes, shots: [...shots, ...pair] };
+      }
+      if (!(stats.lumDelta >= 35)) {
+        return { ok: false, error: `${stand.name} +${step} path/plateau lum ${stats.lumDelta} (path ${stats.pathLum} plateau ${stats.plateauLum})`, nodes: places.nodes, shots: [...shots, ...pair] };
+      }
+      if (!(stats.cliffDelta >= 20)) {
+        return { ok: false, error: `${stand.name} +${step} cliff/floor lum ${stats.cliffDelta} (cliff ${stats.cliffLum} floor ${stats.pathLum})`, nodes: places.nodes, shots: [...shots, ...pair] };
       }
     }
     if (pair[0].southY !== pair[1].southY) {
