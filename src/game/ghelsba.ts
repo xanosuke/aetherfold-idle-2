@@ -1935,6 +1935,11 @@ function stairMark(add: Add) {
 type PropFoot = { id: string; x: number; z: number; r: number };
 const ghelsbaProps: PropFoot[] = [];
 const occupied: PropFoot[] = [];
+const ghelsbaRopes: { kind: string; len: number }[] = [];
+
+function noteRope(kind: string, len: number) {
+  ghelsbaRopes.push({ kind, len });
+}
 
 function jitter(x: number, z: number) {
   const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -1973,6 +1978,26 @@ function walkSamplesOf() {
         const px = a.x + dx * t;
         const pz = a.z + dz * t;
         for (const off of [0, 2, -2]) keep(px + nx * off, pz + nz * off);
+      }
+    }
+  }
+  const dense = new Set(["e_ramp_r67", "e_snake_n98", "e_top_down", "e_diagonal"]);
+  for (const edge of GHELSBA_GRAPH.edges) {
+    if (!dense.has(edge.id)) continue;
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      const steps = Math.max(1, Math.ceil(len / 0.8));
+      const nx = len ? -dz / len : 0;
+      const nz = len ? dx / len : 0;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = a.x + dx * t;
+        const pz = a.z + dz * t;
+        for (const off of [0, 1.5, -1.5, 2, -2]) keep(px + nx * off, pz + nz * off);
       }
     }
   }
@@ -2112,17 +2137,21 @@ function ringEmblem(add: Add, x: number, y: number, z: number, yaw: number, s = 
   put(-0.2 * s, 0, 0.07 * s, 0.42 * s);
 }
 
-function sagRope(add: Add, x0: number, z0: number, x1: number, z1: number, y: number, dip: number) {
-  const n = 5;
+function sagRope(add: Add, x0: number, z0: number, x1: number, z1: number, y: number, dip: number, kind = "rope") {
   const dx = x1 - x0;
   const dz = z1 - z0;
   const yaw = Math.atan2(-dz, dx);
   const span = Math.hypot(dx, dz);
+  if (span < 0.05) return;
+  const n = Math.max(5, Math.ceil(span / 1.25));
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5) / n;
     const sag = Math.sin(t * Math.PI) * dip;
-    add(0xb59a6a, span / n + 0.08, 0.05, 0.05, x0 + dx * t, y - sag, z0 + dz * t, yaw);
+    const len = span / n + 0.08;
+    add(0xb59a6a, len, 0.05, 0.05, x0 + dx * t, y - sag, z0 + dz * t, yaw);
+    if (kind !== "bridge" && kind !== "pennant") noteRope(kind, len);
   }
+  if (kind === "bridge" || kind === "pennant") noteRope(kind, span);
 }
 
 function skullPost(add: Add, x: number, z: number) {
@@ -2249,54 +2278,171 @@ function domeHut(add: Add, colliders: Solid[], x: number, z: number) {
   remember("dome", x, z, R);
 }
 
-function palisadeRun(add: Add, colliders: Solid[], points: { x: number; z: number }[], height = 3.5) {
-  let prev: { x: number; z: number } | null = null;
-  let n = 0;
-  const h0 = height * 0.82;
-  const w = 0.55 * 0.82;
-  for (const p of points) {
-    if (prev && Math.hypot(p.x - prev.x, p.z - prev.z) < 0.8) continue;
-    if (!footOk(p.x, p.z, w * 0.6)) {
-      prev = null;
-      continue;
+type PalisadePt = { x: number; z: number; outZ?: number };
+
+function stepOffFloor(x: number, z: number, nx: number, nz: number): { x: number; z: number } | null {
+  let hit = -1;
+  for (let d = 0.45; d <= 48; d += 0.45) {
+    const c = ghelsbaClearance(x + nx * d, z + nz * d);
+    if (c <= -40) return null;
+    if (c < -0.4) {
+      hit = d;
+      break;
     }
-    const h = h0 * (0.88 + jitter(p.x, p.z) * 0.24);
-    const gy = gyAt(p.x, p.z);
-    solidBox(add, colliders, 0x3d342a, w, h, w * 0.9, p.x, gy + h / 2, p.z);
-    add(0x3d342a, w * 0.35, 0.28, w * 0.35, p.x, gy + h + 0.08, p.z);
-    if (prev) {
-      const len = Math.hypot(p.x - prev.x, p.z - prev.z);
-      const yaw = Math.atan2(-(p.z - prev.z), p.x - prev.x);
-      add(0xb59a6a, len, 0.05, 0.05, (p.x + prev.x) / 2, gy + h * 0.72, (p.z + prev.z) / 2, yaw);
-      add(0xb59a6a, len, 0.05, 0.05, (p.x + prev.x) / 2, gy + h * 0.4, (p.z + prev.z) / 2, yaw);
-    }
-    if (n % 8 === 0) ringEmblem(add, p.x, gy + h * 0.55, p.z + 0.32, 0, 0.5);
-    remember("palisade", p.x, p.z, w * 0.6);
-    prev = p;
-    n += 1;
   }
+  if (hit < 0) return null;
+  let px = x + nx * (hit + 0.3);
+  let pz = z + nz * (hit + 0.3);
+  for (let i = 0; i < 8 && ghelsbaClearance(px, pz) > -0.3; i++) {
+    px += nx * 0.2;
+    pz += nz * 0.2;
+  }
+  const c = ghelsbaClearance(px, pz);
+  if (c > -0.3 || c < -40) return null;
+  return { x: px, z: pz };
 }
 
-function offsetEdge(edgeId: string, side: number, dist: number) {
+/** Floor edge beside an edge. Side +1 / -1 are opposite outwards. */
+function edgeLine(edgeId: string, side: number): PalisadePt[] {
   const edge = GHELSBA_GRAPH.edges.find((row) => row.id === edgeId);
   if (!edge) return [];
-  const out: { x: number; z: number }[] = [];
+  const out: PalisadePt[] = [];
   for (let i = 0; i + 1 < edge.pts.length; i++) {
     const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
     const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
     const dx = b.x - a.x;
     const dz = b.z - a.z;
     const len = Math.hypot(dx, dz) || 1;
-    const steps = Math.max(1, Math.round(len / 1.25));
+    const nx = (-dz / len) * side;
+    const nz = (dx / len) * side;
+    const steps = Math.max(1, Math.round(len / 1.2));
     for (let s = 0; s <= steps; s++) {
+      if (i > 0 && s === 0) continue;
       const t = s / steps;
-      out.push({ x: a.x + dx * t + (-dz / len) * side * dist, z: a.z + dz * t + (dx / len) * side * dist });
+      const spot = stepOffFloor(a.x + dx * t, a.z + dz * t, nx, nz);
+      if (spot) out.push({ ...spot, outZ: nz });
     }
   }
   return out;
 }
 
-function yardRing(id: string, radius: number) {
+function chainsOf(points: PalisadePt[], maxGap: number): PalisadePt[][] {
+  const chains: PalisadePt[][] = [];
+  let cur: PalisadePt[] = [];
+  for (const p of points) {
+    if (cur.length && Math.hypot(p.x - cur[cur.length - 1].x, p.z - cur[cur.length - 1].z) > maxGap) {
+      chains.push(cur);
+      cur = [];
+    }
+    cur.push(p);
+  }
+  if (cur.length) chains.push(cur);
+  return chains;
+}
+
+function resampleRun(points: PalisadePt[], spacing: number): PalisadePt[] {
+  if (!points.length) return [];
+  const out: PalisadePt[] = [{ ...points[0] }];
+  let next = spacing;
+  let walked = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) continue;
+    while (walked + len >= next - 1e-6) {
+      const t = (next - walked) / len;
+      out.push({ x: a.x + dx * t, z: a.z + dz * t, outZ: (t < 0.5 ? a.outZ : b.outZ) ?? a.outZ ?? b.outZ });
+      next += spacing;
+    }
+    walked += len;
+  }
+  return out;
+}
+
+function layBand(add: Add, pts: { x: number; z: number; y: number }[]) {
+  if (pts.length < 2) return;
+  let ax = pts[0].x;
+  let az = pts[0].z;
+  let ay = pts[0].y;
+  for (let i = 1; i < pts.length; i++) {
+    let bx = pts[i].x;
+    let bz = pts[i].z;
+    let by = pts[i].y;
+    let dist = Math.hypot(bx - ax, bz - az);
+    while (dist > 1.4) {
+      const t = 1.4 / dist;
+      const mx = ax + (bx - ax) * t;
+      const mz = az + (bz - az) * t;
+      const my = ay + (by - ay) * t;
+      const yaw = Math.atan2(-(mz - az), mx - ax);
+      add(0xb59a6a, 1.4, 0.05, 0.05, (ax + mx) / 2, (ay + my) / 2, (az + mz) / 2, yaw);
+      noteRope("band", 1.4);
+      ax = mx;
+      az = mz;
+      ay = my;
+      dist = Math.hypot(bx - ax, bz - az);
+    }
+    if (dist >= 0.12) {
+      const yaw = Math.atan2(-(bz - az), bx - ax);
+      add(0xb59a6a, dist, 0.05, 0.05, (ax + bx) / 2, (ay + by) / 2, (az + bz) / 2, yaw);
+      noteRope("band", dist);
+    }
+    ax = bx;
+    az = bz;
+    ay = by;
+  }
+}
+
+function palisadeRun(add: Add, colliders: Solid[], points: PalisadePt[], height = 3.5, spacing = 0.5) {
+  const w = spacing > 0.55 ? 0.32 : 0.52;
+  let n = 0;
+  for (const chain of chainsOf(points, 3.5)) {
+    const line = resampleRun(chain, spacing);
+    const segments: PalisadePt[][] = [];
+    let cur: PalisadePt[] = [];
+    const gap = () => {
+      if (cur.length) segments.push(cur);
+      cur = [];
+    };
+    for (const p of line) {
+      if (ghelsbaClearance(p.x, p.z) > -0.3) {
+        gap();
+        continue;
+      }
+      if (!footOk(p.x, p.z, w * 0.4)) {
+        gap();
+        continue;
+      }
+      if (cur.length && Math.hypot(p.x - cur[cur.length - 1].x, p.z - cur[cur.length - 1].z) > 1.2) gap();
+      cur.push(p);
+    }
+    gap();
+    for (const seg of segments) {
+      const placed: { x: number; z: number; h: number; gy: number }[] = [];
+      for (const p of seg) {
+        const south = height >= 3 && (p.outZ ?? 0) > 0.3;
+        const base = south ? 1.3 : height;
+        const h = Math.max(0.85, base + (jitter(p.x, p.z) - 0.5) * 0.8);
+        const gy = gyAt(p.x, p.z);
+        solidBox(add, colliders, 0x3d342a, w, h, w * 0.9, p.x, gy + h / 2, p.z);
+        add(0x3d342a, w * 0.34, 0.24, w * 0.34, p.x, gy + h + 0.06, p.z);
+        if (n % 8 === 0) ringEmblem(add, p.x, gy + h * 0.55, p.z + 0.28, 0, 0.42);
+        remember("palisade", p.x, p.z, w * 0.4);
+        placed.push({ x: p.x, z: p.z, h, gy });
+        n += 1;
+      }
+      if (placed.length < 2) continue;
+      for (const frac of [0.4, 0.72]) {
+        layBand(add, placed.map((p) => ({ x: p.x, z: p.z, y: p.gy + p.h * frac })));
+      }
+    }
+  }
+}
+
+function yardRing(id: string): PalisadePt[] {
   const at = nodeAt(id);
   const open: number[] = [];
   for (const edge of GHELSBA_GRAPH.edges) {
@@ -2310,12 +2456,36 @@ function yardRing(id: string, radius: number) {
       open.push(Math.atan2(q.z - p.z, q.x - p.x));
     }
   }
-  const pts: { x: number; z: number }[] = [];
-  const count = Math.max(12, Math.round((Math.PI * 2 * radius) / 1.25));
+  const pts: PalisadePt[] = [];
+  const count = 40;
   for (let i = 0; i < count; i++) {
     const a = (i / count) * Math.PI * 2;
     if (open.some((o) => Math.abs(Math.atan2(Math.sin(a - o), Math.cos(a - o))) < 0.55)) continue;
-    pts.push({ x: at.x + Math.cos(a) * radius, z: at.z + Math.sin(a) * radius });
+    const nx = Math.cos(a);
+    const nz = Math.sin(a);
+    let prev = ghelsbaClearance(at.x, at.z);
+    for (let d = 0.35; d <= 36; d += 0.2) {
+      const x = at.x + nx * d;
+      const z = at.z + nz * d;
+      const c = ghelsbaClearance(x, z);
+      if (c <= -0.3 && c >= -1) {
+        pts.push({ x, z, outZ: nz });
+        break;
+      }
+      if (c < -1 && prev > -0.3) {
+        for (let back = 0.05; back <= 0.25; back += 0.05) {
+          const bx = x - nx * back;
+          const bz = z - nz * back;
+          const bc = ghelsbaClearance(bx, bz);
+          if (bc <= -0.3 && bc >= -1) {
+            pts.push({ x: bx, z: bz, outZ: nz });
+            break;
+          }
+        }
+        break;
+      }
+      prev = c;
+    }
   }
   return pts;
 }
@@ -2336,7 +2506,7 @@ function bridgeSpan(add: Add, colliders: Solid[], ax: number, az: number, bx: nu
     const t = (i + 0.5) / boards;
     add(0x6e5438, 0.22, 0.05, 2.05, ax + dx * t, 0.16, az + dz * t, yaw);
   }
-  const posts = Math.max(1, Math.round(len / 6));
+  const posts = Math.max(1, Math.ceil(len / 6.5));
   for (const s of [-1, 1] as const) {
     let prev: { x: number; z: number } | null = null;
     for (let i = 0; i <= posts; i++) {
@@ -2350,8 +2520,8 @@ function bridgeSpan(add: Add, colliders: Solid[], ax: number, az: number, bx: nu
       solidBox(add, colliders, 0x3d342a, 0.26, 1.25, 0.26, px, 0.62, pz);
       remember("bridge-post", px, pz, 0.24);
       if (prev) {
-        sagRope(add, prev.x, prev.z, px, pz, 1.15, 0.6);
-        sagRope(add, prev.x, prev.z, px, pz, 0.62, 0.45);
+        sagRope(add, prev.x, prev.z, px, pz, 1.15, 0.6, "bridge");
+        sagRope(add, prev.x, prev.z, px, pz, 0.62, 0.45, "bridge");
       }
       prev = { x: px, z: pz };
     }
@@ -2484,12 +2654,23 @@ function emblemBanner(add: Add, colliders: Solid[], x: number, z: number) {
 
 function pennantString(add: Add, colliders: Solid[], x: number, z: number) {
   const frame = nearestEdgeFrame(x, z);
-  const a = seat(x + frame.nx * 3.3, z + frame.nz * 3.3, 0.3, "floor", 2.8);
-  const b = seat(x - frame.nx * 3.3, z - frame.nz * 3.3, 0.3, "floor", 2.8);
+  let a: { x: number; z: number } | null = null;
+  let b: { x: number; z: number } | null = null;
+  for (let d = 2.4; d <= 3.6; d += 0.3) {
+    const pa = seat(x + frame.nx * d, z + frame.nz * d, 0.3, "floor", 1.5);
+    const pb = seat(x - frame.nx * d, z - frame.nz * d, 0.3, "floor", 1.5);
+    if (!pa || !pb) continue;
+    if (Math.hypot(pa.x - (x + frame.nx * d), pa.z - (z + frame.nz * d)) > 2) continue;
+    if (Math.hypot(pb.x - (x - frame.nx * d), pb.z - (z - frame.nz * d)) > 2) continue;
+    if (Math.hypot(pb.x - pa.x, pb.z - pa.z) > 6.8) continue;
+    a = pa;
+    b = pb;
+    break;
+  }
   if (!a || !b) return;
   solidBox(add, colliders, 0x3d342a, 0.12, 2.6, 0.12, a.x, 1.3, a.z);
   solidBox(add, colliders, 0x3d342a, 0.12, 2.6, 0.12, b.x, 1.3, b.z);
-  sagRope(add, a.x, a.z, b.x, b.z, 2.35, 0.55);
+  sagRope(add, a.x, a.z, b.x, b.z, 2.35, 0.55, "pennant");
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   for (let i = 1; i <= 3; i++) {
@@ -2530,25 +2711,160 @@ function hugeCrystal(add: Add, x: number, z: number) {
   remember("crystal", x, z, 0.55);
 }
 
-function skyline(add: Add, colliders: Solid[]) {
-  const pts: { x: number; z: number }[] = [];
-  for (let gy = 6.35; gy <= 8.25; gy += 0.07) {
-    for (let gx = 6.05; gx <= 7.65; gx += 0.035) {
-      const at = gridToWorld(gx, gy);
-      const y = ghelsbaTerrainHeight(at.x, at.z);
-      if (y < 0.6 || y > 3.4) continue;
-      if (inGhelsbaGraph(at.x, at.z, 0)) continue;
-      if (!footOk(at.x, at.z, 0.4)) continue;
-      pts.push(at);
-      break;
+function nearestPlateauFloor(x: number, z: number): { x: number; z: number } | null {
+  let best: { x: number; z: number } | null = null;
+  let bestD = 9;
+  for (let d = 2; d <= 8; d += 2) {
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const px = x + Math.cos(a) * d;
+      const pz = z + Math.sin(a) * d;
+      if (ghelsbaTerrainHeight(px, pz) > 0.05 || !inGhelsbaGraph(px, pz, 0)) continue;
+      const sq = ghelsbaSquare(px, pz);
+      if (sq !== "H-7" && sq !== "H-8") continue;
+      const dist = Math.hypot(px - x, pz - z);
+      if (dist < bestD) {
+        bestD = dist;
+        best = { x: px, z: pz };
+      }
+    }
+    if (best) break;
+  }
+  return best;
+}
+
+function chainRim(hits: PalisadePt[]): PalisadePt[] {
+  if (hits.length < 2) return hits;
+  const used = new Array(hits.length).fill(false);
+  let start = 0;
+  for (let i = 1; i < hits.length; i++) if (hits[i].x < hits[start].x) start = i;
+  const grow = (from: number) => {
+    const chain = [hits[from]];
+    used[from] = true;
+    let cur = from;
+    while (chain.length < hits.length) {
+      let best = -1;
+      let bestD = 6;
+      const prev = chain.length > 1 ? chain[chain.length - 2] : null;
+      for (let i = 0; i < hits.length; i++) {
+        if (used[i]) continue;
+        const d = Math.hypot(hits[i].x - hits[cur].x, hits[i].z - hits[cur].z);
+        if (d > bestD) continue;
+        if (prev) {
+          const dx1 = hits[cur].x - prev.x;
+          const dz1 = hits[cur].z - prev.z;
+          const dx2 = hits[i].x - hits[cur].x;
+          const dz2 = hits[i].z - hits[cur].z;
+          const dot = dx1 * dx2 + dz1 * dz2;
+          const scale = Math.hypot(dx1, dz1) * Math.hypot(dx2, dz2);
+          if (scale > 0.01 && dot < -0.15 * scale) continue;
+        }
+        best = i;
+        bestD = d;
+      }
+      if (best < 0) break;
+      used[best] = true;
+      chain.push(hits[best]);
+      cur = best;
+    }
+    return chain;
+  };
+  const forward = grow(start);
+  const back: PalisadePt[] = [];
+  let cur = start;
+  let prevPt: PalisadePt | null = forward.length > 1 ? forward[1] : null;
+  while (back.length + forward.length < hits.length) {
+    let best = -1;
+    let bestD = 6;
+    for (let i = 0; i < hits.length; i++) {
+      if (used[i]) continue;
+      const d = Math.hypot(hits[i].x - hits[cur].x, hits[i].z - hits[cur].z);
+      if (d > bestD) continue;
+      if (prevPt) {
+        const dx1 = hits[cur].x - prevPt.x;
+        const dz1 = hits[cur].z - prevPt.z;
+        const dx2 = hits[i].x - hits[cur].x;
+        const dz2 = hits[i].z - hits[cur].z;
+        const dot = dx1 * dx2 + dz1 * dz2;
+        const scale = Math.hypot(dx1, dz1) * Math.hypot(dx2, dz2);
+        if (scale > 0.01 && dot < -0.15 * scale) continue;
+      }
+      best = i;
+      bestD = d;
+    }
+    if (best < 0) break;
+    used[best] = true;
+    back.push(hits[best]);
+    prevPt = hits[cur];
+    cur = best;
+  }
+  return [...back.reverse(), ...forward];
+}
+
+function plateauRim(): PalisadePt[] {
+  const hits: PalisadePt[] = [];
+  const x0 = OUT_X + 6.5 * CELL;
+  const x1 = OUT_X + 9.05 * CELL;
+  const z0 = OUT_Z + 5.7 * CELL;
+  const z1 = OUT_Z + 8.7 * CELL;
+  for (let z = z0; z <= z1; z += 2.4) {
+    for (let x = x0; x <= x1; x += 2.4) {
+      const y = ghelsbaTerrainHeight(x, z);
+      if (y < 1.35 || y > 1.7) continue;
+      if (ghelsbaClearance(x, z) > -0.2) continue;
+      const floor = nearestPlateauFloor(x, z);
+      if (!floor) continue;
+      const len = Math.hypot(x - floor.x, z - floor.z) || 1;
+      hits.push({ x, z, outZ: (z - floor.z) / len });
     }
   }
-  palisadeRun(add, colliders, pts, 3.2);
+  return chainRim(hits);
+}
+
+function skyline(add: Add, colliders: Solid[]) {
+  palisadeRun(add, colliders, plateauRim(), 3.5, 0.5);
+}
+
+function picketLine(): PalisadePt[] {
+  const anchors = (["logging_3", "logging_1", "logging_2", "logging_4"] as const).map((id) => poiAt(id));
+  const pts: PalisadePt[] = [];
+  for (let i = 0; i + 1 < anchors.length; i++) {
+    const a = anchors[i];
+    const b = anchors[i + 1];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const steps = Math.max(1, Math.round(len / 2));
+    for (let s = 0; s <= steps; s++) {
+      if (i > 0 && s === 0) continue;
+      const t = s / steps;
+      const x = a.x + dx * t;
+      const z = a.z + dz * t;
+      const sides = [
+        { x: -dz / len, z: dx / len },
+        { x: dz / len, z: -dx / len },
+      ];
+      let spot: PalisadePt | null = null;
+      let best = Infinity;
+      for (const n of sides) {
+        const at = stepOffFloor(x, z, n.x, n.z);
+        if (!at) continue;
+        const d = Math.hypot(at.x - x, at.z - z);
+        if (d < best) {
+          best = d;
+          spot = { ...at, outZ: n.z };
+        }
+      }
+      if (spot) pts.push(spot);
+    }
+  }
+  return pts;
 }
 
 function dressGhelsba(add: Add, colliders: Solid[]) {
   ghelsbaProps.length = 0;
   occupied.length = 0;
+  ghelsbaRopes.length = 0;
   walkSamples = null;
   const door = { x: HUT_HOME.x + 0.8, z: HUT_HOME.z + 1.2 };
   warHut(add, colliders, door.x, door.z, 1, "w", true);
@@ -2578,24 +2894,16 @@ function dressGhelsba(add: Add, colliders: Solid[]) {
     const spot = seat(snake.x + Math.cos(a) * 7, snake.z + Math.sin(a) * 6, 2.15, "floor", 4.4);
     if (spot) domeHut(add, colliders, spot.x, spot.z);
   }
-  palisadeRun(add, colliders, [...offsetEdge("e_ramp_r67", 1, 3.25), ...offsetEdge("e_ramp_r67", -1, 3.25)]);
-  palisadeRun(add, colliders, [...offsetEdge("e_snake_n98", 1, 3.25), ...offsetEdge("e_snake_n98", -1, 3.25)]);
-  palisadeRun(add, colliders, yardRing("area_trench_h7", 8.2));
-  palisadeRun(add, colliders, offsetEdge("e_top_down", 1, 3.3).slice(0, 8));
-  palisadeRun(add, colliders, offsetEdge("e_diagonal", -1, 3.3).slice(0, 8));
+  for (const id of ["e_ramp_r67", "e_snake_n98", "e_top_down", "e_diagonal"] as const) {
+    palisadeRun(add, colliders, edgeLine(id, 1));
+    palisadeRun(add, colliders, edgeLine(id, -1));
+  }
+  palisadeRun(add, colliders, yardRing("area_trench_h7"));
   caveMouth(add, 6.4, 6.72);
   caveMouth(add, 6.35, 8.6);
   caveMouth(add, 6.5, 10.4);
   skyline(add, colliders);
-  const logA = poiAt("logging_3");
-  const logB = poiAt("logging_1");
-  const picket: { x: number; z: number }[] = [];
-  for (let i = 0; i <= 7; i++) {
-    const t = i / 7;
-    const spot = seat(logA.x + (logB.x - logA.x) * t + 5, logA.z + (logB.z - logA.z) * t, 0.3, "floor", 2.7);
-    if (spot) picket.push(spot);
-  }
-  palisadeRun(add, colliders, picket, 1.6);
+  palisadeRun(add, colliders, picketLine(), 1.6, 0.6);
   ropeBridges(add, colliders);
   gateFrame(add, colliders, "e_top_down");
   gateFrame(add, colliders, "e_diagonal");
@@ -2671,10 +2979,15 @@ export function assertGhelsbaProps(): void {
   ];
   for (const [id, n] of need) if (count(id) < n) throw new Error(`${id} ${count(id)} < ${n}`);
   for (const prop of ghelsbaProps) {
+    if (prop.id === "palisade" && ghelsbaClearance(prop.x, prop.z) > -0.3) throw new Error(`${prop.id} on the floor`);
     if (onEdgeCenter(prop.x, prop.z, prop.r)) throw new Error(`${prop.id} on a centreline`);
     for (const gate of ORC_GATES) {
       if (Math.hypot(gate.x - prop.x, gate.z - prop.z) < 4) throw new Error(`${prop.id} within 4 of ${gate.id}`);
     }
+  }
+  for (const rope of ghelsbaRopes) {
+    const cap = rope.kind === "bridge" || rope.kind === "pennant" ? 7 : 1.5;
+    if (rope.len > cap + 0.02) throw new Error(`${rope.kind} rope ${rope.len.toFixed(2)} > ${cap}`);
   }
 }
 
@@ -2995,6 +3308,31 @@ export function assertGhelsba(): void {
   ];
   for (const step of walks) {
     if (blocked(step.x, step.z)) throw new Error("a walk path grew a collider");
+  }
+  for (const id of ["e_ramp_r67", "e_snake_n98", "e_top_down", "e_diagonal"] as const) {
+    const edge = GHELSBA_GRAPH.edges.find((row) => row.id === id);
+    if (!edge) throw new Error(id);
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.ceil(len / 0.8));
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const nx = len ? -dz / len : 0;
+      const nz = len ? dx / len : 0;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = a.x + dx * t;
+        const pz = a.z + dz * t;
+        for (const off of [0, 1.5, -1.5, 2, -2]) {
+          const x = px + nx * off;
+          const z = pz + nz * off;
+          if (!inGhelsbaGraph(x, z, 0)) continue;
+          if (blocked(x, z)) throw new Error(`${id} blocks the walk`);
+        }
+      }
+    }
   }
   assertGhelsbaProps();
 }
