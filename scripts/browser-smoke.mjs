@@ -279,12 +279,15 @@ function ghelsbaPlaces() {
           if (y > 0) bad.push(node.id + " " + y.toFixed(3));
         }
         if (bad.length) throw new Error("cliff on path: " + bad.slice(0, 6).join(", "));
-        const spot = (id) => {
-          const node = GHELSBA_GRAPH.nodes.find((row) => row.id === id) || GHELSBA_GRAPH.pois.find((row) => row.id === id);
-          const at = gridToWorld(node.gx, node.gy);
-          return { name: id, x: at.x, z: at.z, square: ghelsbaSquare(at.x, at.z), y: ghelsbaTerrainHeight(at.x, at.z) };
+        const spot = (id, x, z) => {
+          const node = id ? (GHELSBA_GRAPH.nodes.find((row) => row.id === id) || GHELSBA_GRAPH.pois.find((row) => row.id === id)) : null;
+          const at = node ? gridToWorld(node.gx, node.gy) : { x, z };
+          const south = () => ghelsbaTerrainHeight(at.x, at.z + 10);
+          const southY = south();
+          if (south() !== southY) throw new Error("south height moved " + (id || "i10"));
+          return { name: id || "i10", x: at.x, z: at.z, square: ghelsbaSquare(at.x, at.z), y: ghelsbaTerrainHeight(at.x, at.z), southY };
         };
-        const stands = [spot("area_plateau"), spot("zone_in_default"), { name: "i10", x: -948, z: 770, square: ghelsbaSquare(-948, 770), y: ghelsbaTerrainHeight(-948, 770) }];
+        const stands = [spot("area_plateau"), spot("zone_in_default"), spot(null, -948, 770)];
         console.log("GHELSBAJSON " + JSON.stringify({ nodes: GHELSBA_GRAPH.nodes.length, stands }));
       `,
     ],
@@ -311,43 +314,55 @@ async function checkGhelsba(browser, url) {
   };
   const shots = [];
   for (const stand of places.stands) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    const errors = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
-    });
-    page.on("pageerror", (err) => errors.push(String(err?.message || err)));
-    await page.route("**/*", (route) => {
-      if (route.request().url().includes("/_serverFn/")) return route.abort();
-      return route.continue();
-    });
-    await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: stand.x, z: stand.z, yaw: 0 }));
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    const needleX = stand.x.toFixed(1);
-    const needleZ = stand.z.toFixed(1);
-    try {
-      await page.waitForFunction(
-        ([x, z]) => {
-          const text = document.body?.innerText || "";
-          return text.includes("Ghelsba") && text.includes(x) && text.includes(z);
-        },
-        [needleX, needleZ],
-        { timeout: 40000 },
-      );
-    } catch (err) {
-      const text = await page.locator("body").innerText().catch(() => "");
+    const pair = [];
+    for (const step of [0, 3]) {
+      const x = stand.x + step;
+      const z = stand.z;
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      const errors = [];
+      page.on("console", (msg) => {
+        if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+      });
+      page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+      await page.route("**/*", (route) => {
+        if (route.request().url().includes("/_serverFn/")) return route.abort();
+        return route.continue();
+      });
+      await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x, z, yaw: 0 }));
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      const needleX = x.toFixed(1);
+      const needleZ = z.toFixed(1);
+      try {
+        await page.waitForFunction(
+          ([px, pz]) => {
+            const text = document.body?.innerText || "";
+            return text.includes("Ghelsba") && text.includes(px) && text.includes(pz);
+          },
+          [needleX, needleZ],
+          { timeout: 40000 },
+        );
+      } catch (err) {
+        const text = await page.locator("body").innerText().catch(() => "");
+        await page.close();
+        return { ok: false, error: `${stand.name} +${step} never seated (${err.message})`, text: text.slice(0, 240), errors, shots };
+      }
+      await page.waitForTimeout(900);
+      const path = `/workspace/screenshots/ghelsba-${stand.name}${step ? "-east" : ""}.png`;
+      const png = await page.locator("canvas").first().screenshot({ path });
+      const stats = canvasStats(png);
+      pair.push({ name: stand.name, step, square: stand.square, ...stats, southY: stand.southY, path, errors });
       await page.close();
-      return { ok: false, error: `${stand.name} never seated (${err.message})`, text: text.slice(0, 240), errors, shots };
+      if (errors.length) {
+        return { ok: false, error: `${stand.name} +${step} ${errors[0]}`, nodes: places.nodes, shots: [...shots, ...pair] };
+      }
+      if (stats.playerHits < 40) {
+        return { ok: false, error: `${stand.name} +${step} player occluded (${stats.playerHits})`, nodes: places.nodes, shots: [...shots, ...pair] };
+      }
     }
-    await page.waitForTimeout(900);
-    const path = `/workspace/screenshots/ghelsba-${stand.name}.png`;
-    const png = await page.locator("canvas").first().screenshot({ path });
-    const stats = canvasStats(png);
-    shots.push({ name: stand.name, square: stand.square, ...stats, path, errors });
-    await page.close();
-    if (stats.blackPct >= 0.005 || stats.lumDelta < 30) {
-      return { ok: false, error: `${stand.name} black ${(stats.blackPct * 100).toFixed(2)}% lum Δ ${stats.lumDelta} (path ${stats.pathLum} plateau ${stats.plateauLum})`, nodes: places.nodes, shots };
+    if (pair[0].southY !== pair[1].southY) {
+      return { ok: false, error: `${stand.name} south lip moved ${pair[0].southY} -> ${pair[1].southY}`, nodes: places.nodes, shots: [...shots, ...pair] };
     }
+    shots.push(...pair);
   }
   return { ok: true, nodes: places.nodes, shots };
 }

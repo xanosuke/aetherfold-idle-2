@@ -1573,19 +1573,114 @@ function inBuiltRoom(x: number, z: number) {
   return hit(FORT_ROOMS, x, z, 0) || hit(YUG_ROOMS, x, z, 0) || hit(PEAK_ROOMS, x, z, 0);
 }
 
-/** Walkable floor stays at -0.06. Off the path the ground rises to 6 over 4 yalms. */
-export function ghelsbaTerrainSample(x: number, z: number) {
-  let y: number;
-  if (inBuiltRoom(x, z)) y = -0.06;
-  else {
-    const c = outsideGraph(x, z, 0) ? -1000 : fastOnFloor(x, z) ? 1 : ghelsbaClearance(x, z);
-    if (c >= 0) y = -0.06;
-    else {
+/** Camera-side cliffs are a low lip. The mesh is baked once, so it does not follow the player. */
+function buildTerrainGrid() {
+  const step = GHELSBA_TERRAIN.step;
+  const x0 = GHELSBA_TERRAIN.x;
+  const z0 = GHELSBA_TERRAIN.z;
+  const n = Math.round(GHELSBA_TERRAIN.span / step);
+  const vert = n + 1;
+  const ys = new Float32Array(vert * vert);
+  const off = new Uint8Array(vert * vert);
+  const minX = Math.floor(x0) - 2;
+  const minZ = Math.floor(z0) - 2;
+  const maxX = Math.ceil(x0 + n * step) + 2;
+  const maxZ = Math.ceil(z0 + n * step) + 2;
+  const gw = maxX - minX + 1;
+  const clear = new Float32Array(gw * (maxZ - minZ + 1));
+  clear.fill(Number.NaN);
+  const clearance = (x: number, z: number) => {
+    const ix = Math.round(x);
+    const iz = Math.round(z);
+    const slot = ix - minX + (iz - minZ) * gw;
+    const hit = clear[slot];
+    if (hit === hit) return hit;
+    const c = inBuiltRoom(x, z) ? 1 : outsideGraph(x, z, 0) ? -1000 : ghelsbaClearance(x, z);
+    clear[slot] = c;
+    return c;
+  };
+  for (let j = 0; j < vert; j++) {
+    const z = z0 + j * step;
+    for (let i = 0; i < vert; i++) {
+      const x = x0 + i * step;
+      const idx = j * vert + i;
+      if (inBuiltRoom(x, z) || (!outsideGraph(x, z, 0) && fastOnFloor(x, z))) {
+        ys[idx] = -0.06;
+        continue;
+      }
+      const c = clearance(x, z);
+      if (c >= 0) {
+        ys[idx] = -0.06;
+        continue;
+      }
+      off[idx] = 1;
       const drop = -c;
-      y = 6 * smoothstep(0, 4, drop);
+      let y = 6 * smoothstep(0, 4, drop);
       if (drop > 2) y += (terrainHash(x * 0.37 + 4.1, z * 0.37 - 2.3) * 2 - 1) * 0.5;
+      if (!outsideGraph(x, z, 1.01)) {
+        const gx = clearance(x + 1, z) - clearance(x - 1, z);
+        const gz = clearance(x, z + 1) - clearance(x, z - 1);
+        const len = Math.hypot(gx, gz);
+        if (len > 1e-4) {
+          const lipMix = smoothstep(0.15, 0.6, -(gz / len));
+          y = (1 - lipMix) * y + lipMix * Math.min(y, 1);
+        }
+      }
+      ys[idx] = y;
     }
   }
+  const blurred = new Float32Array(ys);
+  for (let j = 0; j < vert; j++) {
+    for (let i = 0; i < vert; i++) {
+      const idx = j * vert + i;
+      if (!off[idx]) continue;
+      let sum = 0;
+      let count = 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        const nj = j + dj;
+        if (nj < 0 || nj >= vert) continue;
+        for (let di = -1; di <= 1; di++) {
+          const ni = i + di;
+          if (ni < 0 || ni >= vert) continue;
+          sum += ys[nj * vert + ni];
+          count++;
+        }
+      }
+      blurred[idx] = sum / count;
+    }
+  }
+  return { x0, z0, step, n, vert, ys: blurred };
+}
+
+let terrainGrid: ReturnType<typeof buildTerrainGrid> | null = null;
+
+function bakedHeight(x: number, z: number) {
+  const grid = terrainGrid ?? (terrainGrid = buildTerrainGrid());
+  const u = (x - grid.x0) / grid.step;
+  const v = (z - grid.z0) / grid.step;
+  if (u < 0 || v < 0 || u > grid.n || v > grid.n) {
+    const c = outsideGraph(x, z, 0) ? -1000 : ghelsbaClearance(x, z);
+    if (c >= 0) return -0.06;
+    const drop = -c;
+    let y = 6 * smoothstep(0, 4, drop);
+    if (drop > 2) y += (terrainHash(x * 0.37 + 4.1, z * 0.37 - 2.3) * 2 - 1) * 0.5;
+    return y;
+  }
+  const i = Math.min(grid.n - 1, Math.floor(u));
+  const j = Math.min(grid.n - 1, Math.floor(v));
+  const tx = u - i;
+  const tz = v - j;
+  const w = grid.vert;
+  const y00 = grid.ys[j * w + i];
+  const y10 = grid.ys[j * w + i + 1];
+  const y01 = grid.ys[(j + 1) * w + i];
+  const y11 = grid.ys[(j + 1) * w + i + 1];
+  return y00 + (y10 - y00) * tx + (y01 - y00) * tz + (y00 - y10 - y01 + y11) * tx * tz;
+}
+
+/** Walkable floor stays at -0.06. South of a path the cliff is a lip; other cliffs rise to 6. */
+export function ghelsbaTerrainSample(x: number, z: number) {
+  const y = inBuiltRoom(x, z) || (!outsideGraph(x, z, 0) && fastOnFloor(x, z)) ? -0.06 : bakedHeight(x, z);
   const color = y <= 0
     ? mixRgb(varyRgb(TERRAIN_GRASS, x, z, 0.04), varyRgb(TERRAIN_DIRT, x, z, 0.05), pathDirt(x, z))
     : y >= 5

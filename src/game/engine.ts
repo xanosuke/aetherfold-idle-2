@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshDepthMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RGBADepthPacking, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
+import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -13531,8 +13531,6 @@ export function createYard(canvas) {
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
 		const bias = portrait ? 2.32 : -2.2;
 		camera.up.set(0, 1, 0);
-		const ghelsbaCut = scene.userData.ghelsbaCut;
-		if (ghelsbaCut) ghelsbaCut.set(px, pz);
 		camera.position.set(px + camPos.x + swayX, camPos.y, pz + camPos.z + swayZ);
 		sun.position.set(px + 9, 16, pz + 7);
 		sun.target.position.set(px, 0, pz);
@@ -47194,30 +47192,18 @@ function buildRoom(scene, toonMat, colliders) {
 	buildDistricts(add, colliders, scene, toonMat);
 	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
 	buildOrcLands(add, colliders);
-	const ghelsbaCut = new Vector2();
-	const cutGlsl = "#include <begin_vertex>\n{\nvec3 cutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nfloat dx = cutWorld.x - uPlayer.x;\nfloat dz = cutWorld.z - uPlayer.y;\nfloat south = smoothstep(0.0, 1.6, dz);\nfloat segZ = clamp(dz, 0.0, 18.0);\nfloat dist = length(vec2(dx, dz - segZ));\nfloat band = 1.0 - smoothstep(12.0, 16.0, dist);\nfloat cut = south * band;\ntransformed.y = mix(transformed.y, min(transformed.y, 0.9), cut);\n}";
 	const terrainMat = toonMat(0xffffff);
 	terrainMat.vertexColors = true;
 	terrainMat.alphaHash = false;
 	terrainMat.transparent = false;
 	terrainMat.side = DoubleSide;
 	terrainMat.depthWrite = true;
-	terrainMat.customProgramCacheKey = () => "ghelsba-terrain-cut";
+	terrainMat.customProgramCacheKey = () => "ghelsba-terrain-slope";
 	terrainMat.onBeforeCompile = (shader) => {
-		shader.uniforms.uPlayer = { value: ghelsbaCut };
-		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nuniform vec2 uPlayer;\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);").replace("#include <begin_vertex>", cutGlsl);
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
 		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.65 + 0.35 * clamp(ny, 0.0, 1.0);\n}");
-		if (!shader.vertexShader.includes("uPlayer") || !shader.fragmentShader.includes("vWorldNormal")) throw new Error("ghelsba terrain shader");
+		if (!shader.vertexShader.includes("vWorldNormal") || !shader.fragmentShader.includes("vWorldNormal")) throw new Error("ghelsba terrain shader");
 	};
-	const terrainDepth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
-	terrainDepth.side = DoubleSide;
-	terrainDepth.customProgramCacheKey = () => "ghelsba-terrain-depth";
-	terrainDepth.onBeforeCompile = (shader) => {
-		shader.uniforms.uPlayer = { value: ghelsbaCut };
-		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nuniform vec2 uPlayer;").replace("#include <begin_vertex>", cutGlsl);
-		if (!shader.vertexShader.includes("transformed.y = mix")) throw new Error("ghelsba depth shader");
-	};
-	scene.userData.ghelsbaCut = ghelsbaCut;
 	const tx0 = GHELSBA_TERRAIN.x;
 	const tz0 = GHELSBA_TERRAIN.z;
 	const tx1 = tx0 + GHELSBA_TERRAIN.span;
@@ -47265,8 +47251,7 @@ function buildRoom(scene, toonMat, colliders) {
 			geo.computeVertexNormals();
 			const mesh = new Mesh(geo, terrainMat);
 			mesh.receiveShadow = true;
-			mesh.castShadow = true;
-			mesh.customDepthMaterial = terrainDepth;
+			mesh.castShadow = false;
 			scene.add(mesh);
 		}
 	}
