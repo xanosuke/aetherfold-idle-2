@@ -880,7 +880,6 @@ export function orcLayout(region: string): OrcChart | null {
 }
 
 type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
-type FadeAdd = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, band?: boolean) => void;
 type Solid = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 function box(add: Add, colliders: Solid[] | null, color: number, w: number, h: number, d: number, x: number, y: number, z: number) {
@@ -1527,7 +1526,54 @@ function cutGateGaps(a: V2, b: V2, gates: readonly { x: number; z: number }[]): 
   return parts;
 }
 
-function outpostWalls(add: Add, colliders: Solid[], fade?: FadeAdd) {
+/** Outpost heightfield. 12 columns by 12 rows, about 2 yalms between vertices, 64-yalm chunks. */
+export const GHELSBA_TERRAIN = { x: OUT_X, z: OUT_Z, span: 12 * CELL, step: 2, chunk: 64 };
+
+const TERRAIN_GRASS = 6974788;
+const TERRAIN_ROCK = 0x6d6256;
+const TERRAIN_MOSS = 0x2c3328;
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function terrainHash(x: number, z: number) {
+  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function varyRgb(hex: number, x: number, z: number, amp: number, shade = 1) {
+  const k = Math.max(0, Math.min(1.35, shade * (1 + (terrainHash(x, z) * 2 - 1) * amp)));
+  return [((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k] as const;
+}
+
+function inBuiltRoom(x: number, z: number) {
+  return hit(FORT_ROOMS, x, z, 0) || hit(YUG_ROOMS, x, z, 0) || hit(PEAK_ROOMS, x, z, 0);
+}
+
+/** Walkable floor stays at -0.06. Off the path the ground rises to 6 over 4 yalms. */
+export function ghelsbaTerrainSample(x: number, z: number) {
+  let y: number;
+  if (inBuiltRoom(x, z)) y = -0.06;
+  else {
+    const c = outsideGraph(x, z, 0) ? -1000 : fastOnFloor(x, z) ? 1 : ghelsbaClearance(x, z);
+    if (c >= 0) y = -0.06;
+    else {
+      const drop = -c;
+      y = 6 * smoothstep(0, 4, drop);
+      if (drop > 2) y += (terrainHash(x * 0.37 + 4.1, z * 0.37 - 2.3) * 2 - 1) * 0.5;
+    }
+  }
+  const color = y <= 0 ? varyRgb(TERRAIN_GRASS, x, z, 0.04) : y >= 5 ? varyRgb(TERRAIN_MOSS, x, z, 0.08) : varyRgb(TERRAIN_ROCK, x, z, 0.08, 0.78 + 0.22 * (y / 5));
+  return { y, r: color[0], g: color[1], b: color[2] };
+}
+
+export function ghelsbaTerrainHeight(x: number, z: number) {
+  return ghelsbaTerrainSample(x, z).y;
+}
+
+function outpostWalls(add: Add, colliders: Solid[]) {
   const mask = buildGhelsbaMask(16);
   const cell = CELL / mask.res;
   const { n, data } = mask;
@@ -1583,10 +1629,6 @@ function outpostWalls(add: Add, colliders: Solid[], fade?: FadeAdd) {
       if (hitRow) pair(hitRow[0], hitRow[1]);
     }
   }
-  const rock = 0x6d6256;
-  const moss = 0x2c3328;
-  const tall = 6;
-  const thick = 2.4;
   const gates = ORC_GATES.filter((gate) => inGhelsbaGraph(gate.x, gate.z, 0));
   const maskAt = (x: number, z: number) => {
     const i = Math.floor((x - OUT_X) / cell);
@@ -1631,58 +1673,20 @@ function outpostWalls(add: Add, colliders: Solid[], fade?: FadeAdd) {
       into = ghelsbaClearance(mx + nx * 2, mz + nz * 2) >= ghelsbaClearance(mx - nx * 2, mz - nz * 2) ? { x: nx, z: nz } : { x: -nx, z: -nz };
     }
     const outward = { x: -into.x, z: -into.z };
-    const lip = outward.z > 0.28;
-    const cx = mx + outward.x * (thick / 2 + 0.35);
-    const cz = mz + outward.z * (thick / 2 + 0.35);
-    const yaw = -Math.atan2(dz, dx);
-    if (fade) {
-      if (lip) fade(rock, len + 1.4, 0.72, thick, cx, 0.36, cz, yaw, false);
-      else fade(rock, len + 1.4, tall, thick, cx, tall / 2, cz, yaw, true);
-    }
     for (const spot of spots) {
       const bx = spot.x + outward.x * 0.45;
       const bz = spot.z + outward.z * 0.45;
       if (gates.some((gate) => Math.hypot(gate.x - bx, gate.z - bz) < 4)) continue;
       if (onEdgeCenter(bx, bz, 1.6) || inOutpostWater(bx, bz)) continue;
+      const gy = ghelsbaTerrainHeight(bx, bz);
       const pick = Math.abs(Math.sin(bx * 0.17 + bz * 0.13));
       if (pick > 0.5) {
         const h = 0.48 + (Math.abs(Math.round(bx * 2 + bz)) % 3) * 0.16;
-        add(0x5c564e, 0.95, h, 0.78, bx, h / 2, bz);
+        add(0x5c564e, 0.95, h, 0.78, bx, gy + h / 2, bz);
       } else {
-        add(0x4a3c2e, 1.05, 0.36, 0.82, bx, 0.16, bz);
-        add(0x6a5844, 0.42, 0.48, 0.34, bx + 0.12, 0.46, bz);
+        add(0x4a3c2e, 1.05, 0.36, 0.82, bx, gy + 0.16, bz);
+        add(0x6a5844, 0.42, 0.48, 0.34, bx + 0.12, gy + 0.46, bz);
       }
-    }
-  }
-  if (!fade) return;
-  const rooms = [FORT_ROOMS, YUG_ROOMS, PEAK_ROOMS];
-  const inRoom = (x: number, z: number) => rooms.some((group) => group.some((room) => x >= room.minX && x <= room.maxX && z >= room.minZ && z <= room.maxZ));
-  for (let j = 0; j < n; j++) {
-    let i = 0;
-    while (i < n) {
-      const cx0 = OUT_X + (i + 0.5) * cell;
-      const cz0 = OUT_Z + (j + 0.5) * cell;
-      if (data[j * n + i] || inRoom(cx0, cz0)) {
-        i++;
-        continue;
-      }
-      const start = i;
-      while (i < n) {
-        const cx = OUT_X + (i + 0.5) * cell;
-        const cz = OUT_Z + (j + 0.5) * cell;
-        if (data[j * n + i] || inRoom(cx, cz)) break;
-        i++;
-      }
-      const rect = {
-        minX: OUT_X + start * cell,
-        maxX: OUT_X + i * cell,
-        minZ: OUT_Z + j * cell,
-        maxZ: OUT_Z + (j + 1) * cell,
-      };
-      const w = rect.maxX - rect.minX;
-      const d = rect.maxZ - rect.minZ;
-      if (w < 0.4 || d < 0.4) continue;
-      fade(moss, w, 0.4, d, (rect.minX + rect.maxX) / 2, tall - 0.2, (rect.minZ + rect.maxZ) / 2);
     }
   }
   void colliders;
@@ -1823,7 +1827,7 @@ function stairMark(add: Add) {
   add(3948594, 0.22, 0.32, span * 0.82, y2Neck.maxX - 0.45, 0.18, mid(y2Neck).z);
 }
 
-export function buildOrcLands(add: Add, colliders: Solid[], fade?: FadeAdd) {
+export function buildOrcLands(add: Add, colliders: Solid[]) {
   const dirt = 9269316;
   const dirtDark = 7033908;
   const cave = 4073524;
@@ -1834,8 +1838,6 @@ export function buildOrcLands(add: Add, colliders: Solid[], fade?: FadeAdd) {
   const springColor = 8304816;
   const plank = 8020548;
   const moss = 4156216;
-  const grass = 6974788;
-  for (const rect of OUT_FLOOR) floor(add, rect, grass);
   for (const rect of FORT_ROOMS) floor(add, rect, dirtDark);
   for (const rect of YUG_ROOMS) floor(add, rect, cave);
   for (const rect of PEAK_ROOMS) floor(add, rect, dirtDark);
@@ -1852,7 +1854,7 @@ export function buildOrcLands(add: Add, colliders: Solid[], fade?: FadeAdd) {
   const fortGates = ORC_GATES.filter((gate) => hit(FORT_ROOMS, gate.x, gate.z, 0));
   const yugGates = ORC_GATES.filter((gate) => hit(YUG_ROOMS, gate.x, gate.z, 0));
   const peakGates = ORC_GATES.filter((gate) => hit(PEAK_ROOMS, gate.x, gate.z, 0));
-  outpostWalls(add, colliders, fade);
+  outpostWalls(add, colliders);
   cliffRails(add, colliders);
   cliffWall(add, colliders, FORT_ROOMS, fortGates, "timber");
   cliffWall(add, colliders, YUG_ROOMS, yugGates, "cave");
@@ -1971,6 +1973,7 @@ export function assertGhelsba(): void {
   for (const node of GHELSBA_GRAPH.nodes) {
     const at = gridToWorld(node.gx, node.gy);
     if (!inGhelsbaGraph(at.x, at.z, 0)) throw new Error(`${node.id} left the floor`);
+    if (ghelsbaTerrainHeight(at.x, at.z) > 0) throw new Error(`${node.id} sits on a cliff`);
   }
   const fortSpots: [number, number, string][] = [
     [4, 7, "E-8"], [5, 7, "F-8"], [6, 5, "G-6"], [6, 6, "G-7"], [6, 7, "G-8"], [6, 8, "G-9"],

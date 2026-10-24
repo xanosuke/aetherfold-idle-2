@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
+import { inflateSync } from "node:zlib";
 import { chromium } from "playwright";
 import { checkedOutputPath, checkedUrl } from "./browser-guard.mjs";
 import { computeBrandWarnings } from "./brand-check.mjs";
@@ -88,6 +90,184 @@ function compareAgainstBaseline(verdict) {
   }
 }
 
+function decodePng(buf) {
+  let o = 8;
+  let width = 0;
+  let height = 0;
+  let colorType = 6;
+  const idat = [];
+  while (o + 8 <= buf.length) {
+    const len = buf.readUInt32BE(o);
+    o += 4;
+    const type = buf.toString("ascii", o, o + 4);
+    o += 4;
+    const data = buf.subarray(o, o + len);
+    o += len + 4;
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      colorType = data[9];
+    } else if (type === "IDAT") idat.push(data);
+    else if (type === "IEND") break;
+  }
+  const bpp = colorType === 6 ? 4 : 3;
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * bpp;
+  const out = Buffer.alloc(width * height * 4);
+  let p = 0;
+  let prev = Buffer.alloc(stride);
+  const paeth = (a, b, c) => {
+    const pp = a + b - c;
+    const pa = Math.abs(pp - a);
+    const pb = Math.abs(pp - b);
+    const pc = Math.abs(pp - c);
+    if (pa <= pb && pa <= pc) return a;
+    return pb <= pc ? b : c;
+  };
+  for (let y = 0; y < height; y++) {
+    const filter = raw[p++];
+    const row = Buffer.from(raw.subarray(p, p + stride));
+    p += stride;
+    for (let i = 0; i < stride; i++) {
+      const left = i >= bpp ? row[i - bpp] : 0;
+      const up = prev[i];
+      const ul = i >= bpp ? prev[i - bpp] : 0;
+      let v = row[i];
+      if (filter === 1) v += left;
+      else if (filter === 2) v += up;
+      else if (filter === 3) v += (left + up) >> 1;
+      else if (filter === 4) v += paeth(left, up, ul);
+      row[i] = v & 255;
+    }
+    prev = row;
+    for (let x = 0; x < width; x++) {
+      const s = x * bpp;
+      const d = (y * width + x) * 4;
+      out[d] = row[s];
+      out[d + 1] = row[s + 1];
+      out[d + 2] = row[s + 2];
+      out[d + 3] = bpp === 4 ? row[s + 3] : 255;
+    }
+  }
+  return { width, height, data: out };
+}
+
+function canvasStats(png) {
+  const { width, height, data } = decodePng(png);
+  let black = 0;
+  let player = 0;
+  const x0 = Math.floor(width * 0.2);
+  const x1 = Math.floor(width * 0.8);
+  const y0 = Math.floor(height * 0.2);
+  const y1 = Math.floor(height * 0.8);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (r < 12 && g < 12 && b < 12) black++;
+      if (x < x0 || x >= x1 || y < y0 || y >= y1) continue;
+      const lit = r > 175 && g > 155 && b > 130;
+      const skin = r > 130 && g > 80 && b > 55 && r > g + 18 && r > b + 35;
+      if (lit || skin) player++;
+    }
+  }
+  return { width, height, black, player, blackPct: black / (width * height) };
+}
+
+function ghelsbaPlaces() {
+  const probe = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `
+        import { GHELSBA_GRAPH, gridToWorld } from "./src/game/ghelsba-graph.ts";
+        import { ghelsbaTerrainHeight, ghelsbaSquare } from "./src/game/ghelsba.ts";
+        const bad = [];
+        for (const node of GHELSBA_GRAPH.nodes) {
+          const at = gridToWorld(node.gx, node.gy);
+          const y = ghelsbaTerrainHeight(at.x, at.z);
+          if (y > 0) bad.push(node.id + " " + y.toFixed(3));
+        }
+        if (bad.length) throw new Error("cliff on path: " + bad.slice(0, 6).join(", "));
+        const spot = (id) => {
+          const node = GHELSBA_GRAPH.nodes.find((row) => row.id === id) || GHELSBA_GRAPH.pois.find((row) => row.id === id);
+          const at = gridToWorld(node.gx, node.gy);
+          return { name: id, x: at.x, z: at.z, square: ghelsbaSquare(at.x, at.z), y: ghelsbaTerrainHeight(at.x, at.z) };
+        };
+        const stands = [spot("area_plateau"), spot("zone_in_default"), { name: "i10", x: -948, z: 770, square: ghelsbaSquare(-948, 770), y: ghelsbaTerrainHeight(-948, 770) }];
+        console.log("GHELSBAJSON " + JSON.stringify({ nodes: GHELSBA_GRAPH.nodes.length, stands }));
+      `,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const text = `${probe.stdout || ""}\n${probe.stderr || ""}`;
+  if (probe.status !== 0) return { ok: false, error: text.slice(-800) };
+  const line = (probe.stdout || "").split("\n").find((row) => row.startsWith("GHELSBAJSON "));
+  if (!line) return { ok: false, error: text.slice(-800) };
+  return { ok: true, ...JSON.parse(line.slice("GHELSBAJSON ".length)) };
+}
+
+async function checkGhelsba(browser, url) {
+  const places = ghelsbaPlaces();
+  if (!places.ok) return places;
+  const live = JSON.parse(readFileSync("/workspace/data/yard-save.json", "utf8"));
+  const seated = (position) => {
+    const save = structuredClone(live);
+    save.position = position;
+    save.engaged = false;
+    save.ko = false;
+    if (save.gambits?.player) save.gambits.player.on = false;
+    return JSON.stringify(save);
+  };
+  const shots = [];
+  for (const stand of places.stands) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+    });
+    page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+    await page.route("**/*", (route) => {
+      if (route.request().url().includes("/_serverFn/")) return route.abort();
+      return route.continue();
+    });
+    await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: stand.x, z: stand.z, yaw: 0 }));
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const needleX = stand.x.toFixed(1);
+    const needleZ = stand.z.toFixed(1);
+    try {
+      await page.waitForFunction(
+        ([x, z]) => {
+          const text = document.body?.innerText || "";
+          return text.includes("Ghelsba") && text.includes(x) && text.includes(z);
+        },
+        [needleX, needleZ],
+        { timeout: 40000 },
+      );
+    } catch (err) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      await page.close();
+      return { ok: false, error: `${stand.name} never seated (${err.message})`, text: text.slice(0, 240), errors, shots };
+    }
+    await page.waitForTimeout(900);
+    const path = `/workspace/screenshots/ghelsba-${stand.name}.png`;
+    const png = await page.locator("canvas").first().screenshot({ path });
+    const stats = canvasStats(png);
+    shots.push({ name: stand.name, square: stand.square, ...stats, path, errors });
+    await page.close();
+    if (stats.blackPct >= 0.01 || stats.player < 40) {
+      return { ok: false, error: `${stand.name} black ${(stats.blackPct * 100).toFixed(2)}% player ${stats.player}`, nodes: places.nodes, shots };
+    }
+  }
+  return { ok: true, nodes: places.nodes, shots };
+}
+
 let browser = null;
 try {
   browser = await chromium.launch({
@@ -147,6 +327,7 @@ try {
   }
 
   const brandWarnings = computeBrandWarnings({ hasCanvas: viewports.desktop.hasCanvas });
+  const ghelsba = await checkGhelsba(browser, url);
   // Only a dev server answers /__app-env, so smoking the built output reads as
   // indeterminate — report a divergence, never the absence of an observation.
   const authWarnings = authInvariantWarnings(
@@ -155,7 +336,7 @@ try {
       buildAuthEnabled: buildAuthEnabled(),
     }),
   );
-  const verdict = { url, viewports, brandWarnings, authWarnings, verdictFile: outJson };
+  const verdict = { url, viewports, brandWarnings, authWarnings, ghelsba, verdictFile: outJson };
   if (baselineRequested) {
     const { divergesFromBaseline, reasons } = compareAgainstBaseline(verdict);
     verdict.divergesFromBaseline = divergesFromBaseline;
@@ -169,6 +350,7 @@ try {
   // teardown always runs (agents typically smoke twice per turn; leaking
   // Chromium accumulates across retries).
   process.exitCode = exitCodeFor(viewports);
+  if (!ghelsba?.ok) process.exitCode = 1;
 } catch (err) {
   const failure = { ok: false, url, error: String(err?.message || err) };
   try {

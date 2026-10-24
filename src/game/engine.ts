@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
+import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -26,7 +26,7 @@ import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustF
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch } from "./world";
-import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave } from "./ghelsba";
+import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN } from "./ghelsba";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -4341,6 +4341,7 @@ export function createYard(canvas) {
 	let fishLock = 0;
 	let zonePending = null;
 	const zoneFog = new Fog(9357551, 26, 52);
+	const ghelsbaFog = new Fog(0x2c3328, 26, 64);
 	const canyonFog = new Fog(7231552, 18, 40);
 	const caveFog = new Fog(525828, 36, 78);
 	const passFog = new Fog(0x07090d, 42, 120);
@@ -4350,6 +4351,7 @@ export function createYard(canvas) {
 		if (inTomb(x, z, 0) || inPass(x, z, 0)) return caveFog;
 		if (inGlacier(x, z, 0)) return snowFog;
 		if (inRonfaure(x, z, 0) || inEast(x, z, 0)) return zoneFog;
+		if (inGhelsba(x, z, 0)) return ghelsbaFog;
 		const kind = orcFog(x, z);
 		if (kind === "canyon") return canyonFog;
 		if (kind === "cave") return caveFog;
@@ -13523,12 +13525,14 @@ export function createYard(canvas) {
 				}
 			}
 		}
-		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
+		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inGhelsba(px, pz) ? 0x2c3328 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
 		const bias = portrait ? 2.32 : -2.2;
 		camera.up.set(0, 1, 0);
+		const ghelsbaCut = scene.userData.ghelsbaCut;
+		if (ghelsbaCut) ghelsbaCut.set(px, pz);
 		camera.position.set(px + camPos.x + swayX, camPos.y, pz + camPos.z + swayZ);
 		sun.position.set(px + 9, 16, pz + 7);
 		sun.target.position.set(px, 0, pz);
@@ -47189,66 +47193,85 @@ function buildRoom(scene, toonMat, colliders) {
 	moat(scene, toonMat, 14, spanZ + 4, -sideX - 5.6, floorZ);
 	buildDistricts(add, colliders, scene, toonMat);
 	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
-	const orcWalls = [];
-	const rockVary = (hex, wx, wy, wz) => {
-		const n = Math.sin(wx * 12.9898 + wy * 78.233 + wz * 45.164) * 43758.5453;
-		const f = (n - Math.floor(n)) * 2 - 1;
-		const k = 1 + f * 0.08;
-		return [((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k];
+	buildOrcLands(add, colliders);
+	const ghelsbaCut = new Vector2();
+	const terrainMat = toonMat(0xffffff);
+	terrainMat.vertexColors = true;
+	terrainMat.alphaHash = true;
+	terrainMat.side = DoubleSide;
+	terrainMat.depthWrite = true;
+	terrainMat.customProgramCacheKey = () => "ghelsba-terrain";
+	terrainMat.onBeforeCompile = (shader) => {
+		shader.uniforms.uPlayer = { value: ghelsbaCut };
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vCutWorld;").replace("#include <project_vertex>", "#include <project_vertex>\nvCutWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nuniform vec2 uPlayer;\nvarying vec3 vCutWorld;").replace("#include <alphahash_fragment>", "{\nfloat dx = vCutWorld.x - uPlayer.x;\nfloat dz = vCutWorld.z - uPlayer.y;\nfloat south = smoothstep(0.0, 1.6, dz);\nfloat segZ = clamp(dz, 0.0, 18.0);\nfloat dist = length(vec2(dx, dz - segZ));\nfloat band = 1.0 - smoothstep(12.0, 16.0, dist);\nfloat tall = smoothstep(0.8, 1.5, vCutWorld.y);\ndiffuseColor.a *= mix(1.0, 0.3, south * band * tall);\n}\n#include <alphahash_fragment>");
 	};
-	const paintRock = (geo, hex, x, y, z) => {
-		const pos = geo.attributes.position;
-		const colors = new Float32Array(pos.count * 3);
-		for (let i = 0; i < pos.count; i++) {
-			const rgb = rockVary(hex, x + pos.getX(i), y + pos.getY(i), z + pos.getZ(i));
-			colors[i * 3] = rgb[0];
-			colors[i * 3 + 1] = rgb[1];
-			colors[i * 3 + 2] = rgb[2];
-		}
-		geo.setAttribute("color", new Float32BufferAttribute(colors, 3));
-	};
-	const darken = (hex, k) => {
-		const r = Math.max(0, Math.min(255, Math.round(((hex >> 16) & 255) * k)));
-		const g = Math.max(0, Math.min(255, Math.round(((hex >> 8) & 255) * k)));
-		const b = Math.max(0, Math.min(255, Math.round((hex & 255) * k)));
-		return (r << 16) | (g << 8) | b;
-	};
-	const addOrcFade = (color, w, h, d, x, y, z, yaw, band) => {
-		let geo;
-		if (band && h > 1.4) {
-			const capH = 1;
-			const body = new BoxGeometry(w, h - capH, d);
-			body.translate(0, -capH / 2, 0);
-			const cap = new BoxGeometry(w + 0.08, capH, d + 0.08);
-			cap.translate(0, (h - capH) / 2, 0);
-			if (yaw) {
-				body.rotateY(yaw);
-				cap.rotateY(yaw);
+	scene.userData.ghelsbaCut = ghelsbaCut;
+	const tx0 = GHELSBA_TERRAIN.x;
+	const tz0 = GHELSBA_TERRAIN.z;
+	const tx1 = tx0 + GHELSBA_TERRAIN.span;
+	const tz1 = tz0 + GHELSBA_TERRAIN.span;
+	const tStep = GHELSBA_TERRAIN.step;
+	const tChunk = GHELSBA_TERRAIN.chunk;
+	for (let cz = tz0; cz < tz1 - 1e-3; cz += tChunk) {
+		const cz1 = Math.min(tz1, cz + tChunk);
+		for (let cx = tx0; cx < tx1 - 1e-3; cx += tChunk) {
+			const cx1 = Math.min(tx1, cx + tChunk);
+			const cols = Math.max(1, Math.round((cx1 - cx) / tStep));
+			const rows = Math.max(1, Math.round((cz1 - cz) / tStep));
+			const vcount = (cols + 1) * (rows + 1);
+			const pos = new Float32Array(vcount * 3);
+			const col = new Float32Array(vcount * 3);
+			let k = 0;
+			for (let j = 0; j <= rows; j++) {
+				const z = cz + (cz1 - cz) * (j / rows);
+				for (let i = 0; i <= cols; i++) {
+					const x = cx + (cx1 - cx) * (i / cols);
+					const sample = ghelsbaTerrainSample(x, z);
+					pos[k] = x;
+					pos[k + 1] = sample.y;
+					pos[k + 2] = z;
+					col[k] = sample.r;
+					col[k + 1] = sample.g;
+					col[k + 2] = sample.b;
+					k += 3;
+				}
 			}
-			paintRock(body, color, x, y, z);
-			paintRock(cap, darken(color, 0.55), x, y, z);
-			geo = mergeGeometries([body, cap], false);
-			body.dispose();
-			cap.dispose();
-		} else {
-			geo = new BoxGeometry(w, h, d);
-			if (yaw) geo.rotateY(yaw);
-			paintRock(geo, color, x, y, z);
+			const index = [];
+			for (let j = 0; j < rows; j++) {
+				for (let i = 0; i < cols; i++) {
+					const a = j * (cols + 1) + i;
+					const b = a + 1;
+					const c = a + cols + 1;
+					const d = c + 1;
+					index.push(a, c, b, b, c, d);
+				}
+			}
+			const geo = new BufferGeometry();
+			geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+			geo.setAttribute("color", new Float32BufferAttribute(col, 3));
+			geo.setIndex(index);
+			geo.computeVertexNormals();
+			const mesh = new Mesh(geo, terrainMat);
+			mesh.receiveShadow = true;
+			mesh.castShadow = false;
+			scene.add(mesh);
 		}
-		if (!geo) return;
-		const mat = toonMat(0xffffff);
-		mat.vertexColors = true;
-		const mesh = new Mesh(geo, mat);
-		mesh.position.set(x, y, z);
-		mesh.castShadow = h >= 2;
+	}
+	const mossPad = toonMat(0x1c221a);
+	const mossSheet = (x, z, w, d) => {
+		const geo = new PlaneGeometry(w, d);
+		geo.rotateX(-Math.PI / 2);
+		const mesh = new Mesh(geo, mossPad);
+		mesh.position.set(x, 6, z);
 		mesh.receiveShadow = true;
-		mesh.userData.fadeBase = 1;
-		mesh.userData.orcWall = true;
-		orcWalls.push(mesh);
 		scene.add(mesh);
 	};
-	buildOrcLands(add, colliders, addOrcFade);
-	scene.userData.orcWalls = orcWalls;
+	const pad = 180;
+	mossSheet((tx0 + tx1) / 2, tz1 + pad / 2, GHELSBA_TERRAIN.span + pad * 2, pad);
+	mossSheet((tx0 + tx1) / 2, tz0 - pad / 2, GHELSBA_TERRAIN.span + pad * 2, pad);
+	mossSheet(tx0 - pad / 2, (tz0 + tz1) / 2, pad, GHELSBA_TERRAIN.span);
+	mossSheet(tx1 + pad / 2, (tz0 + tz1) / 2, pad, GHELSBA_TERRAIN.span);
 	const footIn = (x, z) => {
 		const near = boxesNear(colliders, x, z, .48);
 		for (let i = 0; i < near.length; i++) {
