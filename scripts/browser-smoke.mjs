@@ -331,7 +331,10 @@ function ghelsbaPlaces() {
         const f10 = { ...door, x: door.x - 3.4 };
         if (ghelsbaSquare(f10.x, f10.z) !== "F-10") throw new Error("F-10 stand left the square");
         if (ghelsbaTerrainHeight(f10.x, f10.z) > 0) throw new Error("F-10 stand left the floor");
-        const dress = [f10, spot("crystal"), spot("octagon"), spot("area_nw_snake"), spot("j_g7")];
+        const g11 = { ...spot(null, -1075.4, 816.1), name: "g11" };
+        if (g11.square !== "G-11") throw new Error("G-11 stand left the square");
+        if (g11.y > 0) throw new Error("G-11 stand left the floor");
+        const dress = [f10, spot("crystal"), spot("octagon"), spot("area_nw_snake"), spot("j_g7"), spot("area_hut"), g11];
         console.log("GHELSBAJSON " + JSON.stringify({ nodes: GHELSBA_GRAPH.nodes.length, stands, dress }));
       `,
     ],

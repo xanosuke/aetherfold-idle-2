@@ -2601,35 +2601,160 @@ function stonePair(add: Add, colliders: Solid[], x: number, z: number) {
   if (spots.length === 2) sagRope(add, spots[0].x, spots[0].z, spots[1].x, spots[1].z, 1.7, 0.55);
 }
 
+function cavePoint(x: number, y: number, z: number, yaw: number, pitch: number, lx: number, ly: number, lz: number) {
+  const cy = ly * Math.cos(pitch) - lz * Math.sin(pitch);
+  const cz = ly * Math.sin(pitch) + lz * Math.cos(pitch);
+  const wx = x + lx * Math.cos(yaw) + cz * Math.sin(yaw);
+  const wz = z - lx * Math.sin(yaw) + cz * Math.cos(yaw);
+  return { x: wx, y: y + cy, z: wz };
+}
+
 function caveMouth(add: Add, gx: number, gy: number) {
   const origin = gridToWorld(gx, gy);
-  let best: { x: number; z: number; y: number; score: number } | null = null;
-  const nearFloor = (x: number, z: number) => {
-    for (const [dx, dz] of [[0, 4], [0, 8], [6, 4], [-6, 4], [8, 2], [-8, 2], [10, 0], [-10, 0]] as const) {
-      if (inGhelsbaGraph(x + dx, z + dz, 0)) return true;
-    }
-    return false;
+  const gradAt = (x: number, z: number) => {
+    const e = 0.8;
+    const gx0 = ghelsbaClearance(x + e, z) - ghelsbaClearance(x - e, z);
+    const gz0 = ghelsbaClearance(x, z + e) - ghelsbaClearance(x, z - e);
+    const len = Math.hypot(gx0, gz0);
+    if (len < 0.08) return null;
+    return { x: gx0 / len, z: gz0 / len };
   };
-  for (let dz = -28; dz <= 8; dz += 2) {
-    for (let dx = -18; dx <= 18; dx += 2) {
-      const x = origin.x + dx;
-      const z = origin.z + dz;
-      const y = ghelsbaTerrainHeight(x, z);
-      if (y < 1.05 || y > 4.6) continue;
-      if (inGhelsbaGraph(x, z, 0)) continue;
-      if (!footOk(x, z, 1.2)) continue;
-      if (!nearFloor(x, z)) continue;
-      const score = -Math.abs(dx) * 0.08 - Math.abs(dz) * 0.04 - Math.abs(y - 2.1);
-      if (!best || score > best.score) best = { x, z, y, score };
+  type Face = { x: number; z: number; ix: number; iz: number; tx: number; tz: number; to4: number };
+  let best: Face | null = null;
+  for (let i = 0; i < 48; i++) {
+    const ang = (i / 48) * Math.PI * 2;
+    const dx = Math.cos(ang);
+    const dz = Math.sin(ang);
+    let prev = ghelsbaClearance(origin.x, origin.z);
+    let edge: { x: number; z: number } | null = null;
+    for (let d = 0.35; d <= 12; d += 0.35) {
+      const x = origin.x + dx * d;
+      const z = origin.z + dz * d;
+      const c = ghelsbaClearance(x, z);
+      if (c < -40) break;
+      if (prev > 0.02 && c <= 0) {
+        edge = { x, z };
+        break;
+      }
+      prev = c;
     }
+    if (!edge || Math.hypot(edge.x - origin.x, edge.z - origin.z) > 12) continue;
+    const g = gradAt(edge.x, edge.z);
+    if (!g) continue;
+    const ix = -g.x;
+    const iz = -g.z;
+    if (iz > 0.32) continue;
+    let to4 = -1;
+    for (let s = 0.25; s <= 5.01; s += 0.25) {
+      if (ghelsbaTerrainHeight(edge.x + ix * s, edge.z + iz * s) >= 4) {
+        to4 = s;
+        break;
+      }
+    }
+    if (to4 < 0) continue;
+    if (!best || to4 < best.to4 - 0.05) best = { x: edge.x, z: edge.z, ix, iz, tx: g.x, tz: g.z, to4 };
   }
   if (!best) return false;
-  const base = Math.min(best.y * 0.35, 1.2);
-  add(0x1a1410, 2.5, 1.7, 1.15, best.x, base + 0.75, best.z);
-  add(0x5e554b, 3.2, 0.42, 1.45, best.x, base + 1.7, best.z);
-  add(0x6e5a48, 0.5, 1.45, 0.85, best.x - 1.35, base + 0.7, best.z);
-  add(0x6e5a48, 0.5, 1.45, 0.85, best.x + 1.35, base + 0.7, best.z);
-  remember("cave", best.x, best.z, 1.2);
+  const s0 = 0.55;
+  const s1 = 2.4;
+  const h0 = ghelsbaTerrainHeight(best.x + best.ix * s0, best.z + best.iz * s0);
+  const h1 = ghelsbaTerrainHeight(best.x + best.ix * s1, best.z + best.iz * s1);
+  const m = Math.max(0.45, (h1 - h0) / (s1 - s0));
+  const yaw = Math.atan2(best.tx, best.tz);
+  const pitch = Math.atan(m) - Math.PI / 2;
+  const sC = 1.15;
+  let sx = best.x + best.ix * sC;
+  let sz = best.z + best.iz * sC;
+  let sy = ghelsbaTerrainHeight(sx, sz);
+  const place = (lx: number, ly: number, lz: number) => cavePoint(sx, sy, sz, yaw, pitch, lx, ly, lz);
+  const lintel = place(0, 1.42, -0.08);
+  const lintelTop = (shiftY: number) => {
+    let top = -Infinity;
+    let at = lintel;
+    for (const lx of [-1.45, 1.45]) {
+      for (const ly of [-0.22, 0.22]) {
+        for (const lz of [-0.28, 0.28]) {
+          const p = cavePoint(lintel.x, lintel.y + shiftY, lintel.z, yaw, pitch, lx, ly, lz);
+          if (p.y > top) {
+            top = p.y;
+            at = p;
+          }
+        }
+      }
+    }
+    return { y: top, x: at.x, z: at.z };
+  };
+  let shiftY = 0;
+  for (let n = 0; n < 6; n++) {
+    const top = lintelTop(shiftY);
+    const behind = ghelsbaTerrainHeight(top.x + best.ix * 0.35, top.z + best.iz * 0.35);
+    const here = ghelsbaTerrainHeight(top.x, top.z);
+    const err = behind - top.y;
+    if (Math.abs(err) <= 0.3 && top.y <= here + 0.2) break;
+    const sink = top.y - Math.min(behind, here + 0.15);
+    shiftY -= sink;
+  }
+  sy += shiftY;
+  const opening = place(0, 0, -0.73);
+  add(0x120e0b, 2.6, 2.4, 1.5, opening.x, opening.y, opening.z, yaw, pitch);
+  const jamb = (side: number) => {
+    const at = place(side * 1.48, 0, -0.12);
+    add(0x6e5a48, 0.42, 2.55, 0.5, at.x, at.y, at.z, yaw, pitch);
+  };
+  jamb(-1);
+  jamb(1);
+  const beam = place(0.15, 1.42, -0.1);
+  add(0x5e554b, 3.05, 0.42, 0.58, beam.x, beam.y, beam.z, yaw, pitch);
+  const cap = place(-0.55, 1.62, -0.16);
+  add(0x6e5a48, 1.35, 0.26, 0.4, cap.x, cap.y, cap.z, yaw, pitch);
+  const foot = place(0, -1.25, 0.15);
+  let rx = foot.x;
+  let rz = foot.z;
+  for (let i = 0; i < 10; i++) {
+    const c = ghelsbaClearance(rx, rz);
+    if (c <= 0.05 && c >= -0.85) break;
+    rx += best.tx * 0.3;
+    rz += best.tz * 0.3;
+  }
+  const ex = -best.tz;
+  const ez = best.tx;
+  let stones = 0;
+  for (const u of [-0.8, 0.05, 0.75]) {
+    const x = rx + ex * u;
+    const z = rz + ez * u;
+    if (onEdgeCenter(x, z, 0.28)) continue;
+    if (ghelsbaClearance(x, z) > 0.35) continue;
+    const y = Math.max(0.08, ghelsbaTerrainHeight(x, z));
+    const w = 0.28 + (stones % 2) * 0.1;
+    add(stones % 2 ? 0x5e554b : 0x6e5a48, w, 0.18 + stones * 0.04, w * 0.85, x, y + 0.1, z, yaw + u);
+    stones += 1;
+  }
+  if (stones < 2) throw new Error(`cave rubble ${stones}`);
+  const mark = place(0, 0, -0.4);
+  if (onEdgeCenter(mark.x, mark.z, 0.8) || ORC_GATES.some((gate) => Math.hypot(gate.x - mark.x, gate.z - mark.z) < 4)) return false;
+  let topY = -Infinity;
+  let topX = beam.x;
+  let topZ = beam.z;
+  for (const lx of [-1.5, 1.5]) {
+    for (const ly of [-0.21, 0.21]) {
+      for (const lz of [-0.29, 0.29]) {
+        const p = cavePoint(beam.x, beam.y, beam.z, yaw, pitch, lx, ly, lz);
+        if (p.y > topY) {
+          topY = p.y;
+          topX = p.x;
+          topZ = p.z;
+        }
+      }
+    }
+  }
+  const behindH = ghelsbaTerrainHeight(topX + best.ix * 0.35, topZ + best.iz * 0.35);
+  const hereH = ghelsbaTerrainHeight(topX, topZ);
+  if (Math.abs(topY - behindH) > 0.3) throw new Error(`cave top ${topY.toFixed(2)} behind ${behindH.toFixed(2)} here ${hereH.toFixed(2)}`);
+  if (topY > hereH + 0.2) throw new Error(`cave lintel floats ${topY.toFixed(2)} > ${hereH.toFixed(2)}`);
+  const face = gradAt(mark.x, mark.z) ?? { x: best.tx, z: best.tz };
+  const dot = best.tx * face.x + best.tz * face.z;
+  if (dot <= 0.6) throw new Error(`cave faces away ${dot.toFixed(2)}`);
+  remember("cave", mark.x, mark.z, 0.8);
   return true;
 }
 
@@ -2973,7 +3098,7 @@ function dressGhelsba(add: Add, colliders: Solid[]) {
 export function assertGhelsbaProps(): void {
   const count = (id: string) => ghelsbaProps.filter((p) => p.id === id).length;
   const need: [string, number][] = [
-    ["war-hut", 2], ["dome", 7], ["crystal", 1], ["fallen-log", 1], ["cave", 3],
+    ["war-hut", 2], ["dome", 7], ["crystal", 1], ["fallen-log", 1], ["cave", 1],
     ["palisade", 24], ["bridge-post", 6], ["gate-frame", 2], ["stone", 8],
     ["tripod", 2], ["lookout", 2], ["banner", 3], ["dead-tree", 20], ["canopy", 4],
   ];
