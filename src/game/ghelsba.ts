@@ -1094,7 +1094,8 @@ function besideFloor(id: string, yards: number) {
 }
 
 const hutSpot = besideFloor("door_hut", 5.2);
-export const HUT_ROOF = { x: hutSpot.x, z: hutSpot.z, w: 10, d: 9.2, y: 2.45, h: 0.35, color: 5257770 };
+const HUT_HOME = { x: hutSpot.x, z: hutSpot.z };
+export const HUT_ROOF = { x: hutSpot.x, z: hutSpot.z, w: 10, d: 9.2, y: 2.45, h: 0.35, color: 0x393028 };
 
 export function underHutRoof(x: number, z: number): boolean {
   return Math.abs(x - HUT_ROOF.x) <= HUT_ROOF.w / 2 && Math.abs(z - HUT_ROOF.z) <= HUT_ROOF.d / 2;
@@ -1146,38 +1147,6 @@ function pine(add: Add, colliders: Solid[], x: number, z: number) {
 
 const ROPE = 12891508;
 const ORC_RED = 9056304;
-
-function ropeBridge(add: Add, colliders: Solid[], x: number, z0: number, z1: number) {
-  const wood = 6964012;
-  const plank = 8020548;
-  const zSouth = Math.min(z0, z1);
-  const zNorth = Math.max(z0, z1);
-  const len = zNorth - zSouth;
-  const cz = (zSouth + zNorth) / 2;
-  add(plank, 4.4, 0.1, len, x, 0.08, cz);
-  const posts = Math.max(3, Math.round(len / 3.4));
-  for (let i = 0; i <= posts; i++) {
-    const z = zSouth + (len * i) / posts;
-    box(add, colliders, wood, 0.26, 1.45, 0.26, x - 2.45, 0.72, z);
-    box(add, colliders, wood, 0.26, 1.45, 0.26, x + 2.45, 0.72, z);
-  }
-  add(ROPE, 0.1, 0.08, len, x - 2.45, 1.2, cz);
-  add(ROPE, 0.1, 0.08, len, x + 2.45, 1.2, cz);
-  add(ROPE, 0.08, 0.06, len, x - 2.45, 0.55, cz);
-  add(ROPE, 0.08, 0.06, len, x + 2.45, 0.55, cz);
-}
-
-function palisadeMouth(add: Add, colliders: Solid[], x: number, z: number) {
-  const wood = 6964012;
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < 3; i++) {
-      const px = x + side * (2.6 + i * 1.15);
-      box(add, colliders, wood, 0.32, 2.5, 0.32, px, 1.25, z);
-      add(ORC_RED, 0.38, 0.28, 0.38, px, 2.15, z);
-    }
-  }
-  add(wood, 4.2, 0.28, 0.28, x, 2.35, z);
-}
 
 function watchstand(add: Add, colliders: Solid[], x: number, z: number) {
   const wood = 6964012;
@@ -1392,17 +1361,20 @@ const FIRE_CANDIDATES: { zone: string; x: number; z: number }[] = [
 export const ORC_FIRES: readonly { zone: string; x: number; z: number }[] = FIRE_CANDIDATES.filter((spot) => propClear(spot.x, spot.z, 4.2));
 
 function watchtower(add: Add, colliders: Solid[], x: number, z: number) {
-  const wood = 6964012;
-  const deck = 8020548;
-  const roof = 5257770;
+  const wood = 0x3d342a;
+  const deck = 0x8a6844;
+  const hide = 0x957d5e;
   const s = 1.15;
+  const gy = Math.max(0, ghelsbaTerrainHeight(x, z));
   for (const [dx, dz] of [[-s, -s], [s, -s], [-s, s], [s, s]] as const) {
-    safeBox(add, colliders, wood, 0.36, 4.4, 0.36, x + dx, 2.2, z + dz);
+    safeBox(add, colliders, wood, 0.28, 3.6, 0.28, x + dx, gy + 1.8, z + dz);
   }
-  add(deck, s * 2 + 0.45, 0.16, s * 2 + 0.45, x, 3.72, z);
-  add(roof, s * 2 + 1.2, 0.2, s * 2 + 0.85, x, 4.62, z, 0, 0.4);
-  add(wood, 0.14, 1.45, 0.14, x + 0.15, 5.2, z);
-  add(ORC_RED, 0.1, 0.72, 0.95, x + 0.15, 5.6, z + 0.32);
+  add(deck, s * 2 + 0.7, 0.14, s * 2 + 0.7, x, gy + 3.62, z);
+  add(hide, s * 2 + 1.15, 0.12, s * 2 + 0.9, x, gy + 4.35, z);
+  add(hide, s * 2 + 0.4, 0.55, 0.08, x, gy + 4.05, z + s + 0.15);
+  add(wood, 0.1, 2.5, 0.1, x + 0.28, gy + 1.3, z + s + 0.55);
+  add(wood, 0.1, 2.5, 0.1, x - 0.28, gy + 1.3, z + s + 0.55);
+  for (let i = 0; i < 6; i++) add(wood, 0.62, 0.06, 0.1, x, gy + 0.4 + i * 0.42, z + s + 0.55);
 }
 
 function lobeStakes(add: Add, id: string) {
@@ -1960,6 +1932,752 @@ function stairMark(add: Add) {
   add(3948594, 0.22, 0.32, span * 0.82, y2Neck.maxX - 0.45, 0.18, mid(y2Neck).z);
 }
 
+type PropFoot = { id: string; x: number; z: number; r: number };
+const ghelsbaProps: PropFoot[] = [];
+const occupied: PropFoot[] = [];
+
+function jitter(x: number, z: number) {
+  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function spinXZ(x: number, z: number, yaw: number, lx: number, lz: number) {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return { x: x + lx * c + lz * s, z: z - lx * s + lz * c };
+}
+
+function gyAt(x: number, z: number) {
+  return Math.max(0, ghelsbaTerrainHeight(x, z));
+}
+
+let walkSamples: { x: number; z: number }[] | null = null;
+function walkSamplesOf() {
+  if (walkSamples) return walkSamples;
+  const pts: { x: number; z: number }[] = [];
+  const keep = (x: number, z: number) => {
+    if (inGhelsbaGraph(x, z, 0)) pts.push({ x, z });
+  };
+  for (const edge of GHELSBA_GRAPH.edges) {
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.hypot(dx, dz);
+      const steps = Math.max(1, Math.ceil(len / 2));
+      const nx = len ? -dz / len : 0;
+      const nz = len ? dx / len : 0;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = a.x + dx * t;
+        const pz = a.z + dz * t;
+        for (const off of [0, 2, -2]) keep(px + nx * off, pz + nz * off);
+      }
+    }
+  }
+  for (const gate of ORC_GATES) {
+    pts.push({ x: gate.x, z: gate.z });
+    if (gate.id !== "ghelsba-ron") pts.push({ x: gate.arrive.x, z: gate.arrive.z });
+  }
+  pts.push({ x: RON_TO_GHELSBA.x, z: RON_TO_GHELSBA.z });
+  for (const id of ["area_plateau", "exit_fort_ghelsba", "fort_arrival_i8", "exit_west_ronfaure", "area_nw_snake", "area_f7_room", "door_hut"] as const) {
+    const at = nodeAt(id);
+    pts.push(at);
+  }
+  walkSamples = pts;
+  return pts;
+}
+
+function boxHitsWalk(b: Solid) {
+  for (const p of walkSamplesOf()) {
+    if (p.x > b.minX - 0.36 && p.x < b.maxX + 0.36 && p.z > b.minZ - 0.36 && p.z < b.maxZ + 0.36) return true;
+  }
+  return false;
+}
+
+function standNear(x: number, z: number, reach: number) {
+  for (const id of ["door_hut", "crystal", "octagon", "area_nw_snake", "area_plateau", "area_trench_h7", "exit_fort_ghelsba", "area_camp_i6", "j_plateau_e"] as const) {
+    const at = nodeAt(id);
+    if (Math.hypot(at.x - x, at.z - z) < reach) return true;
+  }
+  const zin = poiAt("zone_in_default");
+  return Math.hypot(zin.x - x, zin.z - z) < reach;
+}
+
+function crowded(x: number, z: number, r: number) {
+  return occupied.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r - 0.25);
+}
+
+function footOk(x: number, z: number, r: number) {
+  if (onEdgeCenter(x, z, r)) return false;
+  if (standNear(x, z, r + 1.4)) return false;
+  if (crowded(x, z, r)) return false;
+  if (inOutpostWater(x, z)) return false;
+  for (const gate of ORC_GATES) if (Math.hypot(gate.x - x, gate.z - z) < 4) return false;
+  if (Math.hypot(RON_TO_GHELSBA.x - x, RON_TO_GHELSBA.z - z) < 4) return false;
+  return true;
+}
+
+function remember(id: string, x: number, z: number, r: number) {
+  ghelsbaProps.push({ id, x, z, r });
+  occupied.push({ id, x, z, r });
+}
+
+function seat(x: number, z: number, r: number, kind: "floor" | "rim" | "any", minEdge: number) {
+  const ok = (px: number, pz: number) => {
+    if (!footOk(px, pz, r)) return false;
+    if (onEdgeCenter(px, pz, minEdge)) return false;
+    const y = ghelsbaTerrainHeight(px, pz);
+    const c = ghelsbaClearance(px, pz);
+    if (kind === "floor") return y <= 0.05 && c > 0.45;
+    if (kind === "rim") return y > 0.45 && y < 5.6 && c < 0.15;
+    return c > -12;
+  };
+  if (ok(x, z)) return { x, z };
+  for (let ring = 1.2; ring <= 16; ring += 1.35) {
+    const steps = 8 + Math.floor(ring * 1.5);
+    for (let k = 0; k < steps; k++) {
+      const a = (k / steps) * Math.PI * 2;
+      const px = x + Math.cos(a) * ring;
+      const pz = z + Math.sin(a) * ring;
+      if (ok(px, pz)) return { x: px, z: pz };
+    }
+  }
+  return null;
+}
+
+function mustSeat(id: string, x: number, z: number, r: number, kind: "floor" | "rim" | "any", minEdge: number) {
+  const spot = seat(x, z, r, kind, minEdge);
+  if (!spot) throw new Error(`no seat ${id}`);
+  return spot;
+}
+
+function solidBox(add: Add, colliders: Solid[], color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw = 0, pitch = 0) {
+  add(color, w, h, d, x, y, z, yaw, pitch);
+  const alongX = w >= d;
+  const span = alongX ? w : d;
+  const thin = Math.min(w, d) / 2;
+  const n = Math.max(1, Math.ceil(span / 1.15));
+  const boxes: Solid[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = ((i + 0.5) / n - 0.5) * span;
+    const at = spinXZ(x, z, yaw, alongX ? t : 0, alongX ? 0 : t);
+    boxes.push({ minX: at.x - thin, maxX: at.x + thin, minZ: at.z - thin, maxZ: at.z + thin });
+  }
+  if (boxes.some(boxHitsWalk)) return;
+  for (const b of boxes) colliders.push(b);
+}
+
+function nearestEdgeFrame(x: number, z: number) {
+  let best = Infinity;
+  let nx = 1;
+  let nz = 0;
+  let tx = 0;
+  let tz = 1;
+  for (const edge of GHELSBA_GRAPH.edges) {
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
+      const px = a.x + dx * t;
+      const pz = a.z + dz * t;
+      const dist = Math.hypot(x - px, z - pz);
+      if (dist < best) {
+        best = dist;
+        const len = Math.sqrt(len2);
+        tx = dx / len;
+        tz = dz / len;
+        nx = -tz;
+        nz = tx;
+      }
+    }
+  }
+  return { nx, nz, tx, tz, d: best };
+}
+
+function ringEmblem(add: Add, x: number, y: number, z: number, yaw: number, s = 1) {
+  add(0xe7e0d2, 0.78 * s, 0.78 * s, 0.06, x, y, z, yaw);
+  const c = Math.cos(yaw);
+  const sn = Math.sin(yaw);
+  const put = (lx: number, ly: number, w: number, h: number) => {
+    add(0x2a2420, w, h, 0.08, x + lx * c, y + ly, z - lx * sn, yaw);
+  };
+  put(0, 0.2 * s, 0.48 * s, 0.07 * s);
+  put(0, -0.2 * s, 0.48 * s, 0.07 * s);
+  put(0.2 * s, 0, 0.07 * s, 0.42 * s);
+  put(-0.2 * s, 0, 0.07 * s, 0.42 * s);
+}
+
+function sagRope(add: Add, x0: number, z0: number, x1: number, z1: number, y: number, dip: number) {
+  const n = 5;
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const yaw = Math.atan2(-dz, dx);
+  const span = Math.hypot(dx, dz);
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const sag = Math.sin(t * Math.PI) * dip;
+    add(0xb59a6a, span / n + 0.08, 0.05, 0.05, x0 + dx * t, y - sag, z0 + dz * t, yaw);
+  }
+}
+
+function skullPost(add: Add, x: number, z: number) {
+  if (!footOk(x, z, 0.25)) return;
+  add(0x3d342a, 0.12, 0.85, 0.12, x, 0.42, z);
+  add(0xf3efe6, 0.22, 0.16, 0.18, x, 0.92, z);
+  add(0x2a2420, 0.05, 0.035, 0.04, x - 0.05, 0.96, z + 0.08);
+  add(0x2a2420, 0.05, 0.035, 0.04, x + 0.05, 0.96, z + 0.08);
+  remember("skull", x, z, 0.25);
+}
+
+function hutOuter(scale: number) {
+  return 6.75 * 0.82 * scale;
+}
+
+function warHut(add: Add, colliders: Solid[], x: number, z: number, scale: number, face: "w" | "s", engineRoof: boolean) {
+  const k = 0.82 * scale;
+  const hw = 5.6 * k;
+  const hd = 4.7 * k;
+  const wallH = 2.25 * k;
+  const hide = 0x393028;
+  const tan = 0x957d5e;
+  const post = 0xa8553e;
+  const cream = 0xd8ccb0;
+  const gold = 0xc9a040;
+  const plank = 0x8a6844;
+  const t = 0.26 * k;
+  const gap = 1.45 * k;
+  const side = hd - gap / 2;
+  const off = hd / 2 + gap / 4;
+  const westDoor = face === "w";
+  const southDoor = face === "s";
+  if (westDoor) {
+    solidBox(add, colliders, tan, t, wallH, side, x - hw, wallH / 2, z - off);
+    solidBox(add, colliders, tan, t, wallH, side, x - hw, wallH / 2, z + off);
+  } else solidBox(add, colliders, tan, t, wallH, hd * 2, x - hw, wallH / 2, z);
+  if (southDoor) {
+    solidBox(add, colliders, tan, side, wallH, t, x - off, wallH / 2, z + hd);
+    solidBox(add, colliders, tan, side, wallH, t, x + off, wallH / 2, z + hd);
+  } else solidBox(add, colliders, tan, hw * 2, wallH, t, x, wallH / 2, z + hd);
+  solidBox(add, colliders, tan, t, wallH, hd * 2, x + hw, wallH / 2, z);
+  solidBox(add, colliders, tan, hw * 2, wallH, t, x, wallH / 2, z - hd);
+  add(0x1a1410, gap * 0.8, wallH * 0.72, 0.12, westDoor ? x - hw : x, wallH * 0.36, southDoor ? z + hd : z);
+  const roofW = hw * 2 + 1.05 * k;
+  const roofD = hd * 2 + 1.05 * k;
+  if (engineRoof) {
+    HUT_ROOF.x = x;
+    HUT_ROOF.z = z;
+    HUT_ROOF.w = roofW;
+    HUT_ROOF.d = roofD;
+    HUT_ROOF.h = 0.26 * k;
+    HUT_ROOF.y = wallH + HUT_ROOF.h / 2;
+    HUT_ROOF.color = hide;
+  } else add(hide, roofW, 0.26 * k, roofD, x, wallH + 0.13 * k, z);
+  add(hide, hw * 1.35, 0.2 * k, hd * 1.2, x, wallH + 0.46 * k, z);
+  const fringe = (alongX: boolean, edge: number) => {
+    const len = alongX ? roofW : roofD;
+    const n = Math.max(5, Math.floor(len / (0.5 * k)));
+    for (let i = 0; i < n; i++) {
+      const u = ((i + 0.5) / n - 0.5) * len;
+      const px = alongX ? x + u : edge;
+      const pz = alongX ? edge : z + u;
+      add(hide, 0.07 * k, 0.48 * k, 0.1 * k, px, wallH - 0.16 * k, pz);
+    }
+  };
+  fringe(true, z - hd - 0.35 * k);
+  fringe(true, z + hd + 0.35 * k);
+  fringe(false, x - hw - 0.35 * k);
+  fringe(false, x + hw + 0.35 * k);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dz = Math.sin(a);
+    if (westDoor && dx < -0.72) continue;
+    if (southDoor && dz > 0.72) continue;
+    const px = x + dx * (hw + 0.7 * k);
+    const pz = z + dz * (hd + 0.7 * k);
+    if (!footOk(px, pz, 0.3)) continue;
+    const ph = 3.9 * k;
+    solidBox(add, colliders, post, 0.32 * k, ph, 0.32 * k, px, ph / 2, pz);
+    add(cream, 0.4 * k, 0.14 * k, 0.4 * k, px, ph - 0.22 * k, pz);
+    add(gold, 0.16 * k, 0.26 * k, 0.16 * k, px, ph + 0.04 * k, pz);
+  }
+  const rampWant = 2.1 * k;
+  const mouthX = westDoor ? x - hw : x;
+  const mouthZ = southDoor ? z + hd : z;
+  const ramp = Math.min(rampWant, Math.max(0.65 * k, nearestEdgeFrame(mouthX, mouthZ).d - 0.9));
+  if (westDoor) add(plank, ramp, 0.1, 1.35 * k, x - hw - ramp / 2, 0.1, z);
+  else add(plank, 1.35 * k, 0.1, ramp, x, 0.1, z + hd + ramp / 2);
+  const sx = westDoor ? x - hw - 0.28 * k : x - 1.05 * k;
+  const sz = westDoor ? z - 1.55 * k : z + hd + 0.55 * k;
+  skullPost(add, sx, sz);
+  skullPost(add, westDoor ? sx : x + 1.05 * k, westDoor ? z + 1.55 * k : sz);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dz = Math.sin(a);
+    if (westDoor && dx < -0.6) continue;
+    if (southDoor && dz > 0.6) continue;
+    const px = x + dx * (hw + 1.25 * k);
+    const pz = z + dz * (hd + 1.25 * k);
+    if (!footOk(px, pz, 0.2)) continue;
+    solidBox(add, colliders, 0x3d342a, 0.12, 0.85 * k, 0.12, px, 0.42 * k, pz);
+  }
+  const bx = x;
+  const bz = z - hd * 0.15;
+  add(post, 0.1, 1.15 * k, 0.1, bx - 0.55 * k, wallH + 0.7 * k, bz);
+  add(post, 0.1, 1.15 * k, 0.1, bx + 0.55 * k, wallH + 0.7 * k, bz);
+  add(gold, 0.06, 0.2 * k, 0.06, bx - 0.55 * k, wallH + 1.35 * k, bz);
+  add(gold, 0.06, 0.2 * k, 0.06, bx + 0.55 * k, wallH + 1.35 * k, bz);
+  add(tan, 1.15 * k, 0.85 * k, 0.06, bx, wallH + 0.85 * k, bz + 0.08);
+  ringEmblem(add, bx, wallH + 0.85 * k, bz + 0.14, 0, 0.72 * k);
+  remember("war-hut", x, z, Math.max(hw, hd) + 0.2);
+}
+
+function domeHut(add: Add, colliders: Solid[], x: number, z: number) {
+  const R = 2.15;
+  const gy = gyAt(x, z);
+  add(0x6f6949, R * 2, R * 0.55, R * 1.65, x, gy + R * 0.28, z);
+  add(0x6f6949, R * 1.45, R * 0.48, R * 1.2, x, gy + R * 0.72, z);
+  add(0x5e6040, R * 0.8, R * 0.32, R * 0.65, x, gy + R * 1.05, z);
+  add(0x1a1410, R * 0.55, R * 0.62, 0.16, x, gy + R * 0.34, z + R * 0.78);
+  solidBox(add, colliders, 0x6f6949, R * 1.2, R * 0.7, R * 0.9, x, gy + R * 0.35, z - R * 0.15);
+  remember("dome", x, z, R);
+}
+
+function palisadeRun(add: Add, colliders: Solid[], points: { x: number; z: number }[], height = 3.5) {
+  let prev: { x: number; z: number } | null = null;
+  let n = 0;
+  const h0 = height * 0.82;
+  const w = 0.55 * 0.82;
+  for (const p of points) {
+    if (prev && Math.hypot(p.x - prev.x, p.z - prev.z) < 0.8) continue;
+    if (!footOk(p.x, p.z, w * 0.6)) {
+      prev = null;
+      continue;
+    }
+    const h = h0 * (0.88 + jitter(p.x, p.z) * 0.24);
+    const gy = gyAt(p.x, p.z);
+    solidBox(add, colliders, 0x3d342a, w, h, w * 0.9, p.x, gy + h / 2, p.z);
+    add(0x3d342a, w * 0.35, 0.28, w * 0.35, p.x, gy + h + 0.08, p.z);
+    if (prev) {
+      const len = Math.hypot(p.x - prev.x, p.z - prev.z);
+      const yaw = Math.atan2(-(p.z - prev.z), p.x - prev.x);
+      add(0xb59a6a, len, 0.05, 0.05, (p.x + prev.x) / 2, gy + h * 0.72, (p.z + prev.z) / 2, yaw);
+      add(0xb59a6a, len, 0.05, 0.05, (p.x + prev.x) / 2, gy + h * 0.4, (p.z + prev.z) / 2, yaw);
+    }
+    if (n % 8 === 0) ringEmblem(add, p.x, gy + h * 0.55, p.z + 0.32, 0, 0.5);
+    remember("palisade", p.x, p.z, w * 0.6);
+    prev = p;
+    n += 1;
+  }
+}
+
+function offsetEdge(edgeId: string, side: number, dist: number) {
+  const edge = GHELSBA_GRAPH.edges.find((row) => row.id === edgeId);
+  if (!edge) return [];
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i + 1 < edge.pts.length; i++) {
+    const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+    const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const steps = Math.max(1, Math.round(len / 1.25));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      out.push({ x: a.x + dx * t + (-dz / len) * side * dist, z: a.z + dz * t + (dx / len) * side * dist });
+    }
+  }
+  return out;
+}
+
+function yardRing(id: string, radius: number) {
+  const at = nodeAt(id);
+  const open: number[] = [];
+  for (const edge of GHELSBA_GRAPH.edges) {
+    const ends = [edge.pts[0], edge.pts[edge.pts.length - 1]];
+    for (let e = 0; e < ends.length; e++) {
+      const [gx, gy] = ends[e];
+      const p = gridToWorld(gx, gy);
+      if (Math.hypot(p.x - at.x, p.z - at.z) > 8) continue;
+      const inward = e === 0 ? edge.pts[1] : edge.pts[edge.pts.length - 2];
+      const q = gridToWorld(inward[0], inward[1]);
+      open.push(Math.atan2(q.z - p.z, q.x - p.x));
+    }
+  }
+  const pts: { x: number; z: number }[] = [];
+  const count = Math.max(12, Math.round((Math.PI * 2 * radius) / 1.25));
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    if (open.some((o) => Math.abs(Math.atan2(Math.sin(a - o), Math.cos(a - o))) < 0.55)) continue;
+    pts.push({ x: at.x + Math.cos(a) * radius, z: at.z + Math.sin(a) * radius });
+  }
+  return pts;
+}
+
+function bridgeSpan(add: Add, colliders: Solid[], ax: number, az: number, bx: number, bz: number) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len = Math.hypot(dx, dz);
+  if (len < 3) return;
+  const yaw = Math.atan2(-dz, dx);
+  const nx = -dz / len;
+  const nz = dx / len;
+  const mx = (ax + bx) / 2;
+  const mz = (az + bz) / 2;
+  add(0x8a6844, len, 0.1, 2.2, mx, 0.1, mz, yaw);
+  const boards = Math.max(2, Math.round(len / 1.2));
+  for (let i = 0; i < boards; i++) {
+    const t = (i + 0.5) / boards;
+    add(0x6e5438, 0.22, 0.05, 2.05, ax + dx * t, 0.16, az + dz * t, yaw);
+  }
+  const posts = Math.max(1, Math.round(len / 6));
+  for (const s of [-1, 1] as const) {
+    let prev: { x: number; z: number } | null = null;
+    for (let i = 0; i <= posts; i++) {
+      const t = i / posts;
+      const px = ax + dx * t + nx * 1.95 * s;
+      const pz = az + dz * t + nz * 1.95 * s;
+      if (!footOk(px, pz, 0.24)) {
+        prev = null;
+        continue;
+      }
+      solidBox(add, colliders, 0x3d342a, 0.26, 1.25, 0.26, px, 0.62, pz);
+      remember("bridge-post", px, pz, 0.24);
+      if (prev) {
+        sagRope(add, prev.x, prev.z, px, pz, 1.15, 0.6);
+        sagRope(add, prev.x, prev.z, px, pz, 0.62, 0.45);
+      }
+      prev = { x: px, z: pz };
+    }
+  }
+}
+
+function ropeBridges(add: Add, colliders: Solid[]) {
+  for (const edge of GHELSBA_GRAPH.edges) {
+    if (edge.level !== "bridge") continue;
+    for (let i = 0; i + 1 < edge.pts.length; i++) {
+      const a = gridToWorld(edge.pts[i][0], edge.pts[i][1]);
+      const b = gridToWorld(edge.pts[i + 1][0], edge.pts[i + 1][1]);
+      bridgeSpan(add, colliders, a.x, a.z, b.x, b.z);
+    }
+  }
+}
+
+function gateFrame(add: Add, colliders: Solid[], edgeId: string) {
+  const edge = GHELSBA_GRAPH.edges.find((row) => row.id === edgeId);
+  if (!edge) return;
+  for (const end of [0, 1]) {
+    const i0 = end === 0 ? 0 : edge.pts.length - 1;
+    const i1 = end === 0 ? 1 : edge.pts.length - 2;
+    const a = gridToWorld(edge.pts[i0][0], edge.pts[i0][1]);
+    const b = gridToWorld(edge.pts[i1][0], edge.pts[i1][1]);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const tx = dx / len;
+    const tz = dz / len;
+    const nx = -tz;
+    const nz = tx;
+    const x = a.x + tx * Math.min(4.2, len * 0.35);
+    const z = a.z + tz * Math.min(4.2, len * 0.35);
+    let marked = false;
+    for (const s of [-1, 1] as const) {
+      const px = x + nx * 2.2 * s;
+      const pz = z + nz * 2.2 * s;
+      if (!footOk(px, pz, 0.35)) continue;
+      const lean = Math.atan2(-(nz * s), nx * s);
+      solidBox(add, colliders, 0x3d342a, 0.46, 3.1, 0.42, px, 1.45, pz, lean, 0.2);
+      add(0xb59a6a, 0.52, 0.1, 0.5, px, 2.85, pz);
+      if (!marked) {
+        remember("gate-frame", px, pz, 0.4);
+        marked = true;
+      }
+    }
+    if (!marked) continue;
+    const yaw = Math.atan2(-nz, nx);
+    add(0x3d342a, 4.7, 0.26, 0.24, x, 3.05, z, yaw);
+    add(0xb59a6a, 4.3, 0.07, 0.07, x, 2.82, z, yaw);
+  }
+}
+
+function standingStone(add: Add, colliders: Solid[], x: number, z: number, fx: number, fz: number) {
+  const h = 2.05 + jitter(x, z) * 0.4;
+  const gy = gyAt(x, z);
+  solidBox(add, colliders, 0x5e554b, 1.05, h * 0.7, 0.82, x, gy + h * 0.35, z);
+  add(0x5e554b, 0.7, h * 0.34, 0.58, x, gy + h * 0.78, z);
+  const yaw = Math.atan2(fx, fz);
+  const face = spinXZ(x, z, yaw, 0, 0.48);
+  ringEmblem(add, face.x, gy + h * 0.48, face.z, yaw, 0.62);
+  if (Math.abs(fz) < 0.65) ringEmblem(add, x, gy + h * 0.48, z + 0.48, 0, 0.5);
+  remember("stone", x, z, 0.6);
+  return true;
+}
+
+function stonePair(add: Add, colliders: Solid[], x: number, z: number) {
+  const frame = nearestEdgeFrame(x, z);
+  const spots: { x: number; z: number }[] = [];
+  for (const s of [-1, 1] as const) {
+    const spot = seat(x + frame.nx * 3.4 * s, z + frame.nz * 3.4 * s, 0.65, "floor", 2.8);
+    if (!spot) continue;
+    standingStone(add, colliders, spot.x, spot.z, -frame.nx * s, -frame.nz * s);
+    spots.push(spot);
+  }
+  if (spots.length === 2) sagRope(add, spots[0].x, spots[0].z, spots[1].x, spots[1].z, 1.7, 0.55);
+}
+
+function caveMouth(add: Add, gx: number, gy: number) {
+  const origin = gridToWorld(gx, gy);
+  let best: { x: number; z: number; y: number; score: number } | null = null;
+  const nearFloor = (x: number, z: number) => {
+    for (const [dx, dz] of [[0, 4], [0, 8], [6, 4], [-6, 4], [8, 2], [-8, 2], [10, 0], [-10, 0]] as const) {
+      if (inGhelsbaGraph(x + dx, z + dz, 0)) return true;
+    }
+    return false;
+  };
+  for (let dz = -28; dz <= 8; dz += 2) {
+    for (let dx = -18; dx <= 18; dx += 2) {
+      const x = origin.x + dx;
+      const z = origin.z + dz;
+      const y = ghelsbaTerrainHeight(x, z);
+      if (y < 1.05 || y > 4.6) continue;
+      if (inGhelsbaGraph(x, z, 0)) continue;
+      if (!footOk(x, z, 1.2)) continue;
+      if (!nearFloor(x, z)) continue;
+      const score = -Math.abs(dx) * 0.08 - Math.abs(dz) * 0.04 - Math.abs(y - 2.1);
+      if (!best || score > best.score) best = { x, z, y, score };
+    }
+  }
+  if (!best) return false;
+  const base = Math.min(best.y * 0.35, 1.2);
+  add(0x1a1410, 2.5, 1.7, 1.15, best.x, base + 0.75, best.z);
+  add(0x5e554b, 3.2, 0.42, 1.45, best.x, base + 1.7, best.z);
+  add(0x6e5a48, 0.5, 1.45, 0.85, best.x - 1.35, base + 0.7, best.z);
+  add(0x6e5a48, 0.5, 1.45, 0.85, best.x + 1.35, base + 0.7, best.z);
+  remember("cave", best.x, best.z, 1.2);
+  return true;
+}
+
+function tripod(add: Add, x: number, z: number) {
+  const top = 1.9;
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const yaw = Math.atan2(-Math.sin(a), Math.cos(a));
+    add(0x3d342a, 0.07, top, 0.07, x + Math.cos(a) * 0.28, top * 0.45, z + Math.sin(a) * 0.28, yaw, 0.62);
+  }
+  add(0xb59a6a, 0.14, 0.08, 0.14, x, top * 0.92, z);
+  remember("tripod", x, z, 0.55);
+}
+
+function emblemBanner(add: Add, colliders: Solid[], x: number, z: number) {
+  const h = 3.5;
+  solidBox(add, colliders, 0x3d342a, 0.14, h, 0.14, x, h / 2, z);
+  add(0x957d5e, 1.05, 1.05, 0.06, x, h * 0.72, z + 0.06);
+  ringEmblem(add, x, h * 0.72, z + 0.12, 0, 0.8);
+  remember("banner", x, z, 0.4);
+}
+
+function pennantString(add: Add, colliders: Solid[], x: number, z: number) {
+  const frame = nearestEdgeFrame(x, z);
+  const a = seat(x + frame.nx * 3.3, z + frame.nz * 3.3, 0.3, "floor", 2.8);
+  const b = seat(x - frame.nx * 3.3, z - frame.nz * 3.3, 0.3, "floor", 2.8);
+  if (!a || !b) return;
+  solidBox(add, colliders, 0x3d342a, 0.12, 2.6, 0.12, a.x, 1.3, a.z);
+  solidBox(add, colliders, 0x3d342a, 0.12, 2.6, 0.12, b.x, 1.3, b.z);
+  sagRope(add, a.x, a.z, b.x, b.z, 2.35, 0.55);
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  for (let i = 1; i <= 3; i++) {
+    const t = i / 4;
+    add(i % 2 ? 0xd8ccb0 : 0x8d3a32, 0.36, 0.55, 0.05, a.x + dx * t, 2.05 - Math.sin(t * Math.PI) * 0.55, a.z + dz * t);
+  }
+  remember("pennant", a.x, a.z, 0.3);
+  remember("pennant", b.x, b.z, 0.3);
+}
+
+function deadTree(add: Add, colliders: Solid[], x: number, z: number) {
+  const gy = gyAt(x, z);
+  const h = 2.5 + jitter(x, z) * 1.5;
+  const wood = 0x4a433c;
+  if (gy < 0.2) solidBox(add, colliders, wood, 0.26, h, 0.26, x, gy + h / 2, z);
+  else add(wood, 0.26, h, 0.26, x, gy + h / 2, z);
+  const branches = 2 + Math.floor(jitter(x + 2, z) * 3);
+  for (let i = 0; i < branches; i++) {
+    const yaw = jitter(x, z + i * 4) * Math.PI * 2;
+    add(wood, 1.15, 0.08, 0.08, x, gy + h * (0.5 + i * 0.12), z, yaw, 0.85);
+  }
+  remember("dead-tree", x, z, 0.4);
+}
+
+function canopyTree(add: Add, colliders: Solid[], x: number, z: number) {
+  const gy = gyAt(x, z);
+  solidBox(add, colliders, 0x5a4636, 0.36, 2.2, 0.36, x, gy + 1.1, z);
+  add(0x3d4a32, 2.3, 1.15, 2.05, x, gy + 2.45, z);
+  add(0x4a5a34, 1.45, 0.8, 1.3, x + 0.25, gy + 3.15, z - 0.15);
+  remember("canopy", x, z, 1.25);
+}
+
+function hugeCrystal(add: Add, x: number, z: number) {
+  const hues = [0x7eb6dc, 0xb7d7f2, 0xe9f7ff, 0xb7d7f2, 0x7eb6dc];
+  const widths = [0.26, 0.58, 0.92, 0.58, 0.26];
+  for (let i = 0; i < hues.length; i++) add(hues[i], widths[i], 0.4, widths[i] * 0.78, x, 1.2 + i * 0.36, z, 0.4 + i * 0.2);
+  add(0xd7f4ff, 0.18, 0.18, 0.18, x, 2.15, z);
+  remember("crystal", x, z, 0.55);
+}
+
+function skyline(add: Add, colliders: Solid[]) {
+  const pts: { x: number; z: number }[] = [];
+  for (let gy = 6.35; gy <= 8.25; gy += 0.07) {
+    for (let gx = 6.05; gx <= 7.65; gx += 0.035) {
+      const at = gridToWorld(gx, gy);
+      const y = ghelsbaTerrainHeight(at.x, at.z);
+      if (y < 0.6 || y > 3.4) continue;
+      if (inGhelsbaGraph(at.x, at.z, 0)) continue;
+      if (!footOk(at.x, at.z, 0.4)) continue;
+      pts.push(at);
+      break;
+    }
+  }
+  palisadeRun(add, colliders, pts, 3.2);
+}
+
+function dressGhelsba(add: Add, colliders: Solid[]) {
+  ghelsbaProps.length = 0;
+  occupied.length = 0;
+  walkSamples = null;
+  const door = { x: HUT_HOME.x + 0.8, z: HUT_HOME.z + 1.2 };
+  warHut(add, colliders, door.x, door.z, 1, "w", true);
+  const plateau = mustSeat("war-hut", -1007, 624, hutOuter(1.3), "floor", hutOuter(1.3) + 2.55);
+  warHut(add, colliders, plateau.x, plateau.z, 1.3, "s", false);
+  const walk = 4.2;
+  for (let i = 0; i < 4; i++) {
+    const z = plateau.z + hutOuter(1.3) * 0.55 + 1.2 + i * 1.5;
+    add(0x8a6844, 1.4, 0.08, 0.9, plateau.x, 0.08, z);
+    skullPost(add, plateau.x - 0.9, z);
+    skullPost(add, plateau.x + 0.9, z);
+    if (z > plateau.z + walk) break;
+  }
+  const domeSeeds = [
+    [door.x + 4, door.z - 5],
+    [door.x - 2, door.z + 6],
+    [plateau.x - 6, plateau.z - 2],
+    [plateau.x + 5, plateau.z + 3],
+  ];
+  for (const [x, z] of domeSeeds) {
+    const spot = seat(x, z, 2.15, "floor", 4.4);
+    if (spot) domeHut(add, colliders, spot.x, spot.z);
+  }
+  const snake = nodeAt("area_nw_snake");
+  for (let i = 0; i < 8 && ghelsbaProps.filter((p) => p.id === "dome").length < 7; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const spot = seat(snake.x + Math.cos(a) * 7, snake.z + Math.sin(a) * 6, 2.15, "floor", 4.4);
+    if (spot) domeHut(add, colliders, spot.x, spot.z);
+  }
+  palisadeRun(add, colliders, [...offsetEdge("e_ramp_r67", 1, 3.25), ...offsetEdge("e_ramp_r67", -1, 3.25)]);
+  palisadeRun(add, colliders, [...offsetEdge("e_snake_n98", 1, 3.25), ...offsetEdge("e_snake_n98", -1, 3.25)]);
+  palisadeRun(add, colliders, yardRing("area_trench_h7", 8.2));
+  palisadeRun(add, colliders, offsetEdge("e_top_down", 1, 3.3).slice(0, 8));
+  palisadeRun(add, colliders, offsetEdge("e_diagonal", -1, 3.3).slice(0, 8));
+  caveMouth(add, 6.4, 6.72);
+  caveMouth(add, 6.35, 8.6);
+  caveMouth(add, 6.5, 10.4);
+  skyline(add, colliders);
+  const logA = poiAt("logging_3");
+  const logB = poiAt("logging_1");
+  const picket: { x: number; z: number }[] = [];
+  for (let i = 0; i <= 7; i++) {
+    const t = i / 7;
+    const spot = seat(logA.x + (logB.x - logA.x) * t + 5, logA.z + (logB.z - logA.z) * t, 0.3, "floor", 2.7);
+    if (spot) picket.push(spot);
+  }
+  palisadeRun(add, colliders, picket, 1.6);
+  ropeBridges(add, colliders);
+  gateFrame(add, colliders, "e_top_down");
+  gateFrame(add, colliders, "e_diagonal");
+  stonePair(add, colliders, nodeAt("j_n98").x, nodeAt("j_n98").z);
+  stonePair(add, colliders, nodeAt("j_g7").x, nodeAt("j_g7").z);
+  stonePair(add, colliders, nodeAt("area_hut").x, nodeAt("area_hut").z);
+  stonePair(add, colliders, nodeAt("area_south_basin").x, nodeAt("area_south_basin").z);
+  stonePair(add, colliders, door.x - hutOuter(1) - 1.2, door.z);
+  stonePair(add, colliders, plateau.x, plateau.z + hutOuter(1.3) + 1.4);
+  for (const [x, z] of [[plateau.x + 8, plateau.z], [nodeAt("area_plateau").x + 7, nodeAt("area_plateau").z - 2], [nodeAt("area_plateau").x - 6, nodeAt("area_plateau").z + 4]] as const) {
+    const spot = seat(x, z, 0.55, "floor", 2.6);
+    if (spot) tripod(add, spot.x, spot.z);
+  }
+  const yard = seat(nodeAt("area_trench_h7").x + 6.5, nodeAt("area_trench_h7").z + 3, 1.7, "floor", 4.3);
+  if (yard) {
+    watchtower(add, colliders, yard.x, yard.z);
+    remember("lookout", yard.x, yard.z, 1.7);
+  }
+  const camp = seat(nodeAt("area_camp_i6").x + 5, nodeAt("area_camp_i6").z - 2, 1.7, "floor", 4.3);
+  if (camp) {
+    watchtower(add, colliders, camp.x, camp.z);
+    remember("lookout", camp.x, camp.z, 1.7);
+  }
+  for (const [x, z] of [[snake.x + 5, snake.z + 2], [nodeAt("area_plateau").x - 5, nodeAt("area_plateau").z + 3], [nodeAt("j_entry_bend").x - 4, nodeAt("j_entry_bend").z - 3]] as const) {
+    const spot = seat(x, z, 0.4, "floor", 2.8);
+    if (spot) emblemBanner(add, colliders, spot.x, spot.z);
+  }
+  pennantString(add, colliders, snake.x, snake.z);
+  pennantString(add, colliders, nodeAt("j_n98").x, nodeAt("j_n98").z);
+  const treeSeeds = [nodeAt("j_g7"), nodeAt("j_hut_s"), nodeAt("area_hut"), gridToWorld(6.45, 10.4), nodeAt("j_top_w"), nodeAt("j_top_e"), nodeAt("warmachine_i5")];
+  let trees = 0;
+  for (let pass = 0; pass < 3 && trees < 25; pass++) {
+    for (const seed of treeSeeds) {
+      for (let k = 0; k < 14 && trees < 25; k++) {
+        const ang = (k / 14) * Math.PI * 2 + pass * 0.31;
+        const dist = 6 + (k % 5) * 2.6 + pass * 2;
+        const x = seed.x + Math.cos(ang) * dist;
+        const z = seed.z + Math.sin(ang) * dist;
+        const c = ghelsbaClearance(x, z);
+        if (c < -12 || c > 3.2) continue;
+        const spot = seat(x, z, 0.4, c < 0.1 ? "rim" : "floor", 2.7);
+        if (!spot) continue;
+        deadTree(add, colliders, spot.x, spot.z);
+        trees += 1;
+      }
+    }
+  }
+  for (const id of ["logging_1", "logging_2", "logging_3", "logging_4"] as const) {
+    const at = poiAt(id);
+    const spot = seat(at.x + 3.5, at.z - 2, 1.25, "floor", 3.3);
+    if (spot) canopyTree(add, colliders, spot.x, spot.z);
+    shrub(add, at.x - 2.5, at.z + 2);
+  }
+  const g8 = nodeAt("river_west_end");
+  const pile = seat(g8.x + 3, g8.z - 5, 1.5, "rim", 1.8) ?? seat(g8.x + 5, g8.z + 2, 1.5, "floor", 3.2);
+  if (pile) {
+    const yaw = 0.4;
+    for (let i = 0; i < 3; i++) add(0x3d342a, 3.1, 0.42, 0.42, pile.x + i * 0.28, gyAt(pile.x, pile.z) + 0.28 + i * 0.16, pile.z, yaw + i * 0.18);
+    remember("fallen-log", pile.x, pile.z, 1.5);
+  }
+  const crystalAt = nodeAt("crystal");
+  const frame = nearestEdgeFrame(crystalAt.x, crystalAt.z);
+  const crystal = mustSeat("crystal", crystalAt.x + frame.nx * 3.5, crystalAt.z + frame.nz * 3.5, 0.55, "floor", 2.9);
+  hugeCrystal(add, crystal.x, crystal.z);
+}
+
+export function assertGhelsbaProps(): void {
+  const count = (id: string) => ghelsbaProps.filter((p) => p.id === id).length;
+  const need: [string, number][] = [
+    ["war-hut", 2], ["dome", 7], ["crystal", 1], ["fallen-log", 1], ["cave", 3],
+    ["palisade", 24], ["bridge-post", 6], ["gate-frame", 2], ["stone", 8],
+    ["tripod", 2], ["lookout", 2], ["banner", 3], ["dead-tree", 20], ["canopy", 4],
+  ];
+  for (const [id, n] of need) if (count(id) < n) throw new Error(`${id} ${count(id)} < ${n}`);
+  for (const prop of ghelsbaProps) {
+    if (onEdgeCenter(prop.x, prop.z, prop.r)) throw new Error(`${prop.id} on a centreline`);
+    for (const gate of ORC_GATES) {
+      if (Math.hypot(gate.x - prop.x, gate.z - prop.z) < 4) throw new Error(`${prop.id} within 4 of ${gate.id}`);
+    }
+  }
+}
+
 export function buildOrcLands(add: Add, colliders: Solid[]) {
   const dirt = 9269316;
   const dirtDark = 7033908;
@@ -1993,15 +2711,8 @@ export function buildOrcLands(add: Add, colliders: Solid[]) {
   cliffWall(add, colliders, YUG_ROOMS, yugGates, "cave");
   cliffWall(add, colliders, PEAK_ROOMS, peakGates, "rock");
   for (const gate of ORC_GATES) if (!inGhelsbaGraph(gate.x, gate.z, 0)) apron(add, gate, cave);
-  paintBridges(add);
-  hut(add, colliders, hutSpot.x, hutSpot.z);
+  dressGhelsba(add, colliders);
   const camp = besideFloor("area_plateau", 6);
-  tent(add, colliders, camp.x - 4.2, camp.z + 2.4);
-  tent(add, colliders, camp.x + 4.4, camp.z - 2.2);
-  banner(add, camp.x - 3.2, camp.z - 3.2);
-  banner(add, camp.x + 3.4, camp.z + 3.2);
-  add(9127187, 1.5, 0.35, 1.5, camp.x - 1.2, 0.18, camp.z + 1.2);
-  add(14927226, 0.55, 0.4, 0.55, camp.x - 1.2, 0.5, camp.z + 1.2);
   const look = nodeAt("area_nw_snake");
   shrub(add, look.x + 4, look.z + 2);
   shrub(add, nodeAt("area_f7_room").x + 3, nodeAt("area_f7_room").z - 2);
@@ -2014,7 +2725,6 @@ export function buildOrcLands(add: Add, colliders: Solid[]) {
   lobeStakes(add, "warmachine_i5");
   if (propClear(camp.x - 2.2, camp.z + 0.4, 3.2) && !onEdgeCenter(camp.x - 2.2, camp.z + 0.4, 2.4)) drum(add, camp.x - 2.2, camp.z + 0.4);
   if (propClear(camp.x + 2.4, camp.z - 0.6, 3.2) && !onEdgeCenter(camp.x + 2.4, camp.z - 0.6, 2.4)) weaponRack(add, camp.x + 2.4, camp.z - 0.6);
-  if (propClear(camp.x, camp.z - 2.8, 3.2) && !onEdgeCenter(camp.x, camp.z - 2.8, 2.4)) skullPole(add, camp.x, camp.z - 2.8);
   for (const fire of ORC_FIRES) if (fire.zone === "ghelsba") campfire(add, fire.x, fire.z);
   const siege = mid(fI10);
   catapult(add, colliders, siege.x, siege.z - 4);
@@ -2286,4 +2996,5 @@ export function assertGhelsba(): void {
   for (const step of walks) {
     if (blocked(step.x, step.z)) throw new Error("a walk path grew a collider");
   }
+  assertGhelsbaProps();
 }
