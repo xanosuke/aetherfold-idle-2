@@ -1529,9 +1529,12 @@ function cutGateGaps(a: V2, b: V2, gates: readonly { x: number; z: number }[]): 
 /** Outpost heightfield. 12 columns by 12 rows, about 2 yalms between vertices, 64-yalm chunks. */
 export const GHELSBA_TERRAIN = { x: OUT_X, z: OUT_Z, span: 12 * CELL, step: 2, chunk: 64 };
 
-const TERRAIN_GRASS = 6974788;
-const TERRAIN_ROCK = 0x6d6256;
-const TERRAIN_MOSS = 0x2c3328;
+const TERRAIN_DIRT = 0x8a7350;
+const TERRAIN_GRASS = 0x6a6c44;
+const TERRAIN_ROCK = 0x7a6a58;
+const TERRAIN_MOSS = 0x3d4a32;
+/** Canyon haze. The clear color uses the same value. */
+export const GHELSBA_FOG = { color: 0x4a5040, near: 44, far: 110 };
 
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
@@ -1546,6 +1549,24 @@ function terrainHash(x: number, z: number) {
 function varyRgb(hex: number, x: number, z: number, amp: number, shade = 1) {
   const k = Math.max(0, Math.min(1.35, shade * (1 + (terrainHash(x, z) * 2 - 1) * amp)));
   return [((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k] as const;
+}
+
+function mixRgb(a: readonly number[], b: readonly number[], t: number) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t] as const;
+}
+
+/** 1 on the trodden center of a graph edge, 0 at the edge of its half-width. Areas and discs stay grass. */
+function pathDirt(x: number, z: number) {
+  let best = 0;
+  for (const seg of segsAround(x, z)) {
+    if (seg.half <= 0) continue;
+    const q = nearPoint(x, z, seg.ax, seg.az, seg.bx, seg.bz);
+    const dist = Math.hypot(x - q.x, z - q.z);
+    if (dist >= seg.half) continue;
+    const t = 1 - smoothstep(seg.half * 0.6, seg.half, dist);
+    if (t > best) best = t;
+  }
+  return best;
 }
 
 function inBuiltRoom(x: number, z: number) {
@@ -1565,7 +1586,11 @@ export function ghelsbaTerrainSample(x: number, z: number) {
       if (drop > 2) y += (terrainHash(x * 0.37 + 4.1, z * 0.37 - 2.3) * 2 - 1) * 0.5;
     }
   }
-  const color = y <= 0 ? varyRgb(TERRAIN_GRASS, x, z, 0.04) : y >= 5 ? varyRgb(TERRAIN_MOSS, x, z, 0.08) : varyRgb(TERRAIN_ROCK, x, z, 0.08, 0.78 + 0.22 * (y / 5));
+  const color = y <= 0
+    ? mixRgb(varyRgb(TERRAIN_GRASS, x, z, 0.04), varyRgb(TERRAIN_DIRT, x, z, 0.05), pathDirt(x, z))
+    : y >= 5
+      ? varyRgb(TERRAIN_MOSS, x, z, 0.08)
+      : varyRgb(TERRAIN_ROCK, x, z, 0.08);
   return { y, r: color[0], g: color[1], b: color[2] };
 }
 

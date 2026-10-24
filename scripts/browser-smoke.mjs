@@ -152,28 +152,112 @@ function decodePng(buf) {
   return { width, height, data: out };
 }
 
+function lumOf(r, g, b) {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function median(values) {
+  if (!values.length) return 0;
+  values.sort((a, b) => a - b);
+  return values[values.length >> 1];
+}
+
 function canvasStats(png) {
   const { width, height, data } = decodePng(png);
   let black = 0;
-  let player = 0;
-  const x0 = Math.floor(width * 0.2);
-  const x1 = Math.floor(width * 0.8);
-  const y0 = Math.floor(height * 0.2);
-  const y1 = Math.floor(height * 0.8);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      if (r < 12 && g < 12 && b < 12) black++;
-      if (x < x0 || x >= x1 || y < y0 || y >= y1) continue;
-      const lit = r > 175 && g > 155 && b > 130;
-      const skin = r > 130 && g > 80 && b > 55 && r > g + 18 && r > b + 35;
-      if (lit || skin) player++;
+  for (let i = 0; i < width * height; i++) {
+    const r = data[i * 4];
+    const g = data[i * 4 + 1];
+    const b = data[i * 4 + 2];
+    // The log panel is HTML painted over the canvas. Its ink is not terrain.
+    if (r === 10 && g === 12 && b === 16) continue;
+    if (r < 20 && g < 20 && b < 20) black++;
+  }
+  const at = (x, y) => {
+    const i = (y * width + x) * 4;
+    return [data[i], data[i + 1], data[i + 2]];
+  };
+  let sceneBottom = Math.floor(height * 0.45);
+  for (let y = Math.floor(height * 0.2); y < height; y += 4) {
+    let sum = 0;
+    let n = 0;
+    for (let x = 0; x < width; x += 8) {
+      const [r, g, b] = at(x, y);
+      sum += lumOf(r, g, b);
+      n++;
+    }
+    if (sum / n < 55) {
+      sceneBottom = y;
+      break;
     }
   }
-  return { width, height, black, player, blackPct: black / (width * height) };
+  // Shirt highlights are the only near-white pixels on the hero. Dirt is darker and warmer.
+  const cell = 32;
+  const bins = new Map();
+  const xLo = Math.floor(width * 0.3);
+  const xHi = Math.floor(width * 0.7);
+  for (let y = 0; y < sceneBottom; y++) {
+    for (let x = xLo; x < xHi; x++) {
+      const [r, g, b] = at(x, y);
+      if (r <= 230 || g <= 210 || b <= 190) continue;
+      const key = `${(x / cell) | 0},${(y / cell) | 0}`;
+      bins.set(key, (bins.get(key) || 0) + 1);
+    }
+  }
+  let seed = null;
+  for (const [key, n] of bins) if (!seed || n > seed.n) seed = { key, n };
+  let minX = width;
+  let maxX = 0;
+  let minY = sceneBottom;
+  let maxY = 0;
+  let hits = 0;
+  if (seed) {
+    const [sx, sy] = seed.key.split(",").map(Number);
+    for (const [key, n] of bins) {
+      if (n < 8) continue;
+      const [ix, iy] = key.split(",").map(Number);
+      if (Math.abs(ix - sx) > 3 || Math.abs(iy - sy) > 4) continue;
+      hits += n;
+      minX = Math.min(minX, ix * cell);
+      maxX = Math.max(maxX, (ix + 1) * cell);
+      minY = Math.min(minY, iy * cell);
+      maxY = Math.max(maxY, (iy + 1) * cell);
+    }
+  }
+  const collect = (xa, xb, ya, yb) => {
+    const vals = [];
+    const yStart = Math.max(0, ya);
+    const yEnd = Math.min(sceneBottom, yb);
+    const xStart = Math.max(0, xa);
+    const xEnd = Math.min(width, xb);
+    for (let y = yStart; y < yEnd; y += 2) {
+      for (let x = xStart; x < xEnd; x += 2) {
+        const [r, g, b] = at(x, y);
+        vals.push(lumOf(r, g, b));
+      }
+    }
+    return vals;
+  };
+  // Ground just east of the hero, below the shirt, is the path under their feet.
+  const pathVals = hits > 40
+    ? collect(maxX + 70, maxX + 180, maxY + 36, maxY + 84)
+    : collect(Math.floor(width * 0.55), Math.floor(width * 0.68), Math.floor(sceneBottom * 0.78), sceneBottom - 4);
+  const top = Math.max(12, Math.floor(sceneBottom * 0.22));
+  const side = Math.floor(width * 0.22);
+  const plateauVals = [...collect(8, side, 6, top), ...collect(width - side, width - 8, 6, top)];
+  const pathLum = median(pathVals);
+  const plateauLum = median(plateauVals);
+  return {
+    width,
+    height,
+    black,
+    blackPct: black / (width * height),
+    pathLum: Math.round(pathLum * 10) / 10,
+    plateauLum: Math.round(plateauLum * 10) / 10,
+    lumDelta: Math.round(Math.abs(pathLum - plateauLum) * 10) / 10,
+    sceneBottom,
+    playerHits: hits,
+  };
 }
 
 function ghelsbaPlaces() {
@@ -261,8 +345,8 @@ async function checkGhelsba(browser, url) {
     const stats = canvasStats(png);
     shots.push({ name: stand.name, square: stand.square, ...stats, path, errors });
     await page.close();
-    if (stats.blackPct >= 0.01 || stats.player < 40) {
-      return { ok: false, error: `${stand.name} black ${(stats.blackPct * 100).toFixed(2)}% player ${stats.player}`, nodes: places.nodes, shots };
+    if (stats.blackPct >= 0.005 || stats.lumDelta < 30) {
+      return { ok: false, error: `${stand.name} black ${(stats.blackPct * 100).toFixed(2)}% lum Δ ${stats.lumDelta} (path ${stats.pathLum} plateau ${stats.plateauLum})`, nodes: places.nodes, shots };
     }
   }
   return { ok: true, nodes: places.nodes, shots };
