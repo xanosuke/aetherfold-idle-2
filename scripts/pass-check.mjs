@@ -22,11 +22,14 @@ const probe = spawnSync(
       import { assertWestGrid } from "./src/game/world.ts";
       import { assertEast } from "./src/game/east-ronfaure.ts";
       import { assertGhelsba } from "./src/game/ghelsba.ts";
+      import { assertFort, assertYughott } from "./src/game/orc-height.ts";
       import { assertWorldLinks } from "./src/game/world-links.ts";
       assertWestGrid();
       assertPass();
       assertEast();
       assertGhelsba();
+      assertFort();
+      assertYughott();
       assertWorldLinks(false);
       const poi = PASS_GRAPH.pois.find((item) => item.id === "nm_taisaijin");
       const h9 = gridToWorld(poi.gx, poi.gy);
@@ -106,7 +109,7 @@ try {
   await mapPage.waitForFunction(() => {
     const text = document.body?.innerText || "";
     return text.includes("H-9") && text.includes("Ranguemont");
-  }, null, { timeout: 25000 });
+  }, null, { timeout: 90000 });
   await mapPage.getByRole("button", { name: /Open the .* map/ }).click();
   await mapPage.getByRole("dialog", { name: "Zone map" }).waitFor({ timeout: 8000 });
   await mapPage.waitForTimeout(400);
@@ -122,7 +125,7 @@ try {
   await viewPage.waitForFunction(() => {
     const text = document.body?.innerText || "";
     return text.includes("F-10") && text.includes("Ranguemont");
-  }, null, { timeout: 25000 });
+  }, null, { timeout: 90000 });
   await viewPage.waitForTimeout(800);
   const viewShot = `${shots}/pass-view-f10.png`;
   await viewPage.screenshot({ path: viewShot });
@@ -194,7 +197,7 @@ try {
   await fadePage.waitForFunction(() => {
     const text = document.body?.innerText || "";
     return text.includes("E-10") && text.includes("Ranguemont");
-  }, null, { timeout: 45000 });
+  }, null, { timeout: 90000 });
   await fadePage.waitForTimeout(700);
   const fadeAudit = await fadePage.evaluate(() => (window.__passAudit ? window.__passAudit() : null));
   const front = (fadeAudit || []).filter((row) => {

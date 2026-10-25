@@ -482,7 +482,7 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
   ctx.clip();
   ctx.fillStyle = "#1a5678";
   ctx.fillRect(0, 0, size, size);
-  const chart = snap.region === "King Ranperre's Tomb" ? tombChart(snap.x, snap.z) : snap.region === "Ranguemont Pass" ? passChart(snap.x, snap.z) : snap.region === "Beaucedine Glacier" ? glacierChart(snap.x, snap.z) : orcLayout(snap.region);
+  const chart = snap.region === "King Ranperre's Tomb" ? tombChart(snap.x, snap.z) : snap.region === "Ranguemont Pass" ? passChart(snap.x, snap.z) : snap.region === "Beaucedine Glacier" ? glacierChart(snap.x, snap.z) : orcLayout(snap.region, { x: snap.x, z: snap.z });
   const forest = snap.region === "West Ronfaure";
   const east = snap.region === "East Ronfaure";
   const pass = snap.region === "Ranguemont Pass" && chart;
@@ -611,7 +611,7 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame) {
   if (!ctx) return;
   const forest = snap.region === "West Ronfaure";
   const east = snap.region === "East Ronfaure";
-  const chart = snap.region === "King Ranperre's Tomb" ? tombChart(snap.x, snap.z) : snap.region === "Ranguemont Pass" ? passChart(snap.x, snap.z) : snap.region === "Beaucedine Glacier" ? glacierChart(snap.x, snap.z) : orcLayout(snap.region);
+  const chart = snap.region === "King Ranperre's Tomb" ? tombChart(snap.x, snap.z) : snap.region === "Ranguemont Pass" ? passChart(snap.x, snap.z) : snap.region === "Beaucedine Glacier" ? glacierChart(snap.x, snap.z) : orcLayout(snap.region, { x: snap.x, z: snap.z });
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#0c1b38";
   ctx.fillRect(0, 0, w, h);

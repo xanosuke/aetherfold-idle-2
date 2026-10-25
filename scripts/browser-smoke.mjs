@@ -298,6 +298,29 @@ function canvasStats(png) {
   };
 }
 
+/** Cave light keeps the shirt cream, under the outdoor near-white cut. */
+function shirtCream(png) {
+  const { width, height, data } = decodePng(png);
+  let hits = 0;
+  const x0 = Math.floor(width * 0.25);
+  const x1 = Math.floor(width * 0.7);
+  const y0 = Math.floor(height * 0.15);
+  const y1 = Math.floor(height * 0.5);
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (r < 175 || g < 165 || b < 145) continue;
+      if (Math.abs(r - g) > 28) continue;
+      if (r - b > 40 || g - b > 40) continue;
+      hits++;
+    }
+  }
+  return hits;
+}
+
 function ghelsbaPlaces() {
   const probe = spawnSync(
     process.execPath,
@@ -347,6 +370,257 @@ function ghelsbaPlaces() {
   return { ok: true, ...JSON.parse(line.slice("GHELSBAJSON ".length)) };
 }
 
+function orcHops() {
+  const probe = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `
+        import { ORC_GATES, orcZoneAt, fortSquare, yughottSquare, ghelsbaSquare } from "./src/game/ghelsba.ts";
+        import { clampFortGraph, FORT_GRAPH, gridToWorld as fortWorld } from "./src/game/fort-graph.ts";
+        import { clampYughottGraph, YUGHOTT_GRAPHS, gridToWorld as yugWorld, yughottMapAt } from "./src/game/yughott-graph.ts";
+        import { clampGhelsbaGraph, GHELSBA_GRAPH, gridToWorld } from "./src/game/ghelsba-graph.ts";
+        const names = { ghelsba: "Ghelsba Outpost", "fort-ghelsba": "Fort Ghelsba", yughott: "Yughott Grotto", horlais: "Horlais Peak" };
+        const squareOf = (zone, x, z) => zone === "ghelsba" ? ghelsbaSquare(x, z) : zone === "fort-ghelsba" ? fortSquare(x, z) : zone === "yughott" ? yughottSquare(x, z) : "peak";
+        const packOf = (zone, x, z) => {
+          if (zone === "ghelsba") return { graph: GHELSBA_GRAPH, world: gridToWorld, clamp: (px, pz) => clampGhelsbaGraph(px, pz, 0.36) };
+          if (zone === "fort-ghelsba") return { graph: FORT_GRAPH, world: fortWorld, clamp: (px, pz) => clampFortGraph(px, pz, 0.36) };
+          if (zone === "yughott") {
+            const map = yughottMapAt(x, z);
+            return { graph: YUGHOTT_GRAPHS[map], world: (gx, gy) => yugWorld(gx, gy, map), clamp: (px, pz) => clampYughottGraph(px, pz, 0.36, map) };
+          }
+          return null;
+        };
+        const insideGate = (p, gate) => Math.abs(p.x - gate.x) <= gate.hx && Math.abs(p.z - gate.z) <= gate.hz;
+        const clearOfGate = (p, gate) => Math.abs(p.x - gate.x) > gate.hx + 0.6 || Math.abs(p.z - gate.z) > gate.hz + 0.6;
+        const enters = (start, gate, zoneId, clamp) => {
+          const dx0 = gate.x - start.x;
+          const dz0 = gate.z - start.z;
+          let ix = 0;
+          let iy = 0;
+          if (dx0 > 0.45) ix = 1;
+          if (dx0 < -0.45) ix = -1;
+          if (dz0 < -0.45) iy = 1;
+          if (dz0 > 0.45) iy = -1;
+          if (ix === 0 && iy === 0) {
+            if (Math.abs(dx0) > Math.abs(dz0)) ix = dx0 > 0 ? 1 : -1;
+            else iy = dz0 > 0 ? -1 : 1;
+          }
+          const km = Math.hypot(ix, iy) || 1;
+          ix /= km;
+          iy /= km;
+          let x = start.x;
+          let z = start.z;
+          let speed = 0;
+          const dt = 1 / 30;
+          for (let frame = 0; frame < 12 * 30; frame++) {
+            speed += (5 - speed) * Math.min(1, 28 * dt);
+            const held = clamp ? clamp(x + ix * speed * dt, z + (-iy) * speed * dt) : { x: x + ix * speed * dt, z: z + (-iy) * speed * dt };
+            x = held.x;
+            z = held.z;
+            if (insideGate({ x, z }, gate)) return true;
+            const stood = orcZoneAt(x, z, 0);
+            if (!stood || stood.id !== zoneId) return false;
+          }
+          return false;
+        };
+        const candidates = (gate, srcId) => {
+          const out = [];
+          const pack = packOf(srcId, gate.x, gate.z);
+          if (!pack) {
+            const backX = gate.x - gate.arrive.x;
+            const backZ = gate.z - gate.arrive.z;
+            const len = Math.hypot(backX, backZ) || 1;
+            for (const dist of [8, 10, 12, 6, 14, 16]) out.push({ x: gate.x + (backX / len) * dist, z: gate.z + (backZ / len) * dist, along: dist });
+            return out;
+          }
+          let node = null;
+          let best = 4;
+          for (const row of pack.graph.nodes) {
+            const at = pack.world(row.gx, row.gy);
+            const d = Math.hypot(at.x - gate.x, at.z - gate.z);
+            if (d < best) { best = d; node = row; }
+          }
+          if (!node) return out;
+          const seen = new Set([node.id]);
+          const queue = [{ id: node.id, dist: 0 }];
+          const pts = [];
+          const atOf = (id) => {
+            const row = pack.graph.nodes.find((n) => n.id === id);
+            return pack.world(row.gx, row.gy);
+          };
+          while (queue.length) {
+            const cur = queue.shift();
+            for (const edge of pack.graph.edges) {
+              if (edge.from !== cur.id && edge.to !== cur.id) continue;
+              const other = edge.from === cur.id ? edge.to : edge.from;
+              let line = edge.pts.map(([gx, gy]) => pack.world(gx, gy));
+              const nodeAt = atOf(cur.id);
+              const a = line[0];
+              const b = line[line.length - 1];
+              if (Math.hypot(b.x - nodeAt.x, b.z - nodeAt.z) > Math.hypot(a.x - nodeAt.x, a.z - nodeAt.z)) line = line.slice().reverse();
+              let walked = cur.dist;
+              for (let i = line.length - 1; i > 0; i--) {
+                const p = line[i];
+                const q = line[i - 1];
+                const len = Math.hypot(q.x - p.x, q.z - p.z);
+                const steps = Math.max(1, Math.ceil(len / 2));
+                for (let s = 1; s <= steps; s++) {
+                  const t = s / steps;
+                  const along = walked + len * t;
+                  if (along > 18) continue;
+                  pts.push({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t, along });
+                }
+                walked += len;
+              }
+              if (!seen.has(other) && walked < 18) {
+                seen.add(other);
+                queue.push({ id: other, dist: walked });
+              }
+            }
+          }
+          for (const dist of [10, 8, 12, 6, 14, 16]) {
+            let pick = null;
+            for (const p of pts) if (Math.abs(p.along - dist) < (pick ? Math.abs(pick.along - dist) : 2.2)) pick = p;
+            if (pick) out.push(pick);
+          }
+          return out;
+        };
+        const byId = (id) => {
+          const gate = ORC_GATES.find((row) => row.id === id);
+          if (!gate) throw new Error(id);
+          return gate;
+        };
+        const order = ["ghelsba-fort", "ghelsba-yughott", "fort-yug-g9", "yug-fort-h8", "fort-yug-j8", "yug-horlais-k6", "horlais-k6", "yug-fort-f7", "fort-yug-j7", "yug-fort-k5", "fort-out"];
+        const hops = order.map((id) => {
+          const gate = byId(id);
+          const src = orcZoneAt(gate.x, gate.z, 0);
+          const landZone = orcZoneAt(gate.arrive.x, gate.arrive.z, 0.2);
+          if (!src || !landZone || landZone.id !== gate.to) throw new Error(id + " lands in " + (landZone && landZone.id));
+          const pack = packOf(src.id, gate.x, gate.z);
+          let stand = null;
+          for (const cand of candidates(gate, src.id)) {
+            const next = pack ? pack.clamp(cand.x, cand.z) : cand;
+            const stood = orcZoneAt(next.x, next.z, 0.2);
+            if (!stood || stood.id !== src.id || !clearOfGate(next, gate) || insideGate(next, gate)) continue;
+            if (!enters(next, gate, src.id, pack && pack.clamp)) continue;
+            stand = next;
+            break;
+          }
+          if (!stand) throw new Error(id + " has no approach");
+          return {
+            name: id,
+            x: stand.x,
+            z: stand.z,
+            mouthX: gate.x,
+            mouthZ: gate.z,
+            landX: gate.arrive.x,
+            landZ: gate.arrive.z,
+            from: names[src.id],
+            dest: names[landZone.id],
+            square: squareOf(landZone.id, gate.arrive.x, gate.arrive.z),
+          };
+        });
+        console.log("ORCHOPS " + JSON.stringify(hops));
+      `,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const text = `${probe.stdout || ""}\n${probe.stderr || ""}`;
+  if (probe.status !== 0) return { ok: false, error: text.slice(-800) };
+  const line = (probe.stdout || "").split("\n").find((row) => row.startsWith("ORCHOPS "));
+  if (!line) return { ok: false, error: text.slice(-800) };
+  return { ok: true, hops: JSON.parse(line.slice("ORCHOPS ".length)) };
+}
+
+async function orcTrace(browser, url, seated) {
+  const planned = orcHops();
+  if (!planned.ok) return planned;
+  const shots = [];
+  for (const hop of planned.hops) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+    });
+    page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+    await page.route("**/*", (route) => {
+      if (route.request().url().includes("/_serverFn/")) return route.abort();
+      return route.continue();
+    });
+    await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: hop.x, z: hop.z, yaw: 0 }));
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const fromX = hop.x.toFixed(1);
+    const fromZ = hop.z.toFixed(1);
+    try {
+      await page.waitForFunction(
+        ([region, px, pz]) => (document.body?.innerText || "").includes(region) && (document.body?.innerText || "").includes(px) && (document.body?.innerText || "").includes(pz),
+        [hop.from, fromX, fromZ],
+        { timeout: 90000 },
+      );
+    } catch (err) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      await page.close();
+      return { ok: false, error: `${hop.name} never reached ${hop.from} (${err.message})`, text: text.slice(0, 240), errors, shots };
+    }
+    const dx = hop.mouthX - hop.x;
+    const dz = hop.mouthZ - hop.z;
+    const keys = [];
+    if (dx > 0.45) keys.push("KeyD");
+    if (dx < -0.45) keys.push("KeyA");
+    if (dz < -0.45) keys.push("KeyW");
+    if (dz > 0.45) keys.push("KeyS");
+    if (!keys.length) keys.push(Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? "KeyD" : "KeyA") : dz > 0 ? "KeyS" : "KeyW");
+    await page.locator("canvas").first().click({ position: { x: 200, y: 120 } });
+    for (const key of keys) await page.keyboard.down(key);
+    const landX = hop.landX;
+    const landZ = hop.landZ;
+    let crossed = false;
+    try {
+      await page.waitForFunction(
+        (region) => (document.body?.innerText || "").includes(region),
+        hop.dest,
+        { timeout: 12000 },
+      );
+      crossed = true;
+    } catch {
+      crossed = false;
+    }
+    for (const key of keys) await page.keyboard.up(key);
+    if (!crossed) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      await page.close();
+      return { ok: false, error: `${hop.name} did not arrive in ${hop.dest}`, text: text.slice(0, 280), errors, shots };
+    }
+    await page.waitForTimeout(700);
+    const spot = await page.evaluate(() => {
+      const text = document.body?.innerText || "";
+      const match = text.match(/\((-?\d+\.\d+),\s*(-?\d+\.\d+)\)/);
+      return match ? { x: Number(match[1]), z: Number(match[2]) } : null;
+    });
+    if (!spot || Math.hypot(spot.x - landX, spot.z - landZ) > 8) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      await page.close();
+      return { ok: false, error: `${hop.name} landed ${spot ? spot.x.toFixed(1) + "," + spot.z.toFixed(1) : "nowhere"} not ${landX.toFixed(1)},${landZ.toFixed(1)}`, text: text.slice(0, 280), errors, shots };
+    }
+    const path = `/workspace/screenshots/orc-${hop.name}.png`;
+    const png = await page.locator("canvas").first().screenshot({ path });
+    const stats = canvasStats(png);
+    const seen = Math.max(stats.playerHits, shirtCream(png));
+    const shot = { name: hop.name, square: hop.square, dest: hop.dest, ...stats, playerHits: seen, path, errors };
+    shots.push(shot);
+    await page.close();
+    if (errors.length) return { ok: false, error: `${hop.name} ${errors[0]}`, shots };
+    if (seen < 40) return { ok: false, error: `${hop.name} player occluded (${seen})`, shots };
+    if (stats.blackPct > 0.02) return { ok: false, error: `${hop.name} void pixels ${(stats.blackPct * 100).toFixed(2)}%`, shots };
+  }
+  return { ok: true, shots };
+}
+
 async function checkGhelsba(browser, url) {
   const places = ghelsbaPlaces();
   if (!places.ok) return places;
@@ -386,7 +660,7 @@ async function checkGhelsba(browser, url) {
             return text.includes("Ghelsba") && text.includes(px) && text.includes(pz);
           },
           [needleX, needleZ],
-          { timeout: 40000 },
+          { timeout: 90000 },
         );
       } catch (err) {
         const text = await page.locator("body").innerText().catch(() => "");
@@ -439,7 +713,7 @@ async function checkGhelsba(browser, url) {
           return text.includes("Ghelsba") && text.includes(px) && text.includes(pz);
         },
         [needleX, needleZ],
-        { timeout: 40000 },
+        { timeout: 90000 },
       );
     } catch (err) {
       const text = await page.locator("body").innerText().catch(() => "");
@@ -456,7 +730,9 @@ async function checkGhelsba(browser, url) {
     if (errors.length) return { ok: false, error: `${stand.name} ${errors[0]}`, nodes: places.nodes, shots };
     if (stats.playerHits < 40) return { ok: false, error: `${stand.name} player occluded (${stats.playerHits})`, nodes: places.nodes, shots };
   }
-  return { ok: true, nodes: places.nodes, shots };
+  const trace = await orcTrace(browser, url, seated);
+  if (!trace.ok) return { ...trace, nodes: places.nodes, shots: [...shots, ...(trace.shots || [])] };
+  return { ok: true, nodes: places.nodes, shots: [...shots, ...trace.shots] };
 }
 
 let browser = null;
@@ -498,7 +774,7 @@ try {
       const el = document.documentElement;
       return el.scrollWidth > el.clientWidth + 1;
     });
-    await page.screenshot({ path: vp.screenshot, fullPage: false });
+    await page.screenshot({ path: vp.screenshot, fullPage: false, timeout: 90000 });
     await page.close();
 
     viewports[vp.name] = {

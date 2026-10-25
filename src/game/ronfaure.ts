@@ -42,6 +42,7 @@ import { dropRate, type DropTier } from "./drops";
 import { clampWorld, EXITS, inRonfaure, ronCell, zoneArrival, zoneTouch } from "./world";
 import { EAST_CELL, EAST_MANUAL_GATE, EAST_MANUAL_ROAD, EAST_MOUTH, EAST_SIZE, EAST_STAND, EAST_X0, EAST_Z0, clampEast, eastAt, eastBank, eastDry, eastPath, inEast } from "./east-ronfaure";
 import { fortCell, ghelsbaCell, ghelsbaDry, grottoCell, grottoHall, grottoMouth, inFort, inGhelsba, inOrc, inYughott, HUT_ROOF, orcDry, ORC_GATES, RON_TO_GHELSBA } from "./ghelsba";
+import { fortPoi, yughottNode, yughottPoi } from "./orc-height";
 import { TOMB_FOYER, TOMB_GATES, TOMB_HOLLOW, clampTomb, inTomb, tombSquare, tombStory } from "./tomb";
 import { clampPass, inPass, oneWayBlocks, PASS_ARRIVE, PASS_GATES, PASS_NPCS, passSquare, passWet } from "./pass";
 import type { FieldLook } from "./field-mesh";
@@ -483,6 +484,9 @@ export const SPECIES: Record<string, Species> = {
   "ashmaker-gotblut": { id: "ashmaker-gotblut", name: "Ashmaker Gotblut", look: "orc", variant: "staff", family: "Orc", job: "BLM", levelMin: 17, levelMax: 18, window: "always", detect: SIGHT_SCENT, links: true, crystal: "fire", hpMod: 1.55, delay: 260, ranks: ORC, moves: [], spells: [stone, poison, blind, drainSpell], drops: [
     { id: "hermits-wand", found: "hermit's wand", tier: "rare" }, { id: "priests-robe", found: "priest's robe", tier: "rare" }, coin,
   ], nm: true, respawn: 0 },
+  "morgawr": { id: "morgawr", name: "Morgawr", look: "pugil", variant: "", family: "Pugil", job: "WAR", levelMin: 23, levelMax: 25, window: "always", detect: PASSIVE_SOUND, links: false, crystal: "water", hpMod: 1.8, delay: 280, ranks: CRAB, moves: [screw, aqua], spells: [], drops: [
+    { id: "ghelsba-chest-key", found: "ghelsba chest key", tier: "rare" },
+  ], nm: true, respawn: 960 },
 };
 
 function twin(id: string, from: string, patch: Partial<Species>): void {
@@ -1312,6 +1316,23 @@ function pin(speciesId: string, x: number, z: number, link: string, maxR = 28, p
   addBody(speciesId, found.x, found.z, link, ph);
 }
 
+/** Stand just off a traced node, inside 2 yalms and off the centreline. */
+function pinOff(speciesId: string, at: { x: number; z: number }, link: string, ph: FieldBody["ph"] = ""): void {
+  const spec = specOf(speciesId);
+  const roam = ROAM_OUT;
+  for (let ring = 2; ring <= 4; ring++) {
+    const rad = ring * 0.45;
+    for (let i = 0; i < 12; i++) {
+      const ang = (i / 12) * Math.PI * 2 + speciesId.length * 0.2;
+      const x = at.x + Math.cos(ang) * rad;
+      const z = at.z + Math.sin(ang) * rad;
+      if (!canStand(x, z, spec, roam, link)) continue;
+      addBody(speciesId, x, z, link, ph);
+      return;
+    }
+  }
+}
+
 const LANDINGS: { x: number; z: number }[] = (() => {
   const south = zoneArrival("ronfaure-south");
   const north = zoneArrival("ronfaure-north");
@@ -1377,7 +1398,9 @@ function seatGap(
 ): number {
   const tomb = inTomb(a.x, a.z, 0) && inTomb(b.x, b.z, 0);
   const tunnel = inPass(a.x, a.z, 0) && inPass(b.x, b.z, 0);
+  const den = (inFort(a.x, a.z, 0) && inFort(b.x, b.z, 0)) || (inYughott(a.x, a.z, 0) && inYughott(b.x, b.z, 0));
   if (tunnel && a.link !== "" && a.link === b.link) return 4.4;
+  if (den && a.link !== "" && a.link === b.link && a.links && b.links) return 5.2;
   if (a.link !== "" && a.link === b.link && a.links && b.links) return tomb ? 5.1 : PACK_GAP;
   const west = westPair(a.x, a.z, b.x, b.z);
   if (!windowsShare(a.window, b.window)) return tunnel ? 3.6 : tomb ? 4.2 : west ? WEST_SHIFT : SHIFT_GAP;
@@ -1388,6 +1411,7 @@ function seatGap(
   if (tomb && !a.links && !b.links) return 4.4;
   if (tomb) return 7.1;
   if (west && !a.links && !b.links) return HERD_GAP;
+  if (den) return 8;
   return CAMP_GAP;
 }
 
@@ -1672,7 +1696,7 @@ function denPair(a: string, b: string, anchor: { x: number; z: number }, link: s
 // Hundredscar Hajwaj lotteries off the three orcs around G-9. That room is a landing, so the camps beside it hold the placeholders.
 denPair("fort-fodder", "fort-grappler", fortCell(5, 7), "fort-f8", "haj");
 denPair("fort-fodder", "fort-mesmerizer", fortCell(6, 7), "fort-g8", "haj");
-denPair("fort-grappler", "fort-mesmerizer", fortCell(6, 6), "fort-g7", "haj");
+pinOff("fort-grappler", fortPoi("nm_hundredscar_hajwaj"), "haj-node", "haj");
 denPair("fort-grunt", "fort-neck", fortCell(7, 7), "fort-h8");
 denPair("fort-grunt", "fort-chuck", fortCell(7, 6), "fort-h7");
 denPair("fort-neck", "fort-chuck", fortCell(8, 7), "fort-i8", "", "fort-grunt");
@@ -1682,16 +1706,19 @@ denPair("orcish-flamethrower", "sentry-lizard", fortCell(7, 9), "fort-h10");
 denPair("fort-cursemaker", "fort-fighter", fortCell(8, 9), "fort-i10");
 denPair("orcish-flamethrower", "", fortCell(9, 5), "fort-j6");
 denPair("fort-serjeant", "fort-cursemaker", fortCell(9, 8), "fort-j9");
-denPair("orcish-panzer", "", fortCell(6, 5), "fort-panzer");
-denPair("kegpaunch-doshgnosh", "", fortCell(6, 6), "fort-keg");
+denPair("kegpaunch-doshgnosh", "", fortPoi("nm_kegpaunch_doshgnosh"), "fort-keg");
 denPair("fort-spectacled", "", fortCell(6, 7), "fort-night-g8");
 denPair("fort-cheiroptera", "", fortCell(7, 6), "fort-night-h7");
 denPair("grotto-bats", "grotto-bats", grottoCell(5, 8), "yug-f9");
-// Ashmaker Gotblut lotteries off an Orcish Grunt or an Orcish Stonechucker.
-denPair("yug-grunt", "yug-neck", grottoCell(6, 7), "yug-g8", "ash");
-// I-6 opens straight off the H-7 fort gate. The pair stands on the east side of the pocket.
+// Ashmaker Gotblut lotteries off an Orcish Grunt or an Orcish Stonechucker at H-9.
+const ashAt = yughottPoi("nm_ashmaker_gotblut", 1);
+pin("yug-grunt", ashAt.x + 1.2, ashAt.z + 0.45, "yug-ash", 1.6, "ash");
+pin("yug-chuck", ashAt.x + 4, ashAt.z - 1.5, "yug-ash", 8, "ash");
+const morgAt = yughottNode(2, "area_se");
+pinOff("morgawr", morgAt, "yug-morgawr");
+const panzerAt = fortPoi("nm_orcish_panzer");
+pinOff("orcish-panzer", panzerAt, "fort-panzer");
 const yugI6 = grottoCell(8, 6);
-pin("yug-chuck", yugI6.x + 12, yugI6.z + 6, "yug-i6", 8, "ash");
 pin("riding-lizard", yugI6.x + 12, yugI6.z - 6, "yug-i6", 8);
 denPair("yug-cursemaker", "yug-fighter", grottoCell(8, 9), "yug-i9");
 // One orc party in the map-2 hall. They face inward, so a fight in the middle links and a pull out of sight does not.
@@ -2285,8 +2312,8 @@ function fillDens(): void {
   const fortLow = trios(["fort-fodder", "fort-grappler", "fort-mesmerizer"]);
   const fortHigh = trios(["fort-grunt", "fort-neck", "fort-chuck"]);
   spreadMix(fortGrid, [
-    { recipes: fortLow, caps: { "fort-fodder": 19, "fort-grappler": 20, "fort-mesmerizer": 20 } },
-    { recipes: fortHigh, caps: { "fort-grunt": 32, "fort-neck": 33, "fort-chuck": 38 } },
+    { recipes: fortLow, caps: { "fort-fodder": 19, "fort-grappler": 20, "fort-mesmerizer": 16 } },
+    { recipes: fortHigh, caps: { "fort-grunt": 32, "fort-neck": 33, "fort-chuck": 29 } },
     {
       recipes: [
         { ids: ["fort-cursemaker", "fort-fighter"] },
@@ -2295,7 +2322,7 @@ function fillDens(): void {
         { ids: ["fort-fighter"] },
         { ids: ["fort-serjeant"] },
       ],
-      caps: { "fort-cursemaker": 4, "fort-fighter": 2, "fort-serjeant": 1 },
+      caps: { "fort-cursemaker": 3, "fort-fighter": 2, "fort-serjeant": 1 },
     },
     { recipes: [{ ids: ["orcish-flamethrower"] }], caps: { "orcish-flamethrower": 8 } },
     { recipes: [{ ids: ["sentry-lizard", "sentry-lizard"] }, { ids: ["sentry-lizard"] }], caps: { "sentry-lizard": 8 } },
@@ -2892,8 +2919,8 @@ const LOTTERY: readonly LotteryRow[] = [
   // Various orcs toward J-6 / J-7.
   { nm: "thousandarm-deshglesh", ph: "desh", species: "ghelsba-fodder" },
   // Orcs beside Fort G-9.
-  { nm: "hundredscar-hajwaj", ph: "haj", species: "fort-fodder" },
-  // Orcish Grunt or Orcish Stonechucker.
+  { nm: "hundredscar-hajwaj", ph: "haj", species: "fort-grappler" },
+  // Orcish Grunt or Orcish Stonechucker, both marked ash, at H-9.
   { nm: "ashmaker-gotblut", ph: "ash", species: "yug-grunt" },
   // Carrion Worms at I-7 and I-9.
   { nm: "bigmouth-billy", ph: "billy", species: "east-carrion" },
@@ -4481,7 +4508,7 @@ export function assertRonfaure(): void {
       ? "tomb"
       : body.species.startsWith("fort-") || body.species === "sentry-lizard" || body.species === "orcish-flamethrower" || body.species === "orcish-panzer" || body.species === "kegpaunch-doshgnosh"
       ? "fort"
-      : body.species.startsWith("yug-") || body.species === "grotto-bats" || body.species === "stealth-bat" || body.species === "riding-lizard"
+      : body.species.startsWith("yug-") || body.species === "grotto-bats" || body.species === "stealth-bat" || body.species === "riding-lizard" || body.species === "morgawr"
         ? "yughott"
         : body.id.startsWith("spectacled-bats") || body.id.startsWith("watch-lizard") || body.id.startsWith("cheiroptera") || body.id.startsWith("ghelsba-") || body.id.startsWith("toadstool") || body.id.startsWith("orcish-stonelauncher") || body.id.startsWith("orcish-wallbreacher") || body.id.startsWith("orcish-barricader") || body.id.startsWith("warchief-vatgit") || body.id.startsWith("bloody-vrukwuk") || body.id.startsWith("thousandarm") || body.id.startsWith("fogweaver")
           ? "outpost"
@@ -4619,11 +4646,11 @@ export function assertRonfaure(): void {
     ["ghelsba-pugil", 15],
     ["fort-fodder", 19],
     ["fort-grappler", 20],
-    ["fort-mesmerizer", 20],
+    ["fort-mesmerizer", 15],
     ["fort-grunt", 32],
     ["fort-neck", 33],
-    ["fort-chuck", 38],
-    ["fort-cursemaker", 4],
+    ["fort-chuck", 28],
+    ["fort-cursemaker", 3],
     ["fort-fighter", 2],
     ["fort-serjeant", 1],
     ["orcish-flamethrower", 8],
@@ -4646,6 +4673,15 @@ export function assertRonfaure(): void {
     if (n < want) denShort.push(`${id} ${n}/${want}`);
   }
   if (denShort.length) throw new Error(`den short ${denShort.join(", ")}`);
+  const nearNode = (species: string, at: { x: number; z: number }, label: string) => {
+    const body = liveField().find((row) => row.species === species && Math.hypot(row.spawnX - at.x, row.spawnZ - at.z) <= 2.05);
+    if (!body) throw new Error(`${label} left its node`);
+    if (Math.hypot(body.spawnX - at.x, body.spawnZ - at.z) < 0.35) throw new Error(`${label} on the centreline`);
+  };
+  nearNode("orcish-panzer", fortPoi("nm_orcish_panzer"), "panzer");
+  nearNode("fort-grappler", fortPoi("nm_hundredscar_hajwaj"), "hajwaj");
+  nearNode("yug-grunt", yughottPoi("nm_ashmaker_gotblut", 1), "ashmaker");
+  nearNode("morgawr", yughottNode(2, "area_se"), "morgawr");
   const eastWant: [string, number][] = [
     ["east-tunnel", 14],
     ["east-rabbit", 25],
