@@ -29,6 +29,27 @@ if (args.error) {
   process.exit(1);
 }
 assertOrcFieldsFresh();
+{
+  const feet = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `import { assertTraceFeet } from "./src/game/orc-height.ts"; assertTraceFeet(); console.log("TRACE_FEET ok");`,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const feetText = `${feet.stdout || ""}\n${feet.stderr || ""}`;
+  if (feet.status !== 0) {
+    console.error(feetText.slice(-1200));
+    process.exit(1);
+  }
+  const line = feetText.trim().split("\n").filter(Boolean).pop();
+  console.log(line);
+}
 
 const url = checkedUrl(args.url);
 const outPng = checkedOutputPath(args.outPng, ["/workspace"]);

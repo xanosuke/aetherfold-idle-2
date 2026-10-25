@@ -5,6 +5,7 @@
  * Runtime only bilinear-reads those arrays.
  */
 import {
+  FORT_CELL,
   FORT_GRAPH,
   clampFortGraph,
   fortClearance,
@@ -12,6 +13,7 @@ import {
   inFortGraph,
 } from "./fort-graph";
 import {
+  YUGHOTT_CELL,
   YUGHOTT_GRAPHS,
   clampYughottGraph,
   gridToWorld as yugWorld,
@@ -20,7 +22,7 @@ import {
   type YughottMap,
 } from "./yughott-graph";
 import { FORT_FIELD, YUG1_FIELD, YUG2_FIELD } from "./orc-fields.generated.ts";
-import { claimsDraw, decodeField, readFloorY, sampleTrace, type OrcField, type TraceSample } from "./orc-field-read";
+import { claimsDraw, decodeField, mixFloorY, sampleTrace, type OrcField, type TraceSample } from "./orc-field-read";
 
 const fortField = decodeField("fort", FORT_FIELD);
 const yug1Field = decodeField("yug1", YUG1_FIELD);
@@ -36,8 +38,30 @@ export function yughottTerrainSample(x: number, z: number, map: YughottMap): Tra
   return sampleTrace(map === 1 ? yug1Field : yug2Field, x, z);
 }
 
+function drawnFields(x: number, z: number): OrcField[] {
+  const hits: OrcField[] = [];
+  if (sampleTrace(fortField, x, z)) hits.push(fortField);
+  if (sampleTrace(yug1Field, x, z)) hits.push(yug1Field);
+  if (sampleTrace(yug2Field, x, z)) hits.push(yug2Field);
+  return hits;
+}
+
+function pickField(hits: OrcField[], x: number, z: number): OrcField {
+  if (hits.length < 2) return hits[0];
+  if (hits.includes(fortField) && inFortGraph(x, z, 0)) return fortField;
+  if (hits.includes(yug1Field) && inYughottGraph(x, z, 0, 1)) return yug1Field;
+  if (hits.includes(yug2Field) && inYughottGraph(x, z, 0, 2)) return yug2Field;
+  return hits[0];
+}
+
+/** Feet height. Never under the drawn mesh, and never the bare 0 fallback while a field is drawn. */
 export function traceFloorY(x: number, z: number): number {
-  return readFloorY(fortField, x, z) ?? readFloorY(yug1Field, x, z) ?? readFloorY(yug2Field, x, z) ?? 0;
+  const hits = drawnFields(x, z);
+  if (!hits.length) return 0;
+  const field = pickField(hits, x, z);
+  const terrace = mixFloorY(field, x, z) ?? 0;
+  const mesh = sampleTrace(field, x, z);
+  return Math.max(terrace, mesh ? mesh.y : 0);
 }
 
 /** Outpost mesh should not pave the grotto. Both cave masks, one lookup each. */
@@ -331,4 +355,82 @@ export function assertYughott(): void {
     const raw = yugWorld(poi.gx, poi.gy, poi.map ?? 1);
     if (Math.hypot(poi.x - raw.x, poi.z - raw.z) > SEAT_REACH) throw new Error(`${poi.id} clamped too far`);
   }
+}
+
+function mulberry(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function assertFoot(name: string, x: number, z: number, mesh: TraceSample | null) {
+  const foot = traceFloorY(x, z);
+  if (!mesh) throw new Error(`${name} off mesh ${x.toFixed(1)},${z.toFixed(1)}`);
+  if (mesh.y - foot > 0.05) throw new Error(`${name} sink mesh ${mesh.y.toFixed(2)} foot ${foot.toFixed(2)} at ${x.toFixed(1)},${z.toFixed(1)}`);
+  if (foot === 0 && mesh.y > 0.5) throw new Error(`${name} zero foot under ${mesh.y.toFixed(2)} at ${x.toFixed(1)},${z.toFixed(1)}`);
+}
+
+function walkGraph(
+  name: string,
+  graph: { edges: { id: string; width?: number; pts: [number, number][] }[] },
+  world: (gx: number, gy: number) => { x: number; z: number },
+  inside: (x: number, z: number) => boolean,
+  meshAt: (x: number, z: number) => TraceSample | null,
+  cell: number,
+  seed: number,
+) {
+  for (const edge of graph.edges) {
+    const pts = edge.pts.map(([gx, gy]) => world(gx, gy));
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.ceil(len / 2));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const x = a.x + (b.x - a.x) * t;
+        const z = a.z + (b.z - a.z) * t;
+        assertFoot(`${name} ${edge.id}`, x, z, meshAt(x, z));
+      }
+    }
+  }
+  const rnd = mulberry(seed);
+  let got = 0;
+  let tries = 0;
+  const edges = graph.edges;
+  while (got < 20000 && tries < 500000) {
+    tries++;
+    const edge = edges[(rnd() * edges.length) | 0];
+    if (edge.pts.length < 2) continue;
+    const seg = (rnd() * (edge.pts.length - 1)) | 0;
+    const a = world(edge.pts[seg][0], edge.pts[seg][1]);
+    const b = world(edge.pts[seg + 1][0], edge.pts[seg + 1][1]);
+    const t = rnd();
+    const x = a.x + (b.x - a.x) * t;
+    const z = a.z + (b.z - a.z) * t;
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const half = ((edge.width ?? 0.12) * cell) / 2;
+    const off = (rnd() * 2 - 1) * half * 0.92;
+    const px = x + (-dz / len) * off;
+    const pz = z + (dx / len) * off;
+    if (!inside(px, pz)) continue;
+    assertFoot(`${name} sample`, px, pz, meshAt(px, pz));
+    got++;
+  }
+  if (got < 20000) throw new Error(`${name} feet samples ${got}`);
+}
+
+/** 20k floor points per graph, plus every edge. Feet stay on the mesh. */
+export function assertTraceFeet(): void {
+  const sink = { x: -515.9, z: 612.3 };
+  assertFoot("kupipi", sink.x, sink.z, yughottTerrainSample(sink.x, sink.z, 1));
+  walkGraph("fort", FORT_GRAPH, fortWorld, (x, z) => inFortGraph(x, z, 0), (x, z) => fortTerrainSample(x, z), FORT_CELL, 5);
+  walkGraph("yug1", YUGHOTT_GRAPHS[1], (gx, gy) => yugWorld(gx, gy, 1), (x, z) => inYughottGraph(x, z, 0, 1), (x, z) => yughottTerrainSample(x, z, 1), YUGHOTT_CELL, 6);
+  walkGraph("yug2", YUGHOTT_GRAPHS[2], (gx, gy) => yugWorld(gx, gy, 2), (x, z) => inYughottGraph(x, z, 0, 2), (x, z) => yughottTerrainSample(x, z, 2), YUGHOTT_CELL, 7);
 }

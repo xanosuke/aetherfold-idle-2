@@ -2764,7 +2764,7 @@ function buildYard(canvas) {
 		pup.x = dry.x;
 		pup.z = dry.z;
 		pup.aim = aim;
-		pup.body.root.position.set(pup.x, 0, pup.z);
+		pup.body.root.position.set(pup.x, traceFloorY(pup.x, pup.z), pup.z);
 		noteTrustPlace(pup.def.id, hareDist, hareDist <= reach, Math.hypot(px - pup.x, pz - pup.z), pup.x, pup.z);
 		applyFacing(pup.body.root, aim, basis, xAxis, yAxis, zAxis);
 		if (floater && floater.markId && floater.markId === pup.def.id && floater.markId !== floater.id && floater.amount) spawnWsMark(floater.name, floater.amount, pup.x, 1.7, pup.z);
@@ -4386,8 +4386,8 @@ function buildYard(canvas) {
 	let zonePending = null;
 	const zoneFog = new Fog(9357551, 26, 52);
 	const ghelsbaFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
-	const fortFog = new Fog(0x8a8f78, 48, 120);
-	const yughottFog = new Fog(0x1a1714, 30, 80);
+	const fortFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
+	const yughottFog = new Fog(0x1e1914, 40, 110);
 	const canyonFog = new Fog(7231552, 18, 40);
 	const caveFog = new Fog(525828, 36, 78);
 	const passFog = new Fog(0x07090d, 42, 120);
@@ -13512,16 +13512,16 @@ function buildYard(canvas) {
 			sun.intensity = 1.9;
 			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else if (inYughott(px, pz)) {
-			hemi.color.setHex(0x6a5a48);
-			hemi.groundColor.setHex(0x2a221c);
-			hemi.intensity = 0.46;
-			sun.intensity = 0.28;
+			hemi.color.setHex(0x8a7a66);
+			hemi.groundColor.setHex(0x2a2018);
+			hemi.intensity = 0.75;
+			sun.intensity = 0.6;
 			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else if (inFort(px, pz)) {
 			hemi.color.setHex(12969727);
 			hemi.groundColor.setHex(6983498);
-			hemi.intensity = 0.62;
-			sun.intensity = 1.45;
+			hemi.intensity = 0.54;
+			sun.intensity = 1.9;
 			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else {
 			hemi.color.setHex(12969727);
@@ -13593,18 +13593,23 @@ function buildYard(canvas) {
 					}
 				}
 				fires.sort((a, b) => a.d - b.d);
+				const yugHere = orcHere.id === "yughott";
 				for (let i = 0; i < orcLights.length; i++) {
 					const spot = fires[i];
+					const light = orcLights[i];
 					if (!spot) {
-						orcLights[i].intensity = 0;
+						light.intensity = 0;
 						continue;
 					}
-					orcLights[i].position.set(spot.fire.x, traceFloorY(spot.fire.x, spot.fire.z) + 1.6, spot.fire.z);
-					orcLights[i].intensity = (orcHere.id === "yughott" ? 11 : 28) * (1 + 0.12 * Math.sin(elapsed * 6.5 + i * 1.7));
+					light.color.setHex(yugHere ? 0xffa050 : 0xff6a2a);
+					light.distance = 14;
+					light.position.set(spot.fire.x, traceFloorY(spot.fire.x, spot.fire.z) + 1.6, spot.fire.z);
+					const flicker = 1 + 0.12 * Math.sin(elapsed * 6.5 + i * 1.7);
+					light.intensity = (yugHere ? 1.6 : 28) * flicker;
 				}
 			}
 		}
-		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inGhelsba(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x1a1714 : inFort(px, pz) ? 0x8a8f78 : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
+		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inGhelsba(px, pz) || inFort(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x1e1914 : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
@@ -29242,7 +29247,7 @@ function buildYard(canvas) {
 		clearTrustChant(pup);
 		const quarry = playerFoe() === "kin" ? kinPos : harePos;
 		const hareDist = Math.hypot(quarry.x - pup.x, quarry.z - pup.z) || 1e-4;
-		pup.body.root.position.set(pup.x, 0, pup.z);
+		pup.body.root.position.set(pup.x, traceFloorY(pup.x, pup.z), pup.z);
 		pup.body.root.visible = true;
 		applyFacing(pup.body.root, pup.aim || 0, basis, xAxis, yAxis, zAxis);
 		noteTrustPlace(pup.def.id, hareDist, false, Math.hypot(px - pup.x, pz - pup.z), pup.x, pup.z);
@@ -29256,7 +29261,7 @@ function buildYard(canvas) {
 			if (heroCorpse >= 0) {
 				heroCorpse = -1;
 				hero.hips.position.y = .78;
-				hero.root.position.y = 0;
+				hero.root.position.y = traceFloorY(px, pz);
 			}
 			if (heroDeathIcon) heroDeathIcon.visible = false;
 			return;
@@ -29264,7 +29269,7 @@ function buildYard(canvas) {
 		if (heroCorpse < 0) heroCorpse = 0;
 		const before = heroCorpse;
 		heroCorpse += dt;
-		hero.root.position.y = 0;
+		hero.root.position.y = traceFloorY(px, pz);
 		poseHumanDeath(hero, heroCorpse);
 		heroDeathIcon = placeDeathIcon(heroDeathIcon, px, pz, yaw, heroCorpse);
 		if (before < .58 && heroCorpse >= .58) puffCorpse(px, pz, yaw);
@@ -47310,6 +47315,18 @@ function buildRoom(scene, toonMat, colliders) {
 		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nfloat mossy = smoothstep(0.0, 0.045, diffuseColor.g - diffuseColor.r);\ndiffuseColor.rgb *= (0.5 + 0.5 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.48, mossy);\n}");
 		if (!shader.vertexShader.includes("vWorldNormal") || !shader.fragmentShader.includes("0.5 + 0.5")) throw new Error("ghelsba terrain shader");
 	};
+	const yughottMat = toonMat(0xffffff);
+	yughottMat.vertexColors = true;
+	yughottMat.alphaHash = false;
+	yughottMat.transparent = false;
+	yughottMat.side = DoubleSide;
+	yughottMat.depthWrite = true;
+	yughottMat.customProgramCacheKey = () => "yughott-terrain-slope";
+	yughottMat.onBeforeCompile = (shader) => {
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.55 + 0.45 * clamp(ny, 0.0, 1.0);\n}");
+		if (!shader.fragmentShader.includes("0.55 + 0.45")) throw new Error("yughott terrain shader");
+	};
 	const tx0 = GHELSBA_TERRAIN.x;
 	const tz0 = GHELSBA_TERRAIN.z;
 	const tx1 = tx0 + GHELSBA_TERRAIN.span;
@@ -47419,7 +47436,7 @@ function buildRoom(scene, toonMat, colliders) {
 		geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
 		geo.setIndex(index);
 		geo.computeVertexNormals();
-		const mesh = new Mesh(geo, terrainMat);
+		const mesh = new Mesh(geo, field.id === "fort" ? terrainMat : yughottMat);
 		mesh.receiveShadow = true;
 		mesh.castShadow = false;
 		scene.add(mesh);

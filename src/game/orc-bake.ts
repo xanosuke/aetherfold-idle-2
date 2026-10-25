@@ -203,8 +203,9 @@ const DIRT = 0x7a5a38;
 const GRASS = 0x5f6a34;
 const ROCK = 0x6e5a48;
 const MOSS = 0x46583a;
-const CAVE_FLOOR = 0x3a342e;
-const CAVE_WALL = 0x2a2622;
+const CAVE_FLOOR = 0x4a3f33;
+const CAVE_WALL = 0x5a4a3c;
+const CAVE_WALL_TOP = 0x3a3029;
 
 type Bake = {
   spans: Span[];
@@ -261,14 +262,14 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
     for (let i = 0; i < w; i++) {
       const x = x0 + i * step;
       const idx = j * w + i;
+      const terraceN = nearestTerrace(x, z, bake.spans, bake.bands);
+      floorY[idx] = terraceN;
       const c = clearance(x, z);
       if (c < -6) continue;
       draw[idx] = 1;
       if (c >= -0.05 && bake.onFloor(x, z)) {
         floor[idx] = 1;
-        const terrace = terraceAt(x, z, bake.spans, bake.bands);
-        ys[idx] = terrace;
-        floorY[idx] = terrace;
+        ys[idx] = terraceAt(x, z, bake.spans, bake.bands);
         continue;
       }
       const drop = Math.max(0, -c);
@@ -307,6 +308,42 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
     }
   }
   ys.set(blurred);
+  const drawnCell = (i: number, j: number) => {
+    if (i < 0 || j < 0 || i >= nX || j >= nZ) return false;
+    const a = j * w + i;
+    return draw[a] === 1 || draw[a + 1] === 1 || draw[a + w] === 1 || draw[a + w + 1] === 1;
+  };
+  const wallY = (x: number, z: number) => {
+    const drop = Math.max(4, -clearance(x, z));
+    let rise = (bake.cave ? 7.5 : 6) * smoothstep(0, 4, drop);
+    rise += (hash(x * 0.37 + 3, z * 0.37 - 1) * 2 - 1) * 0.35;
+    return nearestTerrace(x, z, bake.spans, bake.bands) + rise;
+  };
+  for (let pass = 0; pass < 8; pass++) {
+    let grew = false;
+    for (let j = 0; j < nZ; j++) {
+      for (let i = 0; i < nX; i++) {
+        const a = j * w + i;
+        if (draw[a] || draw[a + 1] || draw[a + w] || draw[a + w + 1]) continue;
+        let sides = 0;
+        if (drawnCell(i - 1, j)) sides++;
+        if (drawnCell(i + 1, j)) sides++;
+        if (drawnCell(i, j - 1)) sides++;
+        if (drawnCell(i, j + 1)) sides++;
+        if (sides < 3) continue;
+        const corners = [a, a + 1, a + w, a + w + 1];
+        for (const idx of corners) {
+          if (draw[idx]) continue;
+          const cx = x0 + (idx % w) * step;
+          const cz = z0 + ((idx / w) | 0) * step;
+          draw[idx] = 1;
+          ys[idx] = wallY(cx, cz);
+          grew = true;
+        }
+      }
+    }
+    if (!grew) break;
+  }
   for (let j = 0; j < h; j++) {
     const z = z0 + j * step;
     for (let i = 0; i < w; i++) {
@@ -376,7 +413,8 @@ function fortPaint(x: number, z: number, y: number, on: boolean) {
 
 function yugPaint(pack: ReturnType<typeof yugPack>, x: number, z: number, y: number, on: boolean) {
   if (on) return vary(CAVE_FLOOR, x, z, 0.04);
-  return mix(vary(CAVE_FLOOR, x, z, 0.04), vary(CAVE_WALL, x, z, 0.03), smoothstep(0.4, 3.2, y - nearestTerrace(x, z, pack.spans, pack.bands)));
+  const rise = y - nearestTerrace(x, z, pack.spans, pack.bands);
+  return mix(vary(CAVE_WALL, x, z, 0.03), vary(CAVE_WALL_TOP, x, z, 0.03), smoothstep(0, 7.5, rise));
 }
 
 export function bakeAllFields(): BakedArrays[] {
@@ -418,6 +456,12 @@ export function slowYugSample(field: BakedArrays, x: number, z: number, map: Yug
   const y = on ? terraceAt(x, z, pack.spans, pack.bands) : hit.y;
   const color = yugPaint(pack, x, z, y, on);
   return { y, r: color[0], g: color[1], b: color[2], draw: true };
+}
+
+export function referenceTerrace(id: BakedArrays["id"], x: number, z: number): number {
+  if (id === "fort") return nearestTerrace(x, z, fortSpans, fortBands);
+  if (id === "yug1") return nearestTerrace(x, z, yug1.spans, yug1.bands);
+  return nearestTerrace(x, z, yug2.spans, yug2.bands);
 }
 
 export function slowFloorY(x: number, z: number): number {

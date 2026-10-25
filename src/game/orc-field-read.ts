@@ -107,13 +107,21 @@ export function sampleTrace(field: OrcField, x: number, z: number): TraceSample 
   return { y, r: ch(0), g: ch(1), b: ch(2), draw: true };
 }
 
-/** Terrace height, or null when the point is off the traced floor. */
+/** Terrace height where the floor mask covers the cell. Null off that mask. */
 export function readFloorY(field: OrcField, x: number, z: number): number | null {
   const cell = locate(field, x, z);
   if (!cell) return null;
   const { i00, i10, i01, i11, tx, tz } = cell;
   const w = mix4(field.floor[i00], field.floor[i10], field.floor[i01], field.floor[i11], tx, tz);
   if (w < 0.5) return null;
+  return mix4(field.floorY[i00], field.floorY[i10], field.floorY[i01], field.floorY[i11], tx, tz);
+}
+
+/** Bilinear terrace, including off-floor vertices. Null outside the grid. */
+export function mixFloorY(field: OrcField, x: number, z: number): number | null {
+  const cell = locate(field, x, z);
+  if (!cell) return null;
+  const { i00, i10, i01, i11, tx, tz } = cell;
   return mix4(field.floorY[i00], field.floorY[i10], field.floorY[i01], field.floorY[i11], tx, tz);
 }
 

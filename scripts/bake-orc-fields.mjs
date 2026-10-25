@@ -1,7 +1,7 @@
 /** Bake Fort / Yughott heightfields. Run with tsx. */
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { bakeAllFields, slowFloorY, slowFortSample, slowYugSample } from "../src/game/orc-bake.ts";
+import { bakeAllFields, referenceTerrace, slowFloorY, slowFortSample, slowYugSample } from "../src/game/orc-bake.ts";
 import { FORT_GRAPH, gridToWorld as fortWorld } from "../src/game/fort-graph.ts";
 import { YUGHOTT_GRAPHS, gridToWorld as yugWorld } from "../src/game/yughott-graph.ts";
 import { readFloorY, sampleTrace } from "../src/game/orc-field-read.ts";
@@ -67,11 +67,14 @@ function checkVertices(field, slowAt) {
     if (dy > 0.02 || dr > 0.02 || dg > 0.02 || db > 0.02) {
       throw new Error(`${field.id} vertex ${i},${j} dy ${dy} dc ${Math.max(dr, dg, db)}`);
     }
-    const oldFloor = slowFloorY(x, z);
+    const ref = referenceTerrace(field.id, x, z);
+    if (Math.abs(field.floorY[idx] - ref) > 1e-3) throw new Error(`${field.id} floorY ${field.floorY[idx]} != terrace ${ref}`);
     const neuFloor = readFloorY(field, x, z);
-    const fy = Math.abs(oldFloor - (neuFloor ?? 0));
-    if (field.floor[idx] && fy > 0.02) throw new Error(`${field.id} floorY ${oldFloor} vs ${neuFloor}`);
-    if (!field.floor[idx] && neuFloor != null) throw new Error(`${field.id} floor leaked`);
+    if (field.floor[idx]) {
+      if (neuFloor == null) throw new Error(`${field.id} floor missing at ${i},${j}`);
+      if (Math.abs(neuFloor - field.floorY[idx]) > 1e-3) throw new Error(`${field.id} floor read ${neuFloor}`);
+      if (ref > 0.5 && neuFloor === 0) throw new Error(`${field.id} zero terrace`);
+    } else if (neuFloor != null) throw new Error(`${field.id} floor leaked`);
   }
   console.log(`${field.id} 500 samples worstY ${worstY.toFixed(4)} worstC ${worstC.toFixed(4)}`);
 }
@@ -181,4 +184,6 @@ ${chunk(yug2)}
 `;
 writeFileSync(outPath, text);
 assertOrcFieldsFresh();
+const { assertTraceFeet } = await import("../src/game/orc-height.ts");
+assertTraceFeet();
 console.log(`wrote ${outPath} hash ${hash.slice(0, 12)}`);
