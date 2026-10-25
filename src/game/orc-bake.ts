@@ -2,7 +2,7 @@
  * Build-time bake of Fort Ghelsba and Yughott heightfields.
  * Runtime must not import this. scripts/bake-orc-fields.mjs hashes it.
  */
-import { FORT_CELL, FORT_GRAPH, fortClearance, gridToWorld as fortWorld, inFortGraph, type FortGraph } from "./fort-graph";
+import { FORT_CELL, FORT_GRAPH, fortClearance, fortGridSquare, gridToWorld as fortWorld, inFortGraph, worldToGrid as fortGrid, type FortGraph } from "./fort-graph";
 import {
   YUGHOTT_CELL,
   YUGHOTT_GRAPHS,
@@ -187,25 +187,17 @@ function nearestTerrace(x: number, z: number, spans: Span[], bands: Band[]): num
   return bestY;
 }
 
-function pathAmount(x: number, z: number, spans: Span[]) {
-  let best = 0;
-  for (const span of spans) {
-    const q = near(x, z, span.ax, span.az, span.bx, span.bz);
-    const d = Math.hypot(x - q.x, z - q.z);
-    if (d >= span.half) continue;
-    const t = 1 - smoothstep(span.half * 0.55, span.half, d);
-    if (t > best) best = t;
-  }
-  return best;
-}
-
-const DIRT = 0x7a5a38;
-const GRASS = 0x5f6a34;
-const ROCK = 0x6e5a48;
-const MOSS = 0x46583a;
-const CAVE_FLOOR = 0x4a3f33;
-const CAVE_WALL = 0x5a4a3c;
-const CAVE_WALL_TOP = 0x3a3029;
+const FORT_GRASS = 0x66683f;
+const FORT_PATCH = 0x4d4c3a;
+const FORT_CANYON = 0x4d4c4a;
+const FORT_CLIFF = 0x625e44;
+const FORT_TOP = 0x6e7442;
+const Y1_FLOOR = 0x3e393f;
+const Y1_WALL = 0x332e39;
+const Y1_TOP = 0x141418;
+const Y2_FLOOR = 0x3d3c33;
+const Y2_WALL = 0x282727;
+const Y2_TOP = 0x201e1b;
 
 type Bake = {
   spans: Span[];
@@ -401,20 +393,24 @@ const yug1 = yugPack(1);
 const yug2 = yugPack(2);
 
 function fortPaint(x: number, z: number, y: number, on: boolean) {
-  if (on) return mix(vary(GRASS, x, z, 0.05), vary(DIRT, x, z, 0.05), pathAmount(x, z, fortSpans));
+  if (on) {
+    const g = fortGrid(x, z);
+    if (fortGridSquare(g.gx, g.gy) === "G-9") return vary(FORT_CANYON, x, z, 0.04);
+    const patch = hash(x * 0.17, z * 0.13) > 0.7 ? 1 : 0;
+    return mix(vary(FORT_GRASS, x, z, 0.045), vary(FORT_PATCH, x, z, 0.04), patch);
+  }
   const rise = y - nearestTerrace(x, z, fortSpans, fortBands);
-  const gz = fortClearance(x, z + 1) - fortClearance(x, z - 1);
-  const gx = fortClearance(x + 1, z) - fortClearance(x - 1, z);
-  const south = -(gz / (Math.hypot(gx, gz) || 1)) > 0.35 && rise < 1.3;
-  if (south) return mix(vary(ROCK, x, z, 0.06), vary(MOSS, x, z, 0.06), smoothstep(0.3, 0.9, rise));
-  if (rise > 4.2) return vary(MOSS, x, z, 0.06);
-  return vary(ROCK, x, z, 0.06);
+  if (rise > 3.4) return vary(FORT_TOP, x, z, 0.05);
+  return vary(FORT_CLIFF, x, z, 0.05);
 }
 
 function yugPaint(pack: ReturnType<typeof yugPack>, x: number, z: number, y: number, on: boolean) {
-  if (on) return vary(CAVE_FLOOR, x, z, 0.04);
+  const floor = pack.map === 2 ? Y2_FLOOR : Y1_FLOOR;
+  const wall = pack.map === 2 ? Y2_WALL : Y1_WALL;
+  const top = pack.map === 2 ? Y2_TOP : Y1_TOP;
+  if (on) return vary(floor, x, z, 0.04);
   const rise = y - nearestTerrace(x, z, pack.spans, pack.bands);
-  return mix(vary(CAVE_WALL, x, z, 0.03), vary(CAVE_WALL_TOP, x, z, 0.03), smoothstep(0, 7.5, rise));
+  return mix(vary(wall, x, z, 0.03), vary(top, x, z, 0.03), smoothstep(0, 7.5, rise));
 }
 
 export function bakeAllFields(): BakedArrays[] {

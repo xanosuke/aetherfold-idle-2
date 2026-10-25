@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
+import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -27,7 +27,8 @@ import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG } from "./ghelsba";
-import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottTorches } from "./orc-height";
+import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh } from "./orc-height";
+import { fortFlames, orcDressMarks, yughottDrums } from "./orc-dress";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -4387,7 +4388,7 @@ function buildYard(canvas) {
 	const zoneFog = new Fog(9357551, 26, 52);
 	const ghelsbaFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
 	const fortFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
-	const yughottFog = new Fog(0x1e1914, 40, 110);
+	const yughottFog = new Fog(0x15141c, 35, 100);
 	const canyonFog = new Fog(7231552, 18, 40);
 	const caveFog = new Fog(525828, 36, 78);
 	const passFog = new Fog(0x07090d, 42, 120);
@@ -13512,16 +13513,16 @@ function buildYard(canvas) {
 			sun.intensity = 1.9;
 			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else if (inYughott(px, pz)) {
-			hemi.color.setHex(0x8a7a66);
-			hemi.groundColor.setHex(0x2a2018);
-			hemi.intensity = 0.75;
-			sun.intensity = 0.6;
+			hemi.color.setHex(0x6a6a8a);
+			hemi.groundColor.setHex(0x1a1820);
+			hemi.intensity = 0.6;
+			sun.intensity = 0.85;
 			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else if (inFort(px, pz)) {
 			hemi.color.setHex(12969727);
 			hemi.groundColor.setHex(6983498);
-			hemi.intensity = 0.54;
-			sun.intensity = 1.9;
+			hemi.intensity = 0.7;
+			sun.intensity = 1.35;
 			if (scene.fog !== fogFor(px, pz)) scene.fog = fogFor(px, pz);
 		} else {
 			hemi.color.setHex(12969727);
@@ -13575,10 +13576,11 @@ function buildYard(canvas) {
 			}
 			if (orcCamp) {
 				const fires = [];
-				const yugTorches = orcHere.id === "yughott" ? yughottTorches() : null;
-				if (yugTorches) {
-					for (let i = 0; i < yugTorches.length; i++) {
-						const fire = yugTorches[i];
+				const yugHere = orcHere.id === "yughott";
+				if (yugHere) {
+					const drums = yughottDrums();
+					for (let i = 0; i < drums.length; i++) {
+						const fire = drums[i];
 						const dx = fire.x - px;
 						const dz = fire.z - pz;
 						fires.push({ fire, d: dx * dx + dz * dz });
@@ -13591,25 +13593,36 @@ function buildYard(canvas) {
 						const dz = fire.z - pz;
 						fires.push({ fire, d: dx * dx + dz * dz });
 					}
+					if (orcHere.id === "fort-ghelsba") {
+						const flames = fortFlames();
+						for (let i = 0; i < flames.length; i++) {
+							const fire = flames[i];
+							const dx = fire.x - px;
+							const dz = fire.z - pz;
+							fires.push({ fire, d: dx * dx + dz * dz });
+						}
+					}
 				}
 				fires.sort((a, b) => a.d - b.d);
-				const yugHere = orcHere.id === "yughott";
+				const cap = yugHere ? 6 : orcLights.length;
 				for (let i = 0; i < orcLights.length; i++) {
-					const spot = fires[i];
+					const spot = i < cap ? fires[i] : null;
 					const light = orcLights[i];
 					if (!spot) {
 						light.intensity = 0;
 						continue;
 					}
 					light.color.setHex(yugHere ? 0xffa050 : 0xff6a2a);
-					light.distance = 14;
+					light.distance = yugHere ? 12 : 14;
 					light.position.set(spot.fire.x, traceFloorY(spot.fire.x, spot.fire.z) + 1.6, spot.fire.z);
 					const flicker = 1 + 0.12 * Math.sin(elapsed * 6.5 + i * 1.7);
 					light.intensity = (yugHere ? 1.6 : 28) * flicker;
 				}
 			}
 		}
-		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inGhelsba(px, pz) || inFort(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x1e1914 : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
+		const orcFall = scene.userData.orcFall;
+		if (orcFall) orcFall.opacity = 0.34 + 0.14 * Math.sin(elapsed * 2.4);
+		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inGhelsba(px, pz) || inFort(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x15141c : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
@@ -46956,7 +46969,7 @@ function buildRoom(scene, toonMat, colliders) {
 		passLights.push(light);
 	}
 	const orcLights = [];
-	for (let i = 0; i < 6; i++) {
+	for (let i = 0; i < 8; i++) {
 		const light = new PointLight(0xff6a2a, 0, 14, 2);
 		light.castShadow = false;
 		orcLights.push(light);
@@ -47302,6 +47315,35 @@ function buildRoom(scene, toonMat, colliders) {
 	fortLiftDeck.castShadow = true;
 	fortLiftDeck.receiveShadow = true;
 	scene.add(fortLiftDeck);
+	const orcPoolMat = new MeshPhongMaterial({ color: 0x434340, transparent: true, opacity: 0.85, shininess: 30, specular: 0x889988, depthWrite: false });
+	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.28, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const orcGlowMat = new MeshBasicMaterial({ color: 0xc45a28, transparent: true, opacity: 0.34, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const orcFallMat = new MeshBasicMaterial({ color: 0xd5e7ff, transparent: true, opacity: 0.42, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	for (const mark of orcDressMarks()) {
+		if (mark.kind === "pool") {
+			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 7), orcPoolMat);
+			water.rotation.x = -Math.PI / 2;
+			water.position.set(mark.x, mark.y + 0.06, mark.z);
+			water.receiveShadow = false;
+			scene.add(water);
+		} else if (mark.kind === "shaft") {
+			const shaft = new Mesh(new PlaneGeometry(0.55, 9), orcShaftMat);
+			shaft.position.set(mark.x, traceFloorY(mark.x, mark.z) + 4.6, mark.z);
+			scene.add(shaft);
+		} else if (mark.kind === "glow") {
+			const glow = new Mesh(new CircleGeometry(mark.r ?? 7, 10), orcGlowMat);
+			glow.rotation.x = -Math.PI / 2;
+			glow.position.set(mark.x, traceFloorY(mark.x, mark.z) + 7.2, mark.z);
+			scene.add(glow);
+		} else if (mark.kind === "fall") {
+			const fall = new Mesh(new PlaneGeometry(1.35, 15), orcFallMat);
+			const y = traceFloorY(mark.x, mark.z);
+			fall.position.set(mark.x, y - 4, mark.z);
+			fall.rotation.y = mark.yaw ?? 0;
+			scene.add(fall);
+		}
+	}
+	scene.userData.orcFall = orcFallMat;
 	const terrainMat = toonMat(0xffffff);
 	terrainMat.vertexColors = true;
 	terrainMat.alphaHash = false;
@@ -47324,7 +47366,7 @@ function buildRoom(scene, toonMat, colliders) {
 	yughottMat.customProgramCacheKey = () => "yughott-terrain-slope";
 	yughottMat.onBeforeCompile = (shader) => {
 		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.55 + 0.45 * clamp(ny, 0.0, 1.0);\n}");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.55 + 0.45 * clamp(ny, 0.0, 1.0);\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.09);\n#include <opaque_fragment>");
 		if (!shader.fragmentShader.includes("0.55 + 0.45")) throw new Error("yughott terrain shader");
 	};
 	const tx0 = GHELSBA_TERRAIN.x;

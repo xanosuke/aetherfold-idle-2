@@ -33,10 +33,10 @@ import {
   traceFloorY,
   yughottNode,
   yughottPoi,
-  yughottTorches,
   seatedFortPois,
   seatedYughottPois,
 } from "./orc-height";
+import { assertCampDress, dressOrcCamps } from "./orc-dress";
 
 /** World box of the traced floor, padded by the widest path. Outside it, clearance cannot be positive. */
 const GRAPH_BOX = (() => {
@@ -2457,15 +2457,15 @@ function warHut(add: Add, colliders: Solid[], x: number, z: number, scale: numbe
   remember("war-hut", x, z, Math.max(hw, hd) + 0.2);
 }
 
-function domeHut(add: Add, colliders: Solid[], x: number, z: number) {
+function domeHut(add: Add, colliders: Solid[], x: number, z: number, hide = 0x6f6949, cap = 0x5e6040, gy?: number, quiet = false) {
   const R = 2.15;
-  const gy = gyAt(x, z);
-  add(0x6f6949, R * 2, R * 0.55, R * 1.65, x, gy + R * 0.28, z);
-  add(0x6f6949, R * 1.45, R * 0.48, R * 1.2, x, gy + R * 0.72, z);
-  add(0x5e6040, R * 0.8, R * 0.32, R * 0.65, x, gy + R * 1.05, z);
-  add(0x1a1410, R * 0.55, R * 0.62, 0.16, x, gy + R * 0.34, z + R * 0.78);
-  solidBox(add, colliders, 0x6f6949, R * 1.2, R * 0.7, R * 0.9, x, gy + R * 0.35, z - R * 0.15);
-  remember("dome", x, z, R);
+  const ground = gy ?? gyAt(x, z);
+  add(hide, R * 2, R * 0.55, R * 1.65, x, ground + R * 0.28, z);
+  add(hide, R * 1.45, R * 0.48, R * 1.2, x, ground + R * 0.72, z);
+  add(cap, R * 0.8, R * 0.32, R * 0.65, x, ground + R * 1.05, z);
+  add(0x1a1410, R * 0.55, R * 0.62, 0.16, x, ground + R * 0.34, z + R * 0.78);
+  solidBox(add, colliders, hide, R * 1.2, R * 0.7, R * 0.9, x, ground + R * 0.35, z - R * 0.15);
+  if (!quiet) remember("dome", x, z, R);
 }
 
 type PalisadePt = { x: number; z: number; outZ?: number };
@@ -2948,7 +2948,7 @@ function caveMouth(add: Add, gx: number, gy: number) {
   return true;
 }
 
-function tripod(add: Add, x: number, z: number) {
+function tripod(add: Add, x: number, z: number, quiet = false) {
   const top = 1.9;
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2;
@@ -2956,7 +2956,7 @@ function tripod(add: Add, x: number, z: number) {
     add(0x3d342a, 0.07, top, 0.07, x + Math.cos(a) * 0.28, top * 0.45, z + Math.sin(a) * 0.28, yaw, 0.62);
   }
   add(0xb59a6a, 0.14, 0.08, 0.14, x, top * 0.92, z);
-  remember("tripod", x, z, 0.55);
+  if (!quiet) remember("tripod", x, z, 0.55);
 }
 
 function emblemBanner(add: Add, colliders: Solid[], x: number, z: number) {
@@ -2996,10 +2996,10 @@ function pennantString(add: Add, colliders: Solid[], x: number, z: number) {
   remember("pennant", b.x, b.z, 0.3);
 }
 
-function deadTree(add: Add, colliders: Solid[], x: number, z: number) {
-  const gy = gyAt(x, z);
-  const h = 2.5 + jitter(x, z) * 1.5;
-  const wood = 0x4a433c;
+function deadTree(add: Add, colliders: Solid[], x: number, z: number, opt?: { tint?: number; ground?: number; quiet?: boolean }) {
+  const gy = opt?.ground ?? gyAt(x, z);
+  const h = opt?.ground == null ? 2.5 + jitter(x, z) * 1.5 : 3 + jitter(x, z);
+  const wood = opt?.tint ?? 0x4a433c;
   if (gy < 0.2) solidBox(add, colliders, wood, 0.26, h, 0.26, x, gy + h / 2, z);
   else add(wood, 0.26, h, 0.26, x, gy + h / 2, z);
   const branches = 2 + Math.floor(jitter(x + 2, z) * 3);
@@ -3007,7 +3007,7 @@ function deadTree(add: Add, colliders: Solid[], x: number, z: number) {
     const yaw = jitter(x, z + i * 4) * Math.PI * 2;
     add(wood, 1.15, 0.08, 0.08, x, gy + h * (0.5 + i * 0.12), z, yaw, 0.85);
   }
-  remember("dead-tree", x, z, 0.4);
+  if (!opt?.quiet) remember("dead-tree", x, z, 0.4);
 }
 
 function canopyTree(add: Add, colliders: Solid[], x: number, z: number) {
@@ -3018,12 +3018,12 @@ function canopyTree(add: Add, colliders: Solid[], x: number, z: number) {
   remember("canopy", x, z, 1.25);
 }
 
-function hugeCrystal(add: Add, x: number, z: number) {
+function hugeCrystal(add: Add, x: number, z: number, quiet = false) {
   const hues = [0x7eb6dc, 0xb7d7f2, 0xe9f7ff, 0xb7d7f2, 0x7eb6dc];
   const widths = [0.26, 0.58, 0.92, 0.58, 0.26];
   for (let i = 0; i < hues.length; i++) add(hues[i], widths[i], 0.4, widths[i] * 0.78, x, 1.2 + i * 0.36, z, 0.4 + i * 0.2);
   add(0xd7f4ff, 0.18, 0.18, 0.18, x, 2.15, z);
-  remember("crystal", x, z, 0.55);
+  if (!quiet) remember("crystal", x, z, 0.55);
 }
 
 function nearestPlateauFloor(x: number, z: number): { x: number; z: number } | null {
@@ -3312,48 +3312,8 @@ function lifted(base: Add): Add {
 
 function dressFort(add: Add, _colliders: Solid[]) {
   const put = lifted(add);
-  const wood = 0x6b4e32;
-  const seen = new Set<string>();
-  for (const band of FORT_GRAPH.bands) {
-    if (band.level !== "low" && band.level !== "mid" && band.level !== "top") continue;
-    const pts = band.pts.map(([gx, gy]) => fortWorld(gx, gy));
-    if (pts.length < 3) continue;
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i];
-      const b = pts[(i + 1) % pts.length];
-      const len = Math.hypot(b.x - a.x, b.z - a.z);
-      if (len < 1.4) continue;
-      const nx = -(b.z - a.z) / len;
-      const nz = (b.x - a.x) / len;
-      const mx = (a.x + b.x) / 2;
-      const mz = (a.z + b.z) / 2;
-      const left = fortClearance(mx + nx * 1.6, mz + nz * 1.6);
-      const right = fortClearance(mx - nx * 1.6, mz - nz * 1.6);
-      const ox = left < right ? nx : -nx;
-      const oz = left < right ? nz : -nz;
-      if (oz > 0.28) continue;
-      const steps = Math.max(1, Math.floor(len / 4.2));
-      for (let s = 0; s <= steps; s++) {
-        const t = s / steps;
-        const x = a.x + (b.x - a.x) * t + ox * 1.45;
-        const z = a.z + (b.z - a.z) * t + oz * 1.45;
-        const room = fortClearance(x, z);
-        if (room > -0.2 || room < -1.8) continue;
-        const key = `${Math.round(x / 2)}:${Math.round(z / 2)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const tall = 1.65 + jitter(x, z) * 0.25;
-        put(wood, 0.3, tall, 0.3, x, tall / 2, z);
-      }
-    }
-  }
   const gate = ORC_GATES.find((row) => row.id === "fort-out");
   if (gate) fortArch(put, gate);
-  const lift = fortNode("lift_h7");
-  put(0x5c4630, 0.22, 6.2, 0.22, lift.x - 1.7, 3.1, lift.z - 1.2);
-  put(0x5c4630, 0.22, 6.2, 0.22, lift.x + 1.7, 3.1, lift.z - 1.2);
-  put(0x5c4630, 0.22, 6.2, 0.22, lift.x - 1.7, 3.1, lift.z + 1.2);
-  put(0x5c4630, 0.22, 6.2, 0.22, lift.x + 1.7, 3.1, lift.z + 1.2);
 }
 
 function bonePile(put: Add, x: number, z: number) {
@@ -3364,11 +3324,29 @@ function bonePile(put: Add, x: number, z: number) {
 
 function dressYughott(add: Add, _colliders: Solid[]) {
   const put = lifted(add);
-  for (const spot of yughottTorches()) torch(put, spot.x, spot.z, "n");
   const west = yughottNode(1, "area_room_b");
   const lower = yughottNode(2, "area_south");
   bonePile(put, west.x + 1.6, west.z - 1.1);
   bonePile(put, lower.x - 1.5, lower.z + 1.2);
+}
+
+function dressCamps(add: Add, colliders: Solid[]) {
+  const avoid: { x: number; z: number; r: number }[] = [];
+  for (const gate of ORC_GATES) {
+    avoid.push({ x: gate.x, z: gate.z, r: 4.2 });
+    avoid.push({ x: gate.arrive.x, z: gate.arrive.z, r: 4.2 });
+  }
+  for (const poi of [...seatedFortPois(), ...seatedYughottPois()]) {
+    avoid.push({ x: poi.x, z: poi.z, r: poi.id.startsWith("chest") ? 2.4 : 1.8 });
+  }
+  dressOrcCamps(lifted(add), colliders, {
+    dome: (draw, x, z, lift, hide) => domeHut(draw, colliders, x, z, hide, 0x4a4036, lift, true),
+    tripod: (draw, x, z) => tripod(draw, x, z, true),
+    dead: (draw, x, z) => deadTree(draw, colliders, x, z, { tint: 0x2a2622, ground: 0, quiet: true }),
+    emblem: (draw, x, y, z, s) => ringEmblem(draw, x, y, z, 0, s),
+    rope: (draw, x0, z0, x1, z1, y, dip) => sagRope(draw, x0, z0, x1, z1, y, dip, "camp"),
+    crystal: (draw, x, z) => hugeCrystal(draw, x, z, true),
+  }, avoid);
 }
 
 export function buildOrcLands(add: Add, colliders: Solid[]) {
@@ -3398,6 +3376,7 @@ export function buildOrcLands(add: Add, colliders: Solid[]) {
   dressGhelsba(add, colliders);
   dressFort(add, colliders);
   dressYughott(add, colliders);
+  dressCamps(add, colliders);
   const camp = besideFloor("area_plateau", 6);
   const look = nodeAt("area_nw_snake");
   shrub(add, look.x + 4, look.z + 2);
@@ -3668,4 +3647,5 @@ export function assertGhelsba(): void {
     }
   }
   assertGhelsbaProps();
+  assertCampDress(solids, (prop) => (prop.zone === "fort" ? fortSquare(prop.x, prop.z) : yughottSquare(prop.x, prop.z)));
 }
