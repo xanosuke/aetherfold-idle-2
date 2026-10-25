@@ -1422,14 +1422,18 @@ function landingNeed(aggressive: boolean, roam: number, x = 0, z = 0): number {
   return Math.max(SIGHT_RANGE, SOUND_RANGE) + roam + LAND_PAD;
 }
 
+const LANDING_TOMB = LANDINGS.map((spot) => inTomb(spot.x, spot.z, 0));
+const LANDING_PASS = LANDINGS.map((spot) => inPass(spot.x, spot.z, 0));
+
 function blocksLanding(x: number, z: number, aggressive: boolean, roam: number): boolean {
   const tomb = inTomb(x, z, 0);
   const tunnel = inPass(x, z, 0);
   const need = landingNeed(aggressive, roam, x, z);
-  for (const spot of LANDINGS) {
-    if (tomb && !inTomb(spot.x, spot.z, 0)) continue;
-    if (tunnel && !inPass(spot.x, spot.z, 0)) continue;
-    if (!tunnel && !tomb && inPass(spot.x, spot.z, 0)) continue;
+  for (let i = 0; i < LANDINGS.length; i++) {
+    if (tomb && !LANDING_TOMB[i]) continue;
+    if (tunnel && !LANDING_PASS[i]) continue;
+    if (!tunnel && !tomb && LANDING_PASS[i]) continue;
+    const spot = LANDINGS[i];
     if (Math.hypot(spot.x - x, spot.z - z) < need) return true;
   }
   return false;

@@ -21,8 +21,8 @@ import {
   clampGhelsbaGraph,
   gridToWorld,
 } from "./ghelsba-graph";
-import { FORT_GRAPH, fortClearance, fortMaskRects, inFortGraph, clampFortGraph, gridToWorld as fortWorld } from "./fort-graph";
-import { YUGHOTT_GRAPHS, inYughottGraph, clampYughottGraph, yughottMapAt, yughottMaskRects } from "./yughott-graph";
+import { FORT_DISCS, FORT_GRAPH, FORT_RINGS, FORT_SEGS, fortClearance, fortMaskRects, clampFortGraph, gridToWorld as fortWorld } from "./fort-graph";
+import { YUGHOTT_GEO, YUGHOTT_GRAPHS, clampYughottGraph, yughottMapAt, yughottMaskRects } from "./yughott-graph";
 import {
   assertFort,
   assertYughott,
@@ -671,6 +671,160 @@ export function seatGhelsbaSave(x: number, z: number): { x: number; z: number } 
 const FORT_FLOOR: Rect[] = fortMaskRects(12);
 const YUG_FLOOR: Rect[] = [...yughottMaskRects(1, 12), ...yughottMaskRects(2, 12)];
 
+type FloorBox = { minX: number; maxX: number; minZ: number; maxZ: number };
+function coverFloor(box: FloorBox, x: number, z: number, pad: number) {
+  box.minX = Math.min(box.minX, x - pad);
+  box.maxX = Math.max(box.maxX, x + pad);
+  box.minZ = Math.min(box.minZ, z - pad);
+  box.maxZ = Math.max(box.maxZ, z + pad);
+}
+function floorBox(): FloorBox {
+  return { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+}
+/** Every point with non-negative clearance sits in this box. Outside it the graph walk is false. */
+function fortFloorBox(): FloorBox {
+  const box = floorBox();
+  for (const s of FORT_SEGS) {
+    coverFloor(box, s.ax, s.az, s.half);
+    coverFloor(box, s.bx, s.bz, s.half);
+  }
+  for (const d of FORT_DISCS) coverFloor(box, d.x, d.z, d.r);
+  for (const a of FORT_RINGS) for (const ring of a.rings) for (const p of ring) coverFloor(box, p.x, p.z, 0);
+  return box;
+}
+function yughottFloorBox(): FloorBox {
+  const box = floorBox();
+  for (const map of [1, 2] as const) {
+    const geo = YUGHOTT_GEO[map];
+    for (const s of geo.segs) {
+      coverFloor(box, s.ax, s.az, s.half);
+      coverFloor(box, s.bx, s.bz, s.half);
+    }
+    for (const d of geo.discs) coverFloor(box, d.x, d.z, d.r);
+    for (const a of geo.rings) for (const ring of a.rings) for (const p of ring) coverFloor(box, p.x, p.z, 0);
+  }
+  return box;
+}
+const FORT_BOX = fortFloorBox();
+const YUG_BOX = yughottFloorBox();
+function inFloorBox(box: FloorBox, x: number, z: number) {
+  return x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
+}
+
+/** Same answer as inFortGraph / inYughottGraph, but only the walls near the point. */
+const FLOOR_CELL = 32;
+type FloorSeg = { ax: number; az: number; bx: number; bz: number; half: number };
+type FloorDisc = { x: number; z: number; r: number };
+type FloorPt = { x: number; z: number };
+type FloorArea = { rings: FloorPt[][]; minX: number; maxX: number; minZ: number; maxZ: number };
+type FloorBucket = { segs: FloorSeg[]; discs: FloorDisc[]; areas: FloorArea[] };
+type FloorIndex = Map<number, FloorBucket>;
+function floorKey(ix: number, iz: number) {
+  return ix * 8192 + iz;
+}
+function floorBucket(index: FloorIndex, ix: number, iz: number): FloorBucket {
+  const key = floorKey(ix, iz);
+  let row = index.get(key);
+  if (!row) {
+    row = { segs: [], discs: [], areas: [] };
+    index.set(key, row);
+  }
+  return row;
+}
+function coverFloorCells(index: FloorIndex, minX: number, maxX: number, minZ: number, maxZ: number, visit: (bucket: FloorBucket) => void) {
+  const ix0 = Math.floor(minX / FLOOR_CELL);
+  const ix1 = Math.floor(maxX / FLOOR_CELL);
+  const iz0 = Math.floor(minZ / FLOOR_CELL);
+  const iz1 = Math.floor(maxZ / FLOOR_CELL);
+  for (let ix = ix0; ix <= ix1; ix++) {
+    for (let iz = iz0; iz <= iz1; iz++) visit(floorBucket(index, ix, iz));
+  }
+}
+function buildFloorIndex(segs: readonly FloorSeg[], discs: readonly FloorDisc[], areas: readonly { rings: FloorPt[][] }[]): FloorIndex {
+  const index: FloorIndex = new Map();
+  for (const seg of segs) {
+    const pad = seg.half + 0.25;
+    coverFloorCells(index, Math.min(seg.ax, seg.bx) - pad, Math.max(seg.ax, seg.bx) + pad, Math.min(seg.az, seg.bz) - pad, Math.max(seg.az, seg.bz) + pad, (bucket) => bucket.segs.push(seg));
+  }
+  for (const disc of discs) {
+    const pad = disc.r + 0.25;
+    coverFloorCells(index, disc.x - pad, disc.x + pad, disc.z - pad, disc.z + pad, (bucket) => bucket.discs.push(disc));
+  }
+  for (const area of areas) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const ring of area.rings) {
+      for (const p of ring) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.z < minZ) minZ = p.z;
+        if (p.z > maxZ) maxZ = p.z;
+      }
+    }
+    const packed: FloorArea = { rings: area.rings, minX, maxX, minZ, maxZ };
+    coverFloorCells(index, minX - 0.25, maxX + 0.25, minZ - 0.25, maxZ + 0.25, (bucket) => bucket.areas.push(packed));
+  }
+  return index;
+}
+function ringsContainPts(rings: FloorPt[][], x: number, z: number) {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i];
+      const b = ring[j];
+      if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+    }
+  }
+  return inside;
+}
+function ringDistPts(rings: FloorPt[][], x: number, z: number) {
+  let best = Infinity;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j];
+      const b = ring[i];
+      const q = nearPoint(x, z, a.x, a.z, b.x, b.z);
+      const dd = Math.hypot(x - q.x, z - q.z);
+      if (dd < best) best = dd;
+    }
+  }
+  return best;
+}
+function indexedFloor(index: FloorIndex, x: number, z: number, radius: number) {
+  const bucket = index.get(floorKey(Math.floor(x / FLOOR_CELL), Math.floor(z / FLOOR_CELL)));
+  if (!bucket) return false;
+  const need = radius > 0 ? radius : 0;
+  for (let i = 0; i < bucket.segs.length; i++) {
+    const seg = bucket.segs[i];
+    const q = nearPoint(x, z, seg.ax, seg.az, seg.bx, seg.bz);
+    if (seg.half - Math.hypot(x - q.x, z - q.z) >= need) return true;
+  }
+  for (let i = 0; i < bucket.discs.length; i++) {
+    const disc = bucket.discs[i];
+    if (disc.r - Math.hypot(x - disc.x, z - disc.z) >= need) return true;
+  }
+  for (let i = 0; i < bucket.areas.length; i++) {
+    const area = bucket.areas[i];
+    if (x < area.minX || x > area.maxX || z < area.minZ || z > area.maxZ) continue;
+    if (!ringsContainPts(area.rings, x, z)) continue;
+    if (need <= 0 || ringDistPts(area.rings, x, z) >= need) return true;
+  }
+  return false;
+}
+const FORT_FLOOR_INDEX = buildFloorIndex(FORT_SEGS, FORT_DISCS, FORT_RINGS);
+const YUG1_FLOOR_INDEX = buildFloorIndex(YUGHOTT_GEO[1].segs, YUGHOTT_GEO[1].discs, YUGHOTT_GEO[1].rings);
+const YUG2_FLOOR_INDEX = buildFloorIndex(YUGHOTT_GEO[2].segs, YUGHOTT_GEO[2].discs, YUGHOTT_GEO[2].rings);
+function fortFloorAt(x: number, z: number, radius = 0) {
+  return indexedFloor(FORT_FLOOR_INDEX, x, z, radius);
+}
+function yughottFloorAt(x: number, z: number, radius = 0, map?: 1 | 2) {
+  if (map === 1) return indexedFloor(YUG1_FLOOR_INDEX, x, z, radius);
+  if (map === 2) return indexedFloor(YUG2_FLOOR_INDEX, x, z, radius);
+  return indexedFloor(YUG1_FLOOR_INDEX, x, z, radius) || indexedFloor(YUG2_FLOOR_INDEX, x, z, radius);
+}
+
 export const ORC_ZONES: { id: string; name: string; rects: Rect[]; fog: "canyon" | "cave" | "peak" }[] = [
   { id: "ghelsba", name: "Ghelsba Outpost", rects: OUT_FLOOR, fog: "canyon" },
   { id: "fort-ghelsba", name: "Fort Ghelsba", rects: FORT_FLOOR, fog: "canyon" },
@@ -684,8 +838,8 @@ function hit(rects: readonly Rect[], x: number, z: number, r: number) {
 
 export function orcZoneAt(x: number, z: number, radius = 0): (typeof ORC_ZONES)[number] | null {
   const r = Math.max(0, radius);
-  if (inFortGraph(x, z, r)) return ORC_ZONES[1];
-  if (inYughottGraph(x, z, r)) return ORC_ZONES[2];
+  if (inFloorBox(FORT_BOX, x, z) && fortFloorAt(x, z, r)) return ORC_ZONES[1];
+  if (inFloorBox(YUG_BOX, x, z) && yughottFloorAt(x, z, r)) return ORC_ZONES[2];
   if (hit(PEAK_ROOMS, x, z, r)) return ORC_ZONES[3];
   if (outsideGraph(x, z, r) || !inGhelsbaGraph(x, z, r)) return null;
   return ORC_ZONES[0];
@@ -736,8 +890,8 @@ export function yughottSquare(x: number, z: number): string {
 
 /** Map 1 is the upper cave (z <= 769). Map 2 is the lower cave (z >= 807). On a floor, the traced graph wins. */
 export function grottoMap(x: number, z: number): 1 | 2 | null {
-  if (inYughottGraph(x, z, 0, 1)) return 1;
-  if (inYughottGraph(x, z, 0, 2)) return 2;
+  if (yughottFloorAt(x, z, 0, 1)) return 1;
+  if (yughottFloorAt(x, z, 0, 2)) return 2;
   if (z <= 769) return 1;
   if (z >= 807) return 2;
   return yughottMapAt(x, z);
@@ -798,15 +952,15 @@ export function clampOrc(x: number, z: number, radius = 0): { x: number; z: numb
     if (!ok) return;
     cands.push({ x: at.x, z: at.z, d: Math.hypot(at.x - x, at.z - z) });
   };
-  if (inFortGraph(x, z, r)) consider({ x, z }, true);
+  if (fortFloorAt(x, z, r)) consider({ x, z }, true);
   else {
     const fort = clampFortGraph(x, z, r);
-    consider(fort, Math.hypot(fort.x - x, fort.z - z) <= 70 && inFortGraph(fort.x, fort.z, 0));
+    consider(fort, Math.hypot(fort.x - x, fort.z - z) <= 70 && fortFloorAt(fort.x, fort.z, 0));
   }
-  if (inYughottGraph(x, z, r)) consider({ x, z }, true);
+  if (yughottFloorAt(x, z, r)) consider({ x, z }, true);
   else {
     const yug = clampYughottGraph(x, z, r);
-    consider(yug, Math.hypot(yug.x - x, yug.z - z) <= 70 && inYughottGraph(yug.x, yug.z, 0));
+    consider(yug, Math.hypot(yug.x - x, yug.z - z) <= 70 && yughottFloorAt(yug.x, yug.z, 0));
   }
   let best: Rect | null = null;
   let bestD = Infinity;
@@ -846,7 +1000,7 @@ export type OrcChart = {
   rects: Rect[];
   water: Rect[];
   bounds: Rect;
-  marks: { x: number; z: number; name: string }[];
+  marks: { x: number; z: number; name: string; role?: "nm" | "ph" }[];
   grid: { x0: number; z0: number; cell: number } | null;
   /** Traced tunnel centerlines, in yalms. The map strokes these instead of filling rects. */
   paths?: { pts: { x: number; z: number }[]; width: number }[];
@@ -869,16 +1023,17 @@ export function orcLayout(region: string, at?: { x: number; z: number }): OrcCha
     maxZ = Math.max(maxZ, rect.maxZ);
   }
   const pad = 18;
-  const onZone = (x: number, z: number) => zone.id === "ghelsba" ? inGhelsbaGraph(x, z, 0) : zone.id === "fort-ghelsba" ? inFortGraph(x, z, 0) : zone.id === "yughott" ? inYughottGraph(x, z, 0, yugMap ?? undefined) : hit(zone.rects, x, z, 0);
-  const marks = ORC_GATES.filter((gate) => onZone(gate.x, gate.z)).map((gate) => ({
+  const onZone = (x: number, z: number) => zone.id === "ghelsba" ? inGhelsbaGraph(x, z, 0) : zone.id === "fort-ghelsba" ? fortFloorAt(x, z, 0) : zone.id === "yughott" ? yughottFloorAt(x, z, 0, yugMap ?? undefined) : hit(zone.rects, x, z, 0);
+  const marks: OrcChart["marks"] = ORC_GATES.filter((gate) => onZone(gate.x, gate.z)).map((gate) => ({
     x: gate.x,
     z: gate.z,
     name: gate.name,
   }));
-  const pushPoi = (poi: { x: number; z: number; label: string }) => {
+  const pushPoi = (poi: { x: number; z: number; label: string; id?: string }) => {
     const name = poi.label.split(" (")[0];
     if (marks.some((mark) => Math.hypot(mark.x - poi.x, mark.z - poi.z) < 6 && mark.name === name)) return;
-    marks.push({ x: poi.x, z: poi.z, name });
+    const role = poi.id?.startsWith("ph_") || /placeholder/i.test(poi.label) ? "ph" as const : poi.id?.startsWith("nm_") || /\(NM\b/.test(poi.label) ? "nm" as const : undefined;
+    marks.push({ x: poi.x, z: poi.z, name, role });
   };
   if (region === "Ghelsba Outpost") {
     for (const poi of GHELSBA_GRAPH.pois) pushPoi({ ...gridToWorld(poi.gx, poi.gy), label: poi.label });
@@ -1577,7 +1732,7 @@ function pathDirt(x: number, z: number) {
 }
 
 function inBuiltRoom(x: number, z: number) {
-  return inFortGraph(x, z, 0) || inYughottGraph(x, z, 0) || hit(PEAK_ROOMS, x, z, 0);
+  return (inFloorBox(FORT_BOX, x, z) && fortFloorAt(x, z, 0)) || (inFloorBox(YUG_BOX, x, z) && yughottFloorAt(x, z, 0)) || hit(PEAK_ROOMS, x, z, 0);
 }
 
 /** Camera-side cliffs are a low lip. The mesh is baked once, so it does not follow the player. */
@@ -3237,7 +3392,7 @@ export function buildOrcLands(add: Add, colliders: Solid[]) {
   cliffRails(add, colliders);
   cliffWall(add, colliders, PEAK_ROOMS, peakGates, "rock");
   for (const gate of ORC_GATES) {
-    if (inGhelsbaGraph(gate.x, gate.z, 0) || inFortGraph(gate.x, gate.z, 0) || inYughottGraph(gate.x, gate.z, 0)) continue;
+    if (inGhelsbaGraph(gate.x, gate.z, 0) || fortFloorAt(gate.x, gate.z, 0) || yughottFloorAt(gate.x, gate.z, 0)) continue;
     apron(add, gate, cave);
   }
   dressGhelsba(add, colliders);

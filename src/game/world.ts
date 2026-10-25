@@ -748,7 +748,7 @@ export function regionName(x: number, z: number): string {
   return "San d'Oria";
 }
 
-function assertWorld(): void {
+export function assertWorld(): void {
   assertWestGrid();
   if (FOREST_HALF * 2 < 18.6 * Math.sqrt(10) - 0.05) throw new Error("forest is not 10x the pen");
   if (RON_SIZE !== 576) throw new Error("west ronfaure is 576 yalms");
@@ -969,10 +969,4 @@ export function assertWestGrid(): void {
   if (!c7 || squareOf(south, c7.x, c7.z) !== "C-7") throw new Error("C-7");
   const back = squareCenter(south, "I-6");
   if (!back || Math.abs(back.x - RON_MARKS.southGate.x) > 0.01 || Math.abs(back.z - RON_MARKS.southGate.z) > 0.01) throw new Error("I-6 center");
-}
-
-try {
-  assertWorld();
-} catch (err) {
-  console.error(err);
 }

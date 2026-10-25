@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { inflateSync } from "node:zlib";
 import { chromium } from "playwright";
 import { checkedOutputPath, checkedUrl } from "./browser-guard.mjs";
+import { assertOrcFieldsFresh } from "./orc-fields-fresh.mjs";
 import { computeBrandWarnings } from "./brand-check.mjs";
 import {
   authInvariantWarnings,
@@ -27,6 +28,7 @@ if (args.error) {
   console.error(JSON.stringify({ ok: false, error: args.error }, null, 2));
   process.exit(1);
 }
+assertOrcFieldsFresh();
 
 const url = checkedUrl(args.url);
 const outPng = checkedOutputPath(args.outPng, ["/workspace"]);
@@ -298,7 +300,32 @@ function canvasStats(png) {
   };
 }
 
-/** Cave light keeps the shirt cream, under the outdoor near-white cut. */
+async function waitBootLabel(page, predicate, arg, what) {
+  const bootAt = page.__bootAt || Date.now();
+  const left = Math.max(1, 8000 - (Date.now() - bootAt));
+  await page.waitForFunction(predicate, arg, { timeout: left });
+  const ms = Date.now() - bootAt;
+  console.log(`BOOT_LABEL_MS ${ms} ${what}`);
+  if (ms > 8000) throw new Error(`${what} zone label ${ms}ms`);
+  return ms;
+}
+
+async function assertTraceChunk(page, zone) {
+  await page.waitForFunction((name) => {
+    const bag = window.__traceChunkMs;
+    if (!bag) return false;
+    if (name === "yughott") return typeof bag.yug1 === "number" || typeof bag.yug2 === "number";
+    return typeof bag[name] === "number";
+  }, zone, { timeout: 4000 });
+  const bag = await page.evaluate(() => window.__traceChunkMs || {});
+  const keys = zone === "fort" ? ["fort"] : ["yug1", "yug2"].filter((key) => typeof bag[key] === "number");
+  if (!keys.length) throw new Error(`${zone} first chunk missing`);
+  for (const key of keys) {
+    console.log(`TRACE_CHUNK_MS ${key} ${bag[key].toFixed(2)}`);
+    if (!(bag[key] < 50)) throw new Error(`${key} first chunk ${bag[key].toFixed(1)}ms`);
+  }
+}
+
 function shirtCream(png) {
   const { width, height, data } = decodePng(png);
   let hits = 0;
@@ -553,19 +580,29 @@ async function orcTrace(browser, url, seated) {
       return route.continue();
     });
     await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: hop.x, z: hop.z, yaw: 0 }));
+    page.__bootAt = Date.now();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     const fromX = hop.x.toFixed(1);
     const fromZ = hop.z.toFixed(1);
     try {
-      await page.waitForFunction(
+      await waitBootLabel(
+        page,
         ([region, px, pz]) => (document.body?.innerText || "").includes(region) && (document.body?.innerText || "").includes(px) && (document.body?.innerText || "").includes(pz),
         [hop.from, fromX, fromZ],
-        { timeout: 90000 },
+        hop.name,
       );
     } catch (err) {
       const text = await page.locator("body").innerText().catch(() => "");
       await page.close();
       return { ok: false, error: `${hop.name} never reached ${hop.from} (${err.message})`, text: text.slice(0, 240), errors, shots };
+    }
+    if (hop.from === "Fort Ghelsba" || hop.from === "Yughott Grotto") {
+      try {
+        await assertTraceChunk(page, hop.from === "Fort Ghelsba" ? "fort" : "yughott");
+      } catch (err) {
+        await page.close();
+        return { ok: false, error: `${hop.name} ${err.message}`, errors, shots };
+      }
     }
     const dx = hop.mouthX - hop.x;
     const dz = hop.mouthZ - hop.z;
@@ -630,6 +667,7 @@ async function checkGhelsba(browser, url) {
     save.position = position;
     save.engaged = false;
     save.ko = false;
+    save.log = [];
     if (save.gambits?.player) save.gambits.player.on = false;
     return JSON.stringify(save);
   };
@@ -650,17 +688,19 @@ async function checkGhelsba(browser, url) {
         return route.continue();
       });
       await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x, z, yaw: 0 }));
+      page.__bootAt = Date.now();
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
       const needleX = x.toFixed(1);
       const needleZ = z.toFixed(1);
       try {
-        await page.waitForFunction(
+        await waitBootLabel(
+          page,
           ([px, pz]) => {
             const text = document.body?.innerText || "";
             return text.includes("Ghelsba") && text.includes(px) && text.includes(pz);
           },
           [needleX, needleZ],
-          { timeout: 90000 },
+          `${stand.name}+${step}`,
         );
       } catch (err) {
         const text = await page.locator("body").innerText().catch(() => "");
@@ -703,17 +743,19 @@ async function checkGhelsba(browser, url) {
       return route.continue();
     });
     await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: stand.x, z: stand.z, yaw: 0 }));
+    page.__bootAt = Date.now();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     const needleX = stand.x.toFixed(1);
     const needleZ = stand.z.toFixed(1);
     try {
-      await page.waitForFunction(
+      await waitBootLabel(
+        page,
         ([px, pz]) => {
           const text = document.body?.innerText || "";
           return text.includes("Ghelsba") && text.includes(px) && text.includes(pz);
         },
         [needleX, needleZ],
-        { timeout: 90000 },
+        stand.name,
       );
     } catch (err) {
       const text = await page.locator("body").innerText().catch(() => "");

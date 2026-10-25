@@ -3,6 +3,9 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { chromium } from "playwright";
+import { assertOrcFieldsFresh } from "./orc-fields-fresh.mjs";
+
+assertOrcFieldsFresh();
 
 const root = "/workspace";
 const shots = `${root}/screenshots`;
@@ -109,7 +112,7 @@ try {
   await mapPage.waitForFunction(() => {
     const text = document.body?.innerText || "";
     return text.includes("H-9") && text.includes("Ranguemont");
-  }, null, { timeout: 90000 });
+  }, null, { timeout: 25000 });
   await mapPage.getByRole("button", { name: /Open the .* map/ }).click();
   await mapPage.getByRole("dialog", { name: "Zone map" }).waitFor({ timeout: 8000 });
   await mapPage.waitForTimeout(400);
@@ -125,7 +128,7 @@ try {
   await viewPage.waitForFunction(() => {
     const text = document.body?.innerText || "";
     return text.includes("F-10") && text.includes("Ranguemont");
-  }, null, { timeout: 90000 });
+  }, null, { timeout: 25000 });
   await viewPage.waitForTimeout(800);
   const viewShot = `${shots}/pass-view-f10.png`;
   await viewPage.screenshot({ path: viewShot });
@@ -197,7 +200,7 @@ try {
   await fadePage.waitForFunction(() => {
     const text = document.body?.innerText || "";
     return text.includes("E-10") && text.includes("Ranguemont");
-  }, null, { timeout: 90000 });
+  }, null, { timeout: 45000 });
   await fadePage.waitForTimeout(700);
   const fadeAudit = await fadePage.evaluate(() => (window.__passAudit ? window.__passAudit() : null));
   const front = (fadeAudit || []).filter((row) => {

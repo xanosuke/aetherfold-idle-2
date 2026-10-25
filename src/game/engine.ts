@@ -25,9 +25,9 @@ import { assertGambits, GAMBIT_MEMBER } from "./gambits";
 import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustFollow, trustGearOf, trustItemId, trustTwoHand } from "./party";
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
-import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch } from "./world";
+import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG } from "./ghelsba";
-import { fortFieldBox, fortLift, fortTerrainSample, traceFloorY, yughottClaimsMesh, yughottFieldBox, yughottTerrainSample, yughottTorches } from "./orc-height";
+import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottTorches } from "./orc-height";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -35,6 +35,75 @@ import { buildGlacier, GLACIER_NPCS, inGlacier } from "./glacier";
 import { assertExp, noteDefeat, takeExpMarks } from "./exp";
 
 let fortLiftDeck = null;
+let stepTraceMeshes = () => {};
+let yardEpoch = 0;
+let fieldLive = false;
+let yardAssertsQueued = false;
+let runYardAsserts = () => {};
+function queueYardAsserts() {
+	if (yardAssertsQueued) return;
+	yardAssertsQueued = true;
+	runYardAsserts = () => {
+		try {
+			assertWorld();
+			assertFormulas();
+			assertStats();
+			assertWar();
+			assertBlm();
+			assertWhm();
+			assertRdm();
+			assertJobs();
+			assertMnk();
+			assertThf();
+			assertSam();
+			assertRng();
+			assertPld();
+			assertNin();
+			assertBrd();
+			assertDrk();
+			assertDrg();
+			assertBst();
+			assertBlu();
+			assertPup();
+			assertCor();
+			assertDnc();
+			assertSch();
+			assertRun();
+			assertGeo();
+			assertSmn();
+			assertVanatime();
+			assertFov();
+			assertAggro();
+			assertPack();
+			assertRonfaure();
+			assertEnmity();
+			assertMagic();
+			assertResist();
+			assertJobSheet();
+			assertRarab();
+			assertDefense();
+			assertCommands();
+			assertGait();
+			assertAbilities();
+			assertWeaponSkills();
+			assertDistance();
+			assertHotbar();
+			assertSkills();
+			assertFishing();
+			assertSpells();
+			assertLocks();
+			assertRanged();
+			assertGambits();
+			assertParty();
+			assertSpellMark();
+			assertSkillchain();
+			assertSave();
+			assertExp();
+		} catch (err) {
+			console.error(err);
+		}
+	};
+}
 import { publishRadar } from "./radar";
 import { assertWar } from "./war";
 import { assertBlm } from "./blm";
@@ -2095,63 +2164,35 @@ function poleSkillPose(name, p) {
 	return null;
 }
 export function createYard(canvas) {
-	try {
-		assertFormulas();
-		assertStats();
-		assertWar();
-		assertBlm();
-		assertWhm();
-		assertRdm();
-		assertJobs();
-		assertMnk();
-		assertThf();
-		assertSam();
-		assertRng();
-		assertPld();
-		assertNin();
-		assertBrd();
-		assertDrk();
-		assertDrg();
-		assertBst();
-		assertBlu();
-		assertPup();
-		assertCor();
-		assertDnc();
-		assertSch();
-		assertRun();
-		assertGeo();
-		assertSmn();
-		assertVanatime();
-		assertFov();
-		assertAggro();
-		assertPack();
-		assertRonfaure();
-		assertEnmity();
-		assertMagic();
-		assertResist();
-		assertJobSheet();
-		assertRarab();
-		assertDefense();
-		assertCommands();
-		assertGait();
-		assertAbilities();
-		assertWeaponSkills();
-		assertDistance();
-		assertHotbar();
-		assertSkills();
-		assertFishing();
-		assertSpells();
-		assertLocks();
-		assertRanged();
-		assertGambits();
-		assertParty();
-		assertSpellMark();
-		assertSkillchain();
-		assertSave();
-		assertExp();
-	} catch (err) {
-		console.error(err);
-	}
+	const epoch = ++yardEpoch;
+	const api = {
+		getYaw: () => 0,
+		getSpeed: () => 0,
+		setKeys: () => {},
+		dispose: () => {
+			yardEpoch++;
+		}
+	};
+	setTimeout(() => {
+		if (epoch !== yardEpoch) return;
+		queueYardAsserts();
+		const real = buildYard(canvas);
+		api.getYaw = real.getYaw;
+		api.getSpeed = real.getSpeed;
+		api.setKeys = real.setKeys;
+		api.dispose = () => {
+			yardEpoch++;
+			real.dispose();
+		};
+		setTimeout(() => {
+			if (epoch !== yardEpoch) return;
+			runYardAsserts();
+			fieldLive = true;
+		}, 2500);
+	}, 0);
+	return api;
+}
+function buildYard(canvas) {
 	patchShaderPrecision();
 	const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 	const gradient = makeGradient();
@@ -12273,7 +12314,7 @@ export function createYard(canvas) {
 			chantFx = fx;
 		});
 		tickForest(dt);
-		tickFieldScene(dt);
+		if (fieldLive) tickFieldScene(dt);
 		const dxh = harePos.x - px;
 		const dzh = harePos.z - pz;
 		const dist = Math.hypot(dxh, dzh);
@@ -41462,6 +41503,7 @@ export function createYard(canvas) {
 	}
 	function frame(now) {
 		timer.update(now);
+		stepTraceMeshes(px, pz);
 		let dt = timer.getDelta();
 		if (!(dt > 0)) dt = 0;
 		if (dt > .25) dt = .25;
@@ -41494,6 +41536,17 @@ export function createYard(canvas) {
 	paintGear(hero, useGame.getState().loadout, useGame.getState().mainJob);
 	syncWeapon(useGame.getState().loadout);
 	syncOffhand(useGame.getState().loadout);
+	publishRadar(px, pz, yaw, [], regionName(px, pz));
+	const bootLabel = `(${px.toFixed(1)}, ${pz.toFixed(1)})`;
+	const bootRegion = regionName(px, pz);
+	for (const node of document.querySelectorAll("p")) {
+		if ((node.textContent || "").trim() === "(0.0, 0.0)") node.textContent = bootLabel;
+	}
+	const bootName = document.querySelector('button[aria-label^="Open the"] p.font-display');
+	if (bootName) bootName.textContent = bootRegion;
+	const bootBtn = document.querySelector('button[aria-label^="Open the"]');
+	if (bootBtn) bootBtn.setAttribute("aria-label", `Open the ${bootRegion} map`);
+	stepTraceMeshes(px, pz);
 	renderer.setAnimationLoop(frame);
 	const api = {
 		getYaw: () => yaw,
@@ -47272,7 +47325,9 @@ function buildRoom(scene, toonMat, colliders) {
 			const vcount = (cols + 1) * (rows + 1);
 			const pos = new Float32Array(vcount * 3);
 			const col = new Float32Array(vcount * 3);
+			const claimed = new Uint8Array(vcount);
 			let k = 0;
+			let vi = 0;
 			for (let j = 0; j <= rows; j++) {
 				const z = cz + (cz1 - cz) * (j / rows);
 				for (let i = 0; i <= cols; i++) {
@@ -47284,7 +47339,9 @@ function buildRoom(scene, toonMat, colliders) {
 					col[k] = sample.r;
 					col[k + 1] = sample.g;
 					col[k + 2] = sample.b;
+					claimed[vi] = yughottClaimsMesh(x, z) ? 1 : 0;
 					k += 3;
+					vi++;
 				}
 			}
 			const index = [];
@@ -47294,11 +47351,7 @@ function buildRoom(scene, toonMat, colliders) {
 					const b = a + 1;
 					const c = a + cols + 1;
 					const d = c + 1;
-					const x0 = cx + (cx1 - cx) * (i / cols);
-					const z0 = cz + (cz1 - cz) * (j / rows);
-					const x1 = cx + (cx1 - cx) * ((i + 1) / cols);
-					const z1 = cz + (cz1 - cz) * ((j + 1) / rows);
-					if (yughottClaimsMesh(x0, z0) && yughottClaimsMesh(x1, z0) && yughottClaimsMesh(x0, z1) && yughottClaimsMesh(x1, z1)) continue;
+					if (claimed[a] && claimed[b] && claimed[c] && claimed[d]) continue;
 					index.push(a, c, b, b, c, d);
 				}
 			}
@@ -47314,67 +47367,100 @@ function buildRoom(scene, toonMat, colliders) {
 			scene.add(mesh);
 		}
 	}
-	const layTrace = (box, sampleAt) => {
-		const x0 = box.x0;
-		const z0 = box.z0;
-		const x1 = x0 + box.span;
-		const z1 = z0 + box.span;
-		const step = box.step;
-		for (let cz = z0; cz < z1 - 1e-3; cz += 64) {
-			const cz1 = Math.min(z1, cz + 64);
-			for (let cx = x0; cx < x1 - 1e-3; cx += 64) {
-				const cx1 = Math.min(x1, cx + 64);
-				const cols = Math.max(1, Math.round((cx1 - cx) / step));
-				const rows = Math.max(1, Math.round((cz1 - cz) / step));
-				const vcount = (cols + 1) * (rows + 1);
-				const pos = new Float32Array(vcount * 3);
-				const colr = new Float32Array(vcount * 3);
-				const live = new Uint8Array(vcount);
-				let k = 0;
-				let vi = 0;
-				for (let j = 0; j <= rows; j++) {
-					const z = cz + (cz1 - cz) * (j / rows);
-					for (let i = 0; i <= cols; i++) {
-						const x = cx + (cx1 - cx) * (i / cols);
-						const sample = sampleAt(x, z);
-						pos[k] = x;
-						pos[k + 1] = sample ? sample.y : 0;
-						pos[k + 2] = z;
-						colr[k] = sample ? sample.r : 0;
-						colr[k + 1] = sample ? sample.g : 0;
-						colr[k + 2] = sample ? sample.b : 0;
-						live[vi] = sample && sample.draw ? 1 : 0;
-						k += 3;
-						vi++;
-					}
-				}
-				const index = [];
-				for (let j = 0; j < rows; j++) {
-					for (let i = 0; i < cols; i++) {
-						const a = j * (cols + 1) + i;
-						const b = a + 1;
-						const c = a + cols + 1;
-						const d = c + 1;
-						if (!live[a] && !live[b] && !live[c] && !live[d]) continue;
-						index.push(a, c, b, b, c, d);
-					}
-				}
-				if (!index.length) continue;
-				const geo = new BufferGeometry();
-				geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
-				geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
-				geo.setIndex(index);
-				geo.computeVertexNormals();
-				const mesh = new Mesh(geo, terrainMat);
-				mesh.receiveShadow = true;
-				mesh.castShadow = false;
-				scene.add(mesh);
+	const traceJobs = traceMeshFields().map((field) => {
+		const chunks = [];
+		for (let j = 0; j < field.nZ; j += 32) {
+			for (let i = 0; i < field.nX; i += 32) {
+				chunks.push({ i0: i, j0: j, i1: Math.min(field.nX, i + 32), j1: Math.min(field.nZ, j + 32) });
 			}
 		}
+		return { field, chunks, order: null, cursor: 0, built: 0, firstMs: null };
+	});
+	const layTraceChunk = (field, chunk) => {
+		const cols = chunk.i1 - chunk.i0;
+		const rows = chunk.j1 - chunk.j0;
+		if (cols < 1 || rows < 1) return;
+		const stride = field.nX + 1;
+		const vcount = (cols + 1) * (rows + 1);
+		const pos = new Float32Array(vcount * 3);
+		const colr = new Float32Array(vcount * 3);
+		const live = new Uint8Array(vcount);
+		let vi = 0;
+		for (let j = 0; j <= rows; j++) {
+			const z = field.z0 + (chunk.j0 + j) * field.step;
+			const row = (chunk.j0 + j) * stride;
+			for (let i = 0; i <= cols; i++) {
+				const src = row + chunk.i0 + i;
+				const k = vi * 3;
+				pos[k] = field.x0 + (chunk.i0 + i) * field.step;
+				pos[k + 1] = field.ys[src];
+				pos[k + 2] = z;
+				colr[k] = field.rgb[src * 3] / 255;
+				colr[k + 1] = field.rgb[src * 3 + 1] / 255;
+				colr[k + 2] = field.rgb[src * 3 + 2] / 255;
+				live[vi] = field.draw[src];
+				vi++;
+			}
+		}
+		const index = [];
+		for (let j = 0; j < rows; j++) {
+			for (let i = 0; i < cols; i++) {
+				const a = j * (cols + 1) + i;
+				const b = a + 1;
+				const c = a + cols + 1;
+				const d = c + 1;
+				if (!live[a] && !live[b] && !live[c] && !live[d]) continue;
+				index.push(a, c, b, b, c, d);
+			}
+		}
+		if (!index.length) return;
+		const geo = new BufferGeometry();
+		geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+		geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
+		geo.setIndex(index);
+		geo.computeVertexNormals();
+		const mesh = new Mesh(geo, terrainMat);
+		mesh.receiveShadow = true;
+		mesh.castShadow = false;
+		scene.add(mesh);
 	};
-	layTrace(fortFieldBox(), fortTerrainSample);
-	layTrace(yughottFieldBox(1), (x, z) => yughottTerrainSample(x, z, 1));
-	layTrace(yughottFieldBox(2), (x, z) => yughottTerrainSample(x, z, 2));
+	const traceBoxDist = (field, x, z) => {
+		const x1 = field.x0 + field.nX * field.step;
+		const z1 = field.z0 + field.nZ * field.step;
+		const cx = Math.max(field.x0, Math.min(x1, x));
+		const cz = Math.max(field.z0, Math.min(z1, z));
+		return Math.hypot(x - cx, z - cz);
+	};
+	stepTraceMeshes = (x, z) => {
+		let best = null;
+		let bestD = 151;
+		for (let n = 0; n < traceJobs.length; n++) {
+			const job = traceJobs[n];
+			if (job.built >= job.chunks.length) continue;
+			const d = traceBoxDist(job.field, x, z);
+			if (d > 150 || d >= bestD) continue;
+			bestD = d;
+			best = job;
+		}
+		if (!best) return;
+		if (!best.order) {
+			best.order = best.chunks.map((chunk, idx) => {
+				const cx = best.field.x0 + ((chunk.i0 + chunk.i1) / 2) * best.field.step;
+				const cz = best.field.z0 + ((chunk.j0 + chunk.j1) / 2) * best.field.step;
+				return { idx, d: Math.hypot(cx - x, cz - z) };
+			}).sort((a, b) => a.d - b.d);
+		}
+		const next = best.order[best.cursor++];
+		const t0 = performance.now();
+		layTraceChunk(best.field, best.chunks[next.idx]);
+		const dt = performance.now() - t0;
+		best.built++;
+		if (best.firstMs == null) {
+			best.firstMs = dt;
+			const bag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
+			bag[best.field.id] = dt;
+		}
+	};
 	const mossPad = toonMat(0x1c221a);
 	const mossSheet = (x, z, w, d) => {
 		const geo = new PlaneGeometry(w, d);

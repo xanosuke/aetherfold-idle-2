@@ -388,7 +388,7 @@ function fillRect(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => P
   ctx.fillRect(p.x - unitX / 2, p.y - unitY / 2, unitX, unitY);
 }
 
-function paintOrc(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => Pt, chart: OrcChart, region: string, dpr: number, label: boolean) {
+function paintOrc(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => Pt, chart: OrcChart, region: string, dpr: number, label: boolean, frame?: { minX: number; minY: number; maxX: number; maxY: number }) {
   const floor = region === "King Ranperre's Tomb" ? "#5c5348" : region === "Ranguemont Pass" ? "#4d5966" : region === "Beaucedine Glacier" ? "#d5e2ee" : region === "Yughott Grotto" ? "#4a4038" : region === "Horlais Peak" ? "#6d6254" : region === "Fort Ghelsba" ? "#6a5840" : "#6c7346";
   const water = region === "Beaucedine Glacier" ? "#7eb4d4" : region === "Horlais Peak" ? "#6e9a96" : "#245868";
   const unit = Math.hypot(at(1, 0).x - at(0, 0).x, at(1, 0).y - at(0, 0).y);
@@ -445,19 +445,71 @@ function paintOrc(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => P
     ctx.stroke();
   }
   if (!label) return;
-  ctx.font = `${Math.max(10, Math.round(11 * dpr))}px "Source Sans 3", sans-serif`;
+  const stack = region === "Fort Ghelsba" || region === "Yughott Grotto";
+  const fontMain = `${Math.max(10, Math.round(11 * dpr))}px "Source Sans 3", sans-serif`;
+  const fontPh = `${Math.max(8, Math.round(8.5 * dpr))}px "Source Sans 3", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   ctx.lineWidth = Math.max(2, dpr * 1.5);
   ctx.strokeStyle = "#0c1b38";
-  for (const mark of chart.marks) {
+  const drawn = chart.marks.map((mark) => {
     const p = at(mark.x, mark.z);
+    return { ...mark, name: SHORT_GATE[mark.name] ?? mark.name, px: p.x, py: p.y };
+  });
+  const skip = new Set<number>();
+  const paintMark = (row: (typeof drawn)[number], sub: string | null) => {
     const s = Math.max(3, dpr * 2.2);
     ctx.fillStyle = "#e3c57a";
-    ctx.fillRect(p.x - s, p.y - s, s * 2, s * 2);
-    const name = SHORT_GATE[mark.name] ?? mark.name;
-    ctx.strokeText(name, p.x, p.y - s - dpr * 2);
-    ctx.fillText(name, p.x, p.y - s - dpr * 2);
+    ctx.fillRect(row.px - s, row.py - s, s * 2, s * 2);
+    ctx.font = fontMain;
+    const mainW = ctx.measureText(row.name).width;
+    ctx.font = fontPh;
+    const subW = sub ? ctx.measureText(sub).width : 0;
+    let x = row.px;
+    if (stack && frame) {
+      const half = Math.max(mainW, subW) / 2 + dpr * 2;
+      x = Math.max(frame.minX + half, Math.min(frame.maxX - half, x));
+    }
+    const base = row.py - s - dpr * 2;
+    ctx.fillStyle = "#e3c57a";
+    ctx.strokeStyle = "#0c1b38";
+    if (sub) {
+      ctx.font = fontMain;
+      ctx.strokeText(row.name, x, base - Math.max(10, 11 * dpr));
+      ctx.fillText(row.name, x, base - Math.max(10, 11 * dpr));
+      ctx.font = fontPh;
+      ctx.strokeText(sub, x, base);
+      ctx.fillText(sub, x, base);
+      return;
+    }
+    ctx.font = fontMain;
+    ctx.strokeText(row.name, x, base);
+    ctx.fillText(row.name, x, base);
+  };
+  if (stack) {
+    for (let i = 0; i < drawn.length; i++) {
+      if (drawn[i].role !== "nm") continue;
+      let best = -1;
+      let bestD = Infinity;
+      for (let j = 0; j < drawn.length; j++) {
+        if (drawn[j].role !== "ph" || skip.has(j)) continue;
+        const d = Math.hypot(drawn[i].x - drawn[j].x, drawn[i].z - drawn[j].z);
+        const px = Math.hypot(drawn[i].px - drawn[j].px, drawn[i].py - drawn[j].py);
+        if ((d < 18 || px < 42 * dpr) && d < bestD) {
+          bestD = d;
+          best = j;
+        }
+      }
+      if (best >= 0) {
+        skip.add(i);
+        skip.add(best);
+        paintMark(drawn[i], drawn[best].name);
+      }
+    }
+  }
+  for (let i = 0; i < drawn.length; i++) {
+    if (skip.has(i)) continue;
+    paintMark(drawn[i], null);
   }
 }
 
@@ -781,7 +833,7 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame) {
     ctx.beginPath();
     ctx.rect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
     ctx.clip();
-    paintOrc(ctx, at, chart, snap.region, dpr, true);
+    paintOrc(ctx, at, chart, snap.region, dpr, true, { minX: nw.x, minY: nw.y, maxX: se.x, maxY: se.y });
     ctx.restore();
   } else {
     ctx.save();
