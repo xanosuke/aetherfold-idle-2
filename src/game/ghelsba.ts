@@ -1007,10 +1007,10 @@ export type OrcChart = {
   discs?: { x: number; z: number; r: number }[];
 };
 
-export function orcLayout(region: string, at?: { x: number; z: number }): OrcChart | null {
+export function orcLayout(region: string, at?: { x: number; z: number }, yughottMap?: 1 | 2): OrcChart | null {
   const zone = ORC_ZONES.find((row) => row.name === region);
   if (!zone) return null;
-  const yugMap = zone.id === "yughott" ? (at && grottoMap(at.x, at.z) === 2 ? 2 : 1) : null;
+  const yugMap = zone.id === "yughott" ? (yughottMap ?? (at && grottoMap(at.x, at.z) === 2 ? 2 : 1)) : null;
   const rects = yugMap === 1 ? yughottMaskRects(1, 12) : yugMap === 2 ? yughottMaskRects(2, 12) : zone.rects;
   let minX = Infinity;
   let maxX = -Infinity;
@@ -1043,7 +1043,7 @@ export function orcLayout(region: string, at?: { x: number; z: number }): OrcCha
     for (const poi of seatedYughottPois()) if (poi.map === yugMap) pushPoi(poi);
     if (yugMap === 2) {
       const se = yughottNode(2, "area_se");
-      marks.push({ x: se.x + 1.35, z: se.z - 0.55, name: "Morgawr" });
+      marks.push({ x: se.x + 1.35, z: se.z - 0.55, name: "Morgawr", role: "nm" });
     }
   }
   if (region === "Horlais Peak") marks.push({ x: PEAK_X, z: PEAK_Z, name: "Burning Circle" });
@@ -1058,12 +1058,21 @@ export function orcLayout(region: string, at?: { x: number; z: number }): OrcCha
         : region === "Yughott Grotto" && yugGrid
           ? { x0: yugGrid.x0, z0: yugGrid.z0, cell: yugGrid.cell }
           : null;
+  // One retail sheet at a time. The cave's own box is a thin strip; the 12×12 grid fills the panel the way Fort does.
+  const bounds = region === "Yughott Grotto" && yugGrid
+    ? {
+        minX: yugGrid.x0,
+        maxX: yugGrid.x0 + yugGrid.cols * yugGrid.cell,
+        minZ: yugGrid.z0,
+        maxZ: yugGrid.z0 + yugGrid.rows * yugGrid.cell,
+      }
+    : { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
   return {
     rects,
     water: region === "Ghelsba Outpost"
       ? OUT_WATER_MARKS
       : ORC_WATER.filter((row) => hit(rects, (row.rect.minX + row.rect.maxX) / 2, (row.rect.minZ + row.rect.maxZ) / 2, 0)).map((row) => row.rect),
-    bounds: { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad },
+    bounds,
     marks,
     grid,
   };

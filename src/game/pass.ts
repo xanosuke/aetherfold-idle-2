@@ -451,7 +451,7 @@ type PassChart = {
   rects: PassRect[];
   water: PassRect[];
   bounds: PassRect;
-  marks: { x: number; z: number; name: string }[];
+  marks: { x: number; z: number; name: string; role?: "nm" | "ph" }[];
   grid: { x0: number; z0: number; cell: number };
   paths: { pts: { x: number; z: number }[]; width: number }[];
   discs: { x: number; z: number; r: number }[];
@@ -471,7 +471,11 @@ function buildPassChart(): PassChart {
       ...PASS_PLACES,
       ...PASS_GRAPH.pois
         .filter((poi) => !placeNames.has(poiName(poi.id, poi.label)))
-        .map((poi) => ({ ...gridToWorld(poi.gx, poi.gy), name: poiName(poi.id, poi.label) })),
+        .map((poi) => ({
+          ...gridToWorld(poi.gx, poi.gy),
+          name: poiName(poi.id, poi.label),
+          role: poi.id.startsWith("nm_") ? "nm" as const : undefined,
+        })),
     ],
     grid: { x0: PASS_X, z0: PASS_Z, cell: PASS_CELL },
     paths: PASS_GRAPH.edges.map((edge) => ({

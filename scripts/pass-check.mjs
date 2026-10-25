@@ -7,6 +7,26 @@ import { assertOrcFieldsFresh } from "./orc-fields-fresh.mjs";
 
 assertOrcFieldsFresh();
 
+function checkMapLabels(audit, name) {
+  if (!audit || !audit.frame || !Array.isArray(audit.labels)) return `${name} map audit missing`;
+  const frame = audit.frame;
+  if (!(frame.maxX > frame.minX && frame.maxY > frame.minY)) return `${name} frame empty`;
+  for (let i = 0; i < audit.labels.length; i++) {
+    const a = audit.labels[i];
+    if (a.x < frame.minX - 0.5 || a.y < frame.minY - 0.5 || a.x + a.w > frame.maxX + 0.5 || a.y + a.h > frame.maxY + 0.5) {
+      return `${name} label "${a.text}" outside the frame`;
+    }
+    if (/chest|mining point|footprint/i.test(a.text)) return `${name} labeled a minor point "${a.text}"`;
+    for (let j = i + 1; j < audit.labels.length; j++) {
+      const b = audit.labels[j];
+      const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      if (overlapX > 0.5 && overlapY > 0.5) return `${name} labels overlap "${a.text}" and "${b.text}"`;
+    }
+  }
+  return "";
+}
+
 const root = "/workspace";
 const shots = `${root}/screenshots`;
 mkdirSync(shots, { recursive: true });
@@ -216,6 +236,137 @@ try {
   await fadePage.close();
   const realErrors = [...mapErrors, ...viewErrors, ...fadeErrors].filter((err) => !err.includes("chartStrips"));
   if (realErrors.length) failed = failed || realErrors[0];
+
+  const standsProbe = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `
+        import { regionName, zoneArrival } from "./src/game/world.ts";
+        import { gridToWorld as ghelsbaWorld } from "./src/game/ghelsba-graph.ts";
+        import { gridToWorld as fortWorld } from "./src/game/fort-graph.ts";
+        import { gridToWorld as yughottWorld } from "./src/game/yughott-graph.ts";
+        import { PASS_GRAPH, gridToWorld as passWorld } from "./src/game/pass-graph.ts";
+        import { GLACIER_ARRIVE } from "./src/game/glacier.ts";
+        import { orcArrival } from "./src/game/ghelsba.ts";
+        const taisai = PASS_GRAPH.pois.find((poi) => poi.id === "nm_taisaijin");
+        const pass = passWorld(taisai.gx, taisai.gy);
+        const yug = yughottWorld(5.45, 8.5, 1);
+        const yug2 = yughottWorld(9.556, 5.667, 2);
+        const fort = fortWorld(6.854, 8.197);
+        const outpost = ghelsbaWorld(9.238, 10.425);
+        const horlais = orcArrival("horlais");
+        const east = zoneArrival("east-ronfaure");
+        const west = zoneArrival("ronfaure-south");
+        const tomb = zoneArrival("ranperre");
+        const rows = [
+          { id: "south-city", x: 0, z: 0, square: "" },
+          { id: "north-city", x: 0, z: -300, square: "" },
+          { id: "port", x: 0, z: -420, square: "" },
+          { id: "west", x: west.x, z: west.z, square: "GRID" },
+          { id: "east", x: east.x, z: east.z, square: "GRID" },
+          { id: "tomb", x: tomb.x, z: tomb.z, square: "GRID" },
+          { id: "pass", x: pass.x, z: pass.z, square: "H-9" },
+          { id: "glacier", x: GLACIER_ARRIVE.x, z: GLACIER_ARRIVE.z, square: "GRID" },
+          { id: "outpost", x: outpost.x, z: outpost.z, square: "J-11" },
+          { id: "fort", x: fort.x, z: fort.z, square: "G-9" },
+          { id: "yughott-1", x: yug.x, z: yug.z, square: "Map 1 · F-9" },
+          { id: "yughott-2", x: yug2.x, z: yug2.z, square: "Map 2 · J-6" },
+          { id: "horlais", x: horlais.x, z: horlais.z, square: "" },
+        ];
+        for (const row of rows) {
+          row.region = regionName(row.x, row.z);
+          if (!row.region) throw new Error(row.id + " has no region");
+        }
+        if (regionName(yug.x, yug.z) !== "Yughott Grotto") throw new Error("F-9 pool left Yughott");
+        if (regionName(fort.x, fort.z) !== "Fort Ghelsba") throw new Error("Hajwaj left the fort");
+        if (regionName(outpost.x, outpost.z) !== "Ghelsba Outpost") throw new Error("entrance left the outpost");
+        console.log("MAPJSON " + JSON.stringify(rows));
+      `,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  if (standsProbe.status !== 0) {
+    failed = failed || `map stands\n${standsProbe.stdout || ""}\n${standsProbe.stderr || ""}`.slice(-500);
+  } else if (!failed) {
+    const mapLine = (standsProbe.stdout || "").split("\n").find((line) => line.startsWith("MAPJSON "));
+    const stands = JSON.parse(mapLine.slice("MAPJSON ".length));
+    const squarePattern = /^(?:Map [12] · )?[A-P]-\d+$/;
+    for (const stand of stands) {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      const errors = await openPass(page, { x: stand.x, z: stand.z, yaw: 0 });
+      try {
+        await page.waitForFunction((region) => (document.body?.innerText || "").includes(region), stand.region, { timeout: 25000 });
+        if (stand.square && stand.square !== "GRID") {
+          await page.waitForFunction((sq) => (document.body?.innerText || "").includes(sq), stand.square, { timeout: 20000 });
+        }
+        await page.getByRole("button", { name: /Open the .* map/ }).click();
+        await page.getByRole("dialog", { name: "Zone map" }).waitFor({ timeout: 8000 });
+        await page.waitForFunction(() => window.__mapAudit && window.__mapAudit.frame && window.__mapAudit.frame.maxX > window.__mapAudit.frame.minX, null, { timeout: 8000 });
+        if (stand.square && stand.square !== "GRID") {
+          await page.waitForFunction((sq) => {
+            const el = document.querySelector("[data-map-square]");
+            return !!el && !el.hidden && (el.textContent || "").trim() === sq;
+          }, stand.square, { timeout: 8000 });
+        } else if (stand.square === "GRID") {
+          await page.waitForFunction(() => {
+            const el = document.querySelector("[data-map-square]");
+            return !!el && !el.hidden && /^(?:Map [12] · )?[A-P]-\d+$/.test((el.textContent || "").trim());
+          }, null, { timeout: 8000 });
+        }
+        const squareEl = page.locator("[data-map-square]");
+        const coordEl = page.locator("[data-map-coords]");
+        const squareText = ((await squareEl.textContent()) || "").trim();
+        const coordText = ((await coordEl.innerText()) || "").trim();
+        const squareHidden = await squareEl.isHidden();
+        if (stand.square === "") {
+          if (!squareHidden) failed = failed || `${stand.id} header showed a square in a zone with no grid`;
+        } else if (stand.square === "GRID") {
+          if (squareHidden || !squarePattern.test(squareText)) failed = failed || `${stand.id} header square "${squareText}"`;
+          if (squareText === coordText || /^\(.*\)$/.test(squareText)) failed = failed || `${stand.id} header is only coordinates`;
+        } else {
+          if (squareHidden || squareText !== stand.square) failed = failed || `${stand.id} header "${squareText}" wanted ${stand.square}`;
+          if (squareText === coordText || /^\(.*\)$/.test(squareText)) failed = failed || `${stand.id} header is only coordinates`;
+        }
+        if (!/^\(.*\)$/.test(coordText)) failed = failed || `${stand.id} coordinates missing`;
+        const readLabels = async () => page.evaluate(() => window.__mapAudit);
+        let audit = await readLabels();
+        const bad = checkMapLabels(audit, stand.id);
+        if (bad) failed = failed || bad;
+        if (stand.id === "yughott-1") {
+          const tabs = page.getByRole("tab", { name: /^Map [12]$/ });
+          if ((await tabs.count()) !== 2) failed = failed || "Yughott map tabs missing";
+          await page.getByRole("tab", { name: "Map 2" }).click();
+          await page.waitForFunction(() => window.__mapAudit && window.__mapAudit.sheet === "yughott-2", null, { timeout: 4000 });
+          audit = await readLabels();
+          const switched = checkMapLabels(audit, "yughott-map-2");
+          if (switched) failed = failed || switched;
+          const texts = (audit?.labels || []).map((label) => label.text);
+          if (!texts.some((text) => text.includes("Horlais") || text === "Home Point")) {
+            failed = failed || `yughott map 2 labels ${texts.join(" | ") || "(none)"}`;
+          }
+        } else if (stand.id === "yughott-2") {
+          const tabs = page.getByRole("tab", { name: /^Map [12]$/ });
+          if ((await tabs.count()) !== 2) failed = failed || "Yughott map 2 tabs missing";
+          if (audit?.sheet !== "yughott-2") failed = failed || `yughott-2 opened ${audit?.sheet || "no sheet"}`;
+        } else {
+          const tabs = await page.getByRole("tab").count();
+          if (tabs) failed = failed || `${stand.id} showed grotto tabs`;
+        }
+        if (errors.length) failed = failed || errors.filter((err) => !err.includes("chartStrips"))[0] || failed;
+        console.log("map", stand.id, squareHidden ? "(coords)" : squareText, (audit?.labels || []).map((label) => label.text).join(", "));
+      } catch (err) {
+        failed = failed || `${stand.id} ${err?.message || err}`;
+      } finally {
+        await page.close();
+      }
+      if (failed) break;
+    }
+  }
 } catch (err) {
   failed = String(err?.message || err);
 } finally {
