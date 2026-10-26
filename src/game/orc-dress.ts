@@ -426,7 +426,17 @@ function warTower(add: Add, zone: Zone, colliders: Solid[], x: number, z: number
   footBox(add, WOOD, base, h * 0.42, base, x, z);
   add(WOOD, (base + top) / 2, h * 0.38, (base + top) / 2, x, h * 0.58, z);
   add(WOOD, top, h * 0.28, top, x, h * 0.84, z);
-  add(WOOD, top + 1.6, 0.22, top + 1.6, x, h + 0.05, z);
+  const flare = top + 2.4;
+  add(0x3e3632, flare, 0.26, flare, x, h + 0.12, z);
+  const half = flare / 2;
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2 + hash(x + i, z) * 0.2;
+    const jag = 0.12 + hash(z + i * 1.7, x) * 0.55;
+    const len = 0.4 + hash(x * 0.3 + i, z) * 0.95;
+    const px = x + Math.cos(a) * (half + jag * 0.45);
+    const pz = z + Math.sin(a) * (half + jag * 0.45);
+    add(i % 3 === 0 ? 0x4a3c32 : HIDE, 0.16 + (i % 2) * 0.08, len, 0.05, px, h - len * 0.28, pz, a);
+  }
   if (pagoda) {
     add(WOOD, top + 0.4, 0.7, top + 0.4, x, h + 0.45, z);
     add(WOOD, 2.2, 0.45, 2.2, x, h + 0.95, z);
@@ -450,7 +460,6 @@ function warTower(add: Add, zone: Zone, colliders: Solid[], x: number, z: number
 
 function hideDome(hooks: Hooks, add: Add, x: number, z: number, lift: number) {
   hooks.dome(add, x, z, lift, 0x655447);
-  hooks.emblem(add, x, lift + 1.55, z + 1.7, 0.62);
 }
 
 function stiltHut(hooks: Hooks, add: Add, colliders: Solid[], x: number, z: number) {
@@ -674,6 +683,143 @@ function poolDiscs(x: number, z: number, r: number) {
   marks.push({ kind: "pool", x: x - r * 0.28, z: z + r * 0.32, y, r: r * 0.64 });
 }
 
+const SCATTER = ["crate", "barrel", "basket", "stakes", "rack", "bone", "hide", "boulder"] as const;
+type ScatterKind = (typeof SCATTER)[number];
+
+function paintScatter(add: Add, colliders: Solid[], x: number, z: number, kind: ScatterKind) {
+  const yaw = hash(x, z) * Math.PI;
+  if (kind === "crate") {
+    footBox(add, 0x6b4e32, 0.85, 0.62, 0.7, x, z, yaw);
+    add(0x6b4e32, 0.62, 0.48, 0.55, x + 0.12, 0.82, z - 0.08, yaw + 0.2);
+  } else if (kind === "barrel") {
+    footBox(add, 0x5a4030, 0.52, 0.68, 0.52, x, z);
+    add(0x3e3632, 0.58, 0.08, 0.58, x, 0.7, z);
+  } else if (kind === "basket") {
+    footBox(add, 0xa08050, 0.5, 0.36, 0.44, x, z, yaw);
+  } else if (kind === "stakes") {
+    const n = 3 + Math.floor(hash(x + 2, z) * 3);
+    for (let i = 0; i < n; i++) {
+      const a = yaw + (i / n) * Math.PI * 2;
+      add(0x241f1b, 0.07, 1.05, 0.07, x + Math.cos(a) * 0.22, 0.5, z + Math.sin(a) * 0.22, a, 0.55);
+    }
+  } else if (kind === "rack") {
+    footBox(add, WOOD, 0.12, 1.55, 0.12, x - 0.55, z);
+    footBox(add, WOOD, 0.12, 1.55, 0.12, x + 0.55, z);
+    add(WOOD, 1.25, 0.1, 0.1, x, 1.45, z, yaw);
+    for (const sx of [-0.32, 0, 0.32]) add(0x8a8680, 0.08, 0.42, 0.18, x + sx, 1.12, z, yaw);
+  } else if (kind === "bone") {
+    add(0xe4d4c0, 0.68, 0.14, 0.24, x, 0.1, z, yaw);
+    add(0xd2c2ae, 0.42, 0.12, 0.18, x + 0.18, 0.12, z + 0.1, yaw - 0.6);
+  } else if (kind === "hide") {
+    footBox(add, WOOD, 0.1, 1.55, 0.1, x - 0.48, z);
+    footBox(add, WOOD, 0.1, 1.55, 0.1, x + 0.48, z);
+    add(0x8a6a4a, 0.86, 1.05, 0.05, x, 0.95, z, yaw);
+  } else {
+    footBox(add, 0x6a665a, 0.85, 0.48, 0.7, x, z, yaw);
+    add(0x6a665a, 0.5, 0.32, 0.42, x + 0.16, 0.48, z - 0.08, yaw);
+  }
+  collide(colliders, x, z, 0.28, 0.28);
+}
+
+function distPointSeg(px: number, pz: number, ax: number, az: number, bx: number, bz: number) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz || 1;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / len2));
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+
+function edgeWalk(edge: { pts: [number, number][] }) {
+  const pts = edge.pts.map(([gx, gy]) => fortWorld(gx, gy));
+  const samples: V2[] = [pts[0]];
+  const arc = [0];
+  let walked = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const steps = Math.max(1, Math.ceil(len / 4));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      samples.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+      arc.push(walked + len * t);
+    }
+    walked += len;
+  }
+  return { samples, arc, walked };
+}
+
+function nearStretch(samples: V2[], i0: number, i1: number, list: readonly V2[]) {
+  let n = 0;
+  for (const p of list) {
+    let best = Infinity;
+    for (let k = i0; k < i1; k++) {
+      const d = distPointSeg(p.x, p.z, samples[k].x, samples[k].z, samples[k + 1].x, samples[k + 1].z);
+      if (d < best) best = d;
+      if (best <= 12) break;
+    }
+    if (best <= 12) n += 1;
+  }
+  return n;
+}
+
+function fillFortDensity(draw: Add, colliders: Solid[], avoid: { x: number; z: number; r: number }[]) {
+  const list: V2[] = props.filter((p) => p.zone === "fort").map((p) => ({ x: p.x, z: p.z }));
+  let seq = 0;
+  const seat = (x: number, z: number, kind: ScatterKind) => {
+    const square = fortZone.square(x, z);
+    if (!square || square === "?" || square.length < 3) return false;
+    const spec: Seek = { id: `scatter-${seq}`, square, hx: 0.32, hz: 0.32, h: 1.7 };
+    if (!fits(fortZone, spec, avoid, x, z)) return false;
+    const at = claim(spec, x, z);
+    seq += 1;
+    begin(fortZone, spec.id, square, at, 1.7, draw, (add) => paintScatter(add, colliders, at.x, at.z, kind));
+    list.push(at);
+    return true;
+  };
+  for (const edge of FORT_GRAPH.edges) {
+    const walked = edgeWalk(edge);
+    if (walked.walked <= 22) continue;
+    for (let start = 0; start <= walked.walked - 22 + 0.05; start += 4) {
+      let i0 = 0;
+      while (i0 < walked.arc.length && walked.arc[i0] < start - 0.05) i0 += 1;
+      let i1 = i0;
+      while (i1 < walked.arc.length && walked.arc[i1] <= start + 22) i1 += 1;
+      if (i1 <= i0 + 1) continue;
+      let have = nearStretch(walked.samples, i0, i1 - 1, list);
+      if (have >= 2) continue;
+      const mid = walked.samples[Math.min(walked.samples.length - 1, i0 + Math.floor((i1 - i0) / 2))];
+      const path = nearest(fortZone.segs, mid.x, mid.z);
+      const nx = -path.tz;
+      const nz = path.tx;
+      const kind0 = Math.floor(hash(mid.x, mid.z) * SCATTER.length);
+      for (const off of [2.95, -2.95, 3.7, -3.7, 5.2, -5.2, 7.4, -7.4]) {
+        if (have >= 2) break;
+        const kind = SCATTER[(kind0 + have) % SCATTER.length];
+        if (seat(mid.x + nx * off, mid.z + nz * off, kind)) have += 1;
+      }
+      for (let ring = 3.2; ring <= 10 && have < 2; ring += 1.5) {
+        const steps = Math.max(8, Math.ceil(ring));
+        for (let k = 0; k < steps && have < 2; k++) {
+          const ang = hash(mid.z, ring) + (k / steps) * Math.PI * 2;
+          const kind = SCATTER[(kind0 + k + have) % SCATTER.length];
+          if (seat(mid.x + Math.cos(ang) * ring, mid.z + Math.sin(ang) * ring, kind)) have += 1;
+        }
+      }
+      for (let dx = -12; dx <= 12 && have < 2; dx += 1.15) {
+        for (let dz = -12; dz <= 12 && have < 2; dz += 1.15) {
+          if (dx * dx + dz * dz > 144) continue;
+          const x = mid.x + dx;
+          const z = mid.z + dz;
+          const kind = SCATTER[Math.floor(hash(x, z) * SCATTER.length)];
+          if (seat(x, z, kind)) have += 1;
+        }
+      }
+      if (have < 2) throw new Error(`${edge.id} density ${have} at ${start.toFixed(0)}`);
+    }
+  }
+}
+
 function fortDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: number; z: number; r: number }[]) {
   const draw: Add = (color, w, h, d, x, y, z, yaw, pitch) => {
     if (current) {
@@ -713,27 +859,74 @@ function fortDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: numbe
     const spot = place({ id: hut.id, square: hut.square, hx: 1.9, hz: 1.7, h: 2.8 });
     begin(fortZone, hut.id, hut.square, spot, 2.8, draw, (add) => lowHut(hooks, add, colliders, spot.x, spot.z));
   }
+  const catAvoid = avoid.slice();
+  let h10 = 0;
   for (let i = 0; i < 4; i++) {
-    const spot = place({ id: `cat-h10-${i}`, square: "H-10", hx: 1.85, hz: 1.3, h: 3.6, away: i ? at[`cat-h10-${i - 1}`] : undefined, awayD: 4.6 });
-    at[`cat-h10-${i}`] = spot;
-    begin(fortZone, `cat-h10-${i}`, "H-10", spot, 3.6, draw, (add) => warCatapult(add, colliders, spot.x, spot.z, false, true));
+    const id = `cat-h10-${i}`;
+    const spot = seek(fortZone, { id, square: "H-10", hx: 1.85, hz: 1.3, h: 3.6 }, catAvoid);
+    if (!spot) break;
+    catAvoid.push({ x: spot.x, z: spot.z, r: 6.4 });
+    at[id] = spot;
+    begin(fortZone, id, "H-10", spot, 3.6, draw, (add) => warCatapult(add, colliders, spot.x, spot.z, false, true));
+    h10 += 1;
   }
+  if (h10 < 3) throw new Error(`H-10 catapults ${h10}`);
   const big = place({ id: "cat-i10", square: "I-10", hx: 1.2, hz: 0.48, h: 4.7, near: fortWorld(8.44, 9), nearMax: 3 });
+  catAvoid.push({ x: big.x, z: big.z, r: 6.4 });
   begin(fortZone, "cat-i10", "I-10", big, 4.7, draw, (add) => warCatapult(add, colliders, big.x, big.z, true, true, true));
-  for (let i = 0; i < 5; i++) {
-    const spec: Seek = { id: `cat-j9-${i}`, square: "J-9", hx: 1.55, hz: 0.38, h: 3.6, minY: 3.2, away: i ? at[`cat-j9-${i - 1}`] : undefined, awayD: 4 };
-    let spot: V2 | null = null;
-    for (let gx = 9; gx <= 9.36 && !spot; gx += 0.015) {
-      for (let gy = 8.0; gy <= 8.22; gy += 0.012) {
-        const p = fortWorld(gx, gy);
-        if (!fits(fortZone, spec, avoid, p.x, p.z)) continue;
-        spot = claim(spec, p.x, p.z);
-        break;
-      }
+  let j9 = 0;
+  const j9Spec: Seek = { id: "cat-j9", square: "J-9", hx: 1.55, hz: 0.38, h: 3.6, minY: 3.2 };
+  const j9Cands: V2[] = [];
+  for (let gx = 9; gx <= 9.42; gx += 0.012) {
+    for (let gy = 8; gy <= 8.28; gy += 0.01) {
+      const p = fortWorld(gx, gy);
+      if (catAvoid.some((c) => c.r >= 6 && Math.hypot(c.x - p.x, c.z - p.z) < 7.02)) continue;
+      if (!fits(fortZone, j9Spec, avoid, p.x, p.z)) continue;
+      j9Cands.push(p);
     }
-    if (!spot) throw new Error(`no seat cat-j9-${i} J-9`);
-    at[`cat-j9-${i}`] = spot;
-    begin(fortZone, `cat-j9-${i}`, "J-9", spot, 3.6, draw, (add) => warCatapult(add, colliders, spot.x, spot.z, false, true, true));
+  }
+  const j9Pick: V2[] = [];
+  if (j9Cands.length) {
+    j9Pick.push(j9Cands.reduce((a, b) => (a.x <= b.x ? a : b)));
+    while (j9Pick.length < 5) {
+      let best: V2 | null = null;
+      let bestMin = -1;
+      for (const p of j9Cands) {
+        let md = Infinity;
+        for (const u of j9Pick) md = Math.min(md, Math.hypot(u.x - p.x, u.z - p.z));
+        if (md > bestMin) {
+          bestMin = md;
+          best = p;
+        }
+      }
+      if (!best || bestMin < 7.02) break;
+      j9Pick.push(best);
+    }
+  }
+  for (const spot of j9Pick) {
+    const id = `cat-j9-${j9}`;
+    claim({ ...j9Spec, id }, spot.x, spot.z);
+    catAvoid.push({ x: spot.x, z: spot.z, r: 6.5 });
+    at[id] = spot;
+    begin(fortZone, id, "J-9", spot, 3.6, draw, (add) => warCatapult(add, colliders, spot.x, spot.z, false, true, true));
+    j9 += 1;
+  }
+  if (j9 < 3) throw new Error(`J-9 catapults ${j9}`);
+  for (const hut of [
+    { id: "low-g7a", square: "G-7" },
+    { id: "low-g7b", square: "G-7" },
+    { id: "low-h7a", square: "H-7" },
+    { id: "low-h7b", square: "H-7" },
+    { id: "low-g9c", square: "G-9" },
+    { id: "low-g9d", square: "G-9" },
+    { id: "low-h8d", square: "H-8" },
+    { id: "low-h8e", square: "H-8" },
+    { id: "low-h10a", square: "H-10" },
+    { id: "low-h10b", square: "H-10" },
+  ]) {
+    const spot = seek(fortZone, { id: hut.id, square: hut.square, hx: 1.9, hz: 1.7, h: 2.8 }, avoid);
+    if (!spot) continue;
+    begin(fortZone, hut.id, hut.square, spot, 2.8, draw, (add) => lowHut(hooks, add, colliders, spot.x, spot.z));
   }
   const liftC = fortNode("lift_h7");
   const lift = place({
@@ -820,6 +1013,7 @@ function fortDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: numbe
     }
   }
   if (trees < 6) throw new Error(`fort trees ${trees}`);
+  fillFortDensity(draw, colliders, avoid);
 }
 
 function inPool(x: number, z: number, cx: number, cz: number, r: number) {
@@ -953,13 +1147,38 @@ export function dressOrcCamps(add: Add, colliders: Solid[], hooks: Hooks, avoid:
   caveDress(add, colliders, hooks, avoid);
 }
 
+function assertFortDensity() {
+  const list = props.filter((p) => p.zone === "fort");
+  for (const edge of FORT_GRAPH.edges) {
+    const walked = edgeWalk(edge);
+    if (walked.walked <= 22) continue;
+    for (let start = 0; start <= walked.walked - 22 + 0.05; start += 4) {
+      let i0 = 0;
+      while (i0 < walked.arc.length && walked.arc[i0] < start - 0.05) i0 += 1;
+      let i1 = i0;
+      while (i1 < walked.arc.length && walked.arc[i1] <= start + 22) i1 += 1;
+      if (i1 <= i0 + 1) continue;
+      const have = nearStretch(walked.samples, i0, i1 - 1, list);
+      if (have < 2) throw new Error(`${edge.id} density ${have} at ${start.toFixed(0)}`);
+    }
+  }
+}
+
 export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => string) {
   if (ORC_LIGHT_BUDGET > 8) throw new Error("orc light budget");
   const count = (pred: (p: CampProp) => boolean) => props.filter(pred).length;
   if (count((p) => p.id.startsWith("tower-")) < 6) throw new Error("towers");
   if (count((p) => p.id === "stilt-g9") < 1) throw new Error("stilt hut");
   if (count((p) => p.id.startsWith("low-")) < 5) throw new Error("low huts");
-  if (count((p) => p.id.startsWith("cat-")) < 10) throw new Error("catapults");
+  const cats = props.filter((p) => p.zone === "fort" && p.id.startsWith("cat-"));
+  if (cats.filter((p) => p.square === "H-10").length < 3) throw new Error("H-10 catapults");
+  if (cats.filter((p) => p.square === "J-9").length < 3) throw new Error("J-9 catapults");
+  if (!cats.some((p) => p.id === "cat-i10")) throw new Error("I-10 catapult");
+  for (let i = 0; i < cats.length; i++) {
+    for (let j = i + 1; j < cats.length; j++) {
+      if (Math.hypot(cats[i].x - cats[j].x, cats[i].z - cats[j].z) < 7) throw new Error(`${cats[i].id} near ${cats[j].id}`);
+    }
+  }
   if (count((p) => p.id.startsWith("gallows")) < 2) throw new Error("gallows");
   if (count((p) => p.id.startsWith("tripod")) < 2) throw new Error("tripods");
   if (flames.length < 2) throw new Error("fort flames");
@@ -1016,6 +1235,7 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
   walk("fort", FORT_GRAPH.edges, fortWorld, (x, z) => inFortGraph(x, z, 0));
   walk("yug1", YUGHOTT_GRAPHS[1].edges, (gx, gy) => yugWorld(gx, gy, 1), (x, z) => inYughottGraph(x, z, 0, 1));
   walk("yug2", YUGHOTT_GRAPHS[2].edges, (gx, gy) => yugWorld(gx, gy, 2), (x, z) => inYughottGraph(x, z, 0, 2));
+  assertFortDensity();
   for (const poi of [...seatedFortPois(), ...seatedYughottPois()]) {
     if (blocked(poi.x, poi.z)) throw new Error(`${poi.id} blocked`);
   }

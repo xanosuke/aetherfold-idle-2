@@ -184,6 +184,7 @@ ${chunk(yug2)}
 `;
 writeFileSync(outPath, text);
 assertOrcFieldsFresh();
-const { assertTraceFeet } = await import("../src/game/orc-height.ts");
+const { assertTraceFeet, assertFortContrast } = await import("../src/game/orc-height.ts");
+assertFortContrast();
 assertTraceFeet();
 console.log(`wrote ${outPath} hash ${hash.slice(0, 12)}`);

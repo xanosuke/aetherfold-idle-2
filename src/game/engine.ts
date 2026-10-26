@@ -26,7 +26,7 @@ import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustF
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
-import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG } from "./ghelsba";
+import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes } from "./ghelsba";
 import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh } from "./orc-height";
 import { fortFlames, orcDressMarks, yughottDrums } from "./orc-dress";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
@@ -4387,7 +4387,7 @@ function buildYard(canvas) {
 	let zonePending = null;
 	const zoneFog = new Fog(9357551, 26, 52);
 	const ghelsbaFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
-	const fortFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
+	const fortFog = new Fog(FORT_FOG.color, FORT_FOG.near, FORT_FOG.far);
 	const yughottFog = new Fog(0x15141c, 35, 100);
 	const canyonFog = new Fog(7231552, 18, 40);
 	const caveFog = new Fog(525828, 36, 78);
@@ -13498,6 +13498,8 @@ function buildYard(canvas) {
 		const inCave = orcFog(px, pz) === "cave" || inTomb(px, pz) || inPassNow;
 		const onIce = inGlacier(px, pz);
 		const inGhelsbaNow = inGhelsba(px, pz);
+		const hourNow = vanadielTime().hour;
+		fortNight.value = hourNow >= 18 || hourNow < 6 ? 1 : 0;
 		if (inPassNow) {
 			hemi.color.setHex(0x8e9cb0);
 			hemi.groundColor.setHex(0x4a545c);
@@ -13622,7 +13624,7 @@ function buildYard(canvas) {
 		}
 		const orcFall = scene.userData.orcFall;
 		if (orcFall) orcFall.opacity = 0.34 + 0.14 * Math.sin(elapsed * 2.4);
-		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inGhelsba(px, pz) || inFort(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x15141c : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
+		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inFort(px, pz) ? FORT_FOG.color : inGhelsba(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x15141c : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
@@ -46536,6 +46538,7 @@ function buildAngler(toon, tunic = 1841186) {
 	bob.userData.npcBobber = true;
 	return root;
 }
+const fortNight = { value: 0 };
 function buildRoom(scene, toonMat, colliders) {
 	const buckets = /* @__PURE__ */ new Map();
 	const add = (color, w, h, d, x, y, z, yaw, pitch) => {
@@ -47309,6 +47312,18 @@ function buildRoom(scene, toonMat, colliders) {
 	buildDistricts(add, colliders, scene, toonMat);
 	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
 	buildOrcLands(add, colliders);
+	for (const dome of takeFortDomes()) {
+		const shell = new SphereGeometry(2.15, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+		shell.translate(dome.x, dome.y, dome.z);
+		const hideList = buckets.get(dome.hide) ?? [];
+		hideList.push(shell);
+		buckets.set(dome.hide, hideList);
+		const cap = new SphereGeometry(0.36, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+		cap.translate(dome.x, dome.y + 1.88, dome.z);
+		const capList = buckets.get(0x3a3029) ?? [];
+		capList.push(cap);
+		buckets.set(0x3a3029, capList);
+	}
 	const liftSpan = fortLift();
 	fortLiftDeck = new Mesh(new BoxGeometry(3.4, 0.22, 2.6), toonMat(0x8a6844));
 	fortLiftDeck.position.set(liftSpan.x, liftSpan.y0 + 0.14, liftSpan.z);
@@ -47368,6 +47383,19 @@ function buildRoom(scene, toonMat, colliders) {
 		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
 		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.55 + 0.45 * clamp(ny, 0.0, 1.0);\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.09);\n#include <opaque_fragment>");
 		if (!shader.fragmentShader.includes("0.55 + 0.45")) throw new Error("yughott terrain shader");
+	};
+	const fortMat = toonMat(0xffffff);
+	fortMat.vertexColors = true;
+	fortMat.alphaHash = false;
+	fortMat.transparent = false;
+	fortMat.side = DoubleSide;
+	fortMat.depthWrite = true;
+	fortMat.customProgramCacheKey = () => "fort-terrain-slope";
+	fortMat.onBeforeCompile = (shader) => {
+		shader.uniforms.uFortNight = fortNight;
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uFortNight;\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.45 + 0.55 * clamp(ny, 0.0, 1.0);\n}").replace("#include <opaque_fragment>", "{\nfloat ny2 = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nif (uFortNight > 0.5 && ny2 > 0.65) {\nfloat lum = dot(outgoingLight.rgb, vec3(0.2126, 0.7152, 0.0722));\nif (lum < 0.18) outgoingLight.rgb *= 0.18 / max(lum, 0.0001);\n}\noutgoingLight.rgb = max(outgoingLight.rgb, vec3(0.008));\n}\n#include <opaque_fragment>");
+		if (!shader.fragmentShader.includes("0.45 + 0.55")) throw new Error("fort terrain shader");
 	};
 	const tx0 = GHELSBA_TERRAIN.x;
 	const tz0 = GHELSBA_TERRAIN.z;
@@ -47478,7 +47506,7 @@ function buildRoom(scene, toonMat, colliders) {
 		geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
 		geo.setIndex(index);
 		geo.computeVertexNormals();
-		const mesh = new Mesh(geo, field.id === "fort" ? terrainMat : yughottMat);
+		const mesh = new Mesh(geo, field.id === "fort" ? fortMat : yughottMat);
 		mesh.receiveShadow = true;
 		mesh.castShadow = false;
 		scene.add(mesh);

@@ -2,7 +2,7 @@
  * Build-time bake of Fort Ghelsba and Yughott heightfields.
  * Runtime must not import this. scripts/bake-orc-fields.mjs hashes it.
  */
-import { FORT_CELL, FORT_GRAPH, fortClearance, fortGridSquare, gridToWorld as fortWorld, inFortGraph, worldToGrid as fortGrid, type FortGraph } from "./fort-graph";
+import { FORT_CELL, FORT_GRAPH, fortClearance, gridToWorld as fortWorld, inFortGraph, type FortGraph } from "./fort-graph";
 import {
   YUGHOTT_CELL,
   YUGHOTT_GRAPHS,
@@ -187,11 +187,12 @@ function nearestTerrace(x: number, z: number, spans: Span[], bands: Band[]): num
   return bestY;
 }
 
-const FORT_GRASS = 0x66683f;
-const FORT_PATCH = 0x4d4c3a;
-const FORT_CANYON = 0x4d4c4a;
-const FORT_CLIFF = 0x625e44;
-const FORT_TOP = 0x6e7442;
+const FORT_GRASS = 0x6e7442;
+const FORT_PATCH = 0x5a5e38;
+const FORT_DIRT = 0x7a6a48;
+const FORT_CLIFF_FOOT = 0x4a4636;
+const FORT_CLIFF_FACE = 0x3d3b3b;
+const FORT_TOP = 0x5a6236;
 const Y1_FLOOR = 0x3e393f;
 const Y1_WALL = 0x332e39;
 const Y1_TOP = 0x141418;
@@ -392,16 +393,36 @@ function yugPack(map: YughottMap) {
 const yug1 = yugPack(1);
 const yug2 = yugPack(2);
 
+/** Worn track along an edge centreline. 1 on the line, 0 past ~40% of the path width. */
+function pathAmount(x: number, z: number): number {
+  let best = 0;
+  for (const span of fortSpans) {
+    const q = near(x, z, span.ax, span.az, span.bx, span.bz);
+    const d = Math.hypot(x - q.x, z - q.z);
+    const track = span.half * 0.8;
+    if (track < 1e-4 || d >= track) continue;
+    const t = 1 - d / track;
+    if (t > best) best = t;
+  }
+  return best;
+}
+
 function fortPaint(x: number, z: number, y: number, on: boolean) {
   if (on) {
-    const g = fortGrid(x, z);
-    if (fortGridSquare(g.gx, g.gy) === "G-9") return vary(FORT_CANYON, x, z, 0.04);
-    const patch = hash(x * 0.17, z * 0.13) > 0.7 ? 1 : 0;
-    return mix(vary(FORT_GRASS, x, z, 0.045), vary(FORT_PATCH, x, z, 0.04), patch);
+    const patch = hash(x * 0.17, z * 0.13) > 0.72 ? 1 : 0;
+    let color = mix(vary(FORT_GRASS, x, z, 0.04), vary(FORT_PATCH, x, z, 0.035), patch);
+    const dirt = pathAmount(x, z);
+    if (dirt > 0.04) color = mix(color, vary(FORT_DIRT, x, z, 0.03), dirt);
+    const room = fortClearance(x, z);
+    if (room < 1.5) {
+      const shade = 1 - 0.25 * Math.max(0, Math.min(1, 1 - room / 1.5));
+      color = [color[0] * shade, color[1] * shade, color[2] * shade];
+    }
+    return color;
   }
   const rise = y - nearestTerrace(x, z, fortSpans, fortBands);
-  if (rise > 3.4) return vary(FORT_TOP, x, z, 0.05);
-  return vary(FORT_CLIFF, x, z, 0.05);
+  if (rise > 4.5) return vary(FORT_TOP, x, z, 0.04);
+  return mix(vary(FORT_CLIFF_FOOT, x, z, 0.03), vary(FORT_CLIFF_FACE, x, z, 0.03), smoothstep(0.15, 3.1, rise));
 }
 
 function yugPaint(pack: ReturnType<typeof yugPack>, x: number, z: number, y: number, on: boolean) {

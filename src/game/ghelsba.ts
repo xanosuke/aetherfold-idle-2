@@ -1706,6 +1706,8 @@ const TERRAIN_ROCK = 0x6e5a48;
 const TERRAIN_MOSS = 0x46583a;
 /** Canyon haze. Near enough that only the far edges tint. The clear color uses the same value. */
 export const GHELSBA_FOG = { color: 0x8a8f78, near: 70, far: 160 };
+/** Fort haze, lighter and longer than the outpost so the camp reads as its own zone. */
+export const FORT_FOG = { color: 0x707566, near: 90, far: 200 };
 
 function smoothstep(edge0: number, edge1: number, x: number) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
@@ -3339,7 +3341,15 @@ function dressYughott(add: Add, _colliders: Solid[]) {
   bonePile(put, lower.x - 1.5, lower.z + 1.2);
 }
 
+const fortDomes: { x: number; z: number; y: number; hide: number }[] = [];
+export function takeFortDomes() {
+  const out = fortDomes.slice();
+  fortDomes.length = 0;
+  return out;
+}
+
 function dressCamps(add: Add, colliders: Solid[]) {
+  fortDomes.length = 0;
   const avoid: { x: number; z: number; r: number }[] = [];
   for (const gate of ORC_GATES) {
     avoid.push({ x: gate.x, z: gate.z, r: 4.2 });
@@ -3349,7 +3359,13 @@ function dressCamps(add: Add, colliders: Solid[]) {
     avoid.push({ x: poi.x, z: poi.z, r: poi.id.startsWith("chest") ? 2.4 : 1.8 });
   }
   dressOrcCamps(lifted(add), colliders, {
-    dome: (draw, x, z, lift, hide) => domeHut(draw, colliders, x, z, hide, 0x4a4036, lift, true),
+    dome: (draw, x, z, lift, hide) => {
+      fortDomes.push({ x, z, y: lift + traceFloorY(x, z), hide });
+      draw(0x5c4634, 0.16, 1.25, 0.14, x - 0.48, lift + 0.66, z + 1.95);
+      draw(0x5c4634, 0.16, 1.25, 0.14, x + 0.48, lift + 0.66, z + 1.95);
+      draw(0x5c4634, 1.2, 0.14, 0.14, x, lift + 1.28, z + 1.95);
+      ringEmblem(draw, x, lift + 1.45, z + 2.12, 0, 0.48);
+    },
     tripod: (draw, x, z) => tripod(draw, x, z, true),
     dead: (draw, x, z) => deadTree(draw, colliders, x, z, { tint: 0x2a2622, ground: 0, quiet: true }),
     emblem: (draw, x, y, z, s) => ringEmblem(draw, x, y, z, 0, s),

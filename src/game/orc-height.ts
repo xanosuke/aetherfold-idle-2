@@ -316,6 +316,37 @@ export function assertFort(): void {
     const at = fortWorld(exit.gx, exit.gy);
     if (!queue.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < 5)) throw new Error(`${exit.id} is cut off`);
   }
+  assertFortContrast();
+}
+
+/** Mean floor luminance minus mean cliff-face luminance. Tops are not faces. */
+export function assertFortContrast(): void {
+  const w = fortField.nX + 1;
+  const h = fortField.nZ + 1;
+  let floorN = 0;
+  let floorL = 0;
+  let wallN = 0;
+  let wallL = 0;
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const idx = j * w + i;
+      if (!fortField.draw[idx]) continue;
+      const r = fortField.rgb[idx * 3];
+      const g = fortField.rgb[idx * 3 + 1];
+      const b = fortField.rgb[idx * 3 + 2];
+      const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      if (fortField.floor[idx]) {
+        floorN += 1;
+        floorL += lum;
+      } else if (fortField.ys[idx] - fortField.floorY[idx] <= 4.5) {
+        wallN += 1;
+        wallL += lum;
+      }
+    }
+  }
+  if (floorN < 50 || wallN < 50) throw new Error(`fort contrast samples floor ${floorN} wall ${wallN}`);
+  const delta = floorL / floorN - wallL / wallN;
+  if (delta < 0.12) throw new Error(`fort contrast ${delta.toFixed(3)} floor ${(floorL / floorN).toFixed(3)} wall ${(wallL / wallN).toFixed(3)}`);
 }
 
 export function assertYughott(): void {
