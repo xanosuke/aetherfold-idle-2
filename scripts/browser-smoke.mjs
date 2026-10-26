@@ -679,6 +679,168 @@ async function orcTrace(browser, url, seated) {
   return { ok: true, shots };
 }
 
+function seatPlaces() {
+  const probe = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `
+        import { traceFloorY } from "./src/game/orc-height.ts";
+        import { fortSquare, yughottSquare, inFort, inYughott } from "./src/game/ghelsba.ts";
+        import { FORT_GRAPH, gridToWorld as fortWorld } from "./src/game/fort-graph.ts";
+        import { YUGHOTT_MAP1_GRAPH, gridToWorld as yugWorld } from "./src/game/yughott-graph.ts";
+        const fort = (id, square) => {
+          const row = FORT_GRAPH.nodes.find((node) => node.id === id);
+          if (!row) throw new Error("missing " + id);
+          const at = fortWorld(row.gx, row.gy);
+          const hit = fortSquare(at.x, at.z);
+          if (hit !== square) throw new Error(id + " square " + hit);
+          if (!inFort(at.x, at.z, 0)) throw new Error(id + " left the fort");
+          return { name: id, x: at.x, z: at.z, square, region: "Fort Ghelsba", floor: traceFloorY(at.x, at.z) };
+        };
+        const yug = (id, square) => {
+          const row = YUGHOTT_MAP1_GRAPH.nodes.find((node) => node.id === id);
+          if (!row) throw new Error("missing " + id);
+          const at = yugWorld(row.gx, row.gy, 1);
+          const hit = yughottSquare(at.x, at.z);
+          if (hit !== square) throw new Error(id + " square " + hit);
+          if (!inYughott(at.x, at.z, 0)) throw new Error(id + " left the grotto");
+          return { name: id, x: at.x, z: at.z, square, region: "Yughott Grotto", floor: traceFloorY(at.x, at.z) };
+        };
+        const stands = [
+          fort("j_n50", "I-6"),
+          fort("room_hundredscar", "G-9"),
+          fort("area_48", "H-8"),
+          yug("area_room_b", "F-9"),
+          yug("area_geo", "J-7"),
+        ];
+        console.log("SEATJSON " + JSON.stringify({ stands }));
+      `,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const text = `${probe.stdout || ""}\n${probe.stderr || ""}`;
+  if (probe.status !== 0) return { ok: false, error: text.slice(-800) };
+  const line = (probe.stdout || "").split("\n").find((row) => row.startsWith("SEATJSON "));
+  if (!line) return { ok: false, error: text.slice(-800) };
+  return { ok: true, ...JSON.parse(line.slice("SEATJSON ".length)) };
+}
+
+async function assertSeat(browser, url, seated) {
+  const places = seatPlaces();
+  if (!places.ok) return places;
+  const shots = [];
+  let monsters = 0;
+  let raised = 0;
+  for (const stand of places.stands) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+    });
+    page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+    await page.route("**/*", (route) => {
+      if (route.request().url().includes("/_serverFn/")) return route.abort();
+      return route.continue();
+    });
+    await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: stand.x, z: stand.z, yaw: 0 }));
+    page.__bootAt = Date.now();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    try {
+      await waitBootLabel(
+        page,
+        ([region, square]) => {
+          const text = document.body?.innerText || "";
+          return text.includes(region) && text.includes(square);
+        },
+        [stand.region, stand.square],
+        `seat-${stand.name}`,
+      );
+    } catch (err) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      await page.close();
+      return { ok: false, error: `${stand.square} never seated (${err.message})`, text: text.slice(0, 240), errors, shots };
+    }
+    try {
+      await page.waitForFunction(() => window.__seatAudit && window.__seatAudit.fieldLive, null, { timeout: 20000 });
+      await page.waitForFunction(
+        () => window.__seatAudit && window.__seatAudit.monsters && window.__seatAudit.monsters.length > 0,
+        null,
+        { timeout: 4000 },
+      ).catch(() => {});
+    } catch (err) {
+      await page.close();
+      return { ok: false, error: `${stand.square} field never ticked (${err.message})`, errors, shots };
+    }
+    const sample = await page.evaluate(() => {
+      const audit = window.__seatAudit;
+      const fn = window.__skillHop;
+      const names = ["Savage Blade", "Spiral Hell", "Raiden Thrust", "Impulse Drive", "Stardiver"];
+      const bad = [];
+      if (typeof fn !== "function") bad.push("missing skillHop");
+      else {
+        for (const name of names) {
+          for (let i = 0; i <= 40; i++) {
+            const y = fn(name, i / 40);
+            if (!(y >= -1e-4)) bad.push(`${name}@${(i / 40).toFixed(3)}=${y}`);
+          }
+        }
+      }
+      return { audit, bad };
+    });
+    await page.close();
+    if (errors.length) return { ok: false, error: `${stand.square} ${errors[0]}`, shots };
+    const audit = sample.audit;
+    if (!audit || !audit.hero) return { ok: false, error: `${stand.square} missing seat audit`, shots };
+    if (sample.bad.length) return { ok: false, error: `${stand.square} ${sample.bad[0]}`, shots };
+    if (!(audit.hero.y + 1e-3 >= audit.hero.ground)) {
+      return { ok: false, error: `${stand.square} hero ${audit.hero.y.toFixed(3)} below floor ${audit.hero.ground.toFixed(3)}`, shots };
+    }
+    if (!(audit.heroFloorMin >= -1e-3)) {
+      return { ok: false, error: `${stand.square} hero dipped ${audit.heroFloorMin.toFixed(3)}`, shots };
+    }
+    const actors = [...(audit.monsters || []), ...(audit.pets || []), ...(audit.trusts || [])];
+    for (const row of actors) {
+      const gap = Math.abs(row.y - row.ground - (row.hover || 0));
+      if (!(gap < 0.1)) {
+        return {
+          ok: false,
+          error: `${stand.square} ${row.kind} ${row.id || ""} y ${row.y.toFixed(3)} ground ${row.ground.toFixed(3)} hover ${row.hover} gap ${gap.toFixed(3)}`,
+          shots,
+        };
+      }
+    }
+    for (const ring of audit.rings || []) {
+      const gap = Math.abs(ring.y - ring.ground);
+      if (!(gap < 0.15)) {
+        return { ok: false, error: `${stand.square} ring ${ring.y.toFixed(3)} off floor ${ring.ground.toFixed(3)}`, shots };
+      }
+    }
+    if (audit.hero.ground > 0.5) raised += 1;
+    monsters += (audit.monsters || []).length;
+    const shot = {
+      name: stand.name,
+      square: stand.square,
+      floor: Math.round(stand.floor * 100) / 100,
+      ground: Math.round(audit.hero.ground * 100) / 100,
+      hero: Math.round(audit.hero.y * 100) / 100,
+      monsters: (audit.monsters || []).length,
+      pets: (audit.pets || []).length,
+      trusts: (audit.trusts || []).length,
+      rings: (audit.rings || []).length,
+    };
+    console.log("SEAT " + JSON.stringify(shot));
+    shots.push(shot);
+  }
+  if (monsters < 1) return { ok: false, error: "no visible field monsters on the five stands", shots };
+  if (raised < 1) return { ok: false, error: "no raised terrace in the seat sample", shots };
+  return { ok: true, shots, monsters, raised };
+}
+
 async function checkGhelsba(browser, url) {
   const places = ghelsbaPlaces();
   if (!places.ok) return places;
@@ -793,9 +955,11 @@ async function checkGhelsba(browser, url) {
     if (errors.length) return { ok: false, error: `${stand.name} ${errors[0]}`, nodes: places.nodes, shots };
     if (stats.playerHits < 40) return { ok: false, error: `${stand.name} player occluded (${stats.playerHits})`, nodes: places.nodes, shots };
   }
+  const seat = await assertSeat(browser, url, seated);
+  if (!seat.ok) return { ...seat, nodes: places.nodes, shots: [...shots, ...(seat.shots || [])] };
   const trace = await orcTrace(browser, url, seated);
   if (!trace.ok) return { ...trace, nodes: places.nodes, shots: [...shots, ...(trace.shots || [])] };
-  return { ok: true, nodes: places.nodes, shots: [...shots, ...trace.shots] };
+  return { ok: true, nodes: places.nodes, shots: [...shots, ...(seat.shots || []), ...trace.shots] };
 }
 
 let browser = null;

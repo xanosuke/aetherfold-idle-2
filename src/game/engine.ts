@@ -28,6 +28,10 @@ import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, r
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes } from "./ghelsba";
 import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh } from "./orc-height";
+function groundY(x, z) {
+	return traceFloorY(x, z);
+}
+
 import { fortFlames, orcDressMarks, yughottDrums } from "./orc-dress";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
@@ -2290,7 +2294,7 @@ function buildYard(canvas) {
 	heroHit.visible = false;
 	hero.root.add(heroHit);
 	hero.root.position.set(0, 0, 0);
-	hare.root.position.set(harePos.x, 0, harePos.z);
+	hare.root.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 	scene.add(hero.root, hare.root);
 	const luopanOrb = new Mesh(new SphereGeometry(.22, 14, 10), toon(6960248));
 	luopanOrb.castShadow = true;
@@ -2322,7 +2326,7 @@ function buildYard(canvas) {
 	kinBand.rotation.x = Math.PI / 2;
 	kinBand.position.set(0, .46, .12);
 	kin.root.add(kinBand);
-	kin.root.position.set(kinPos.x, 0, kinPos.z);
+	kin.root.position.set(kinPos.x, groundY(kinPos.x, kinPos.z), kinPos.z);
 	scene.add(kin.root);
 	hare.root.visible = false;
 	kin.root.visible = false;
@@ -2330,7 +2334,7 @@ function buildYard(canvas) {
 		const built = buildHare(toon);
 		built.root.name = body.id;
 		built.root.userData.packId = body.id;
-		built.root.position.set(body.x, 0, body.z);
+		built.root.position.set(body.x, groundY(body.x, body.z), body.z);
 		built.root.visible = false;
 		scene.add(built.root);
 		return {
@@ -2377,7 +2381,7 @@ function buildYard(canvas) {
 		const ease = flopT * flopT * (3 - 2 * flopT);
 		root.rotateZ(ease * 1.15);
 		const hop = ease < .45 ? ease / .45 : Math.max(0, 1 - (ease - .45) / .55);
-		root.position.y = hop * .2;
+		root.position.y = groundY(root.position.x, root.position.z) + hop * .2;
 		let opacity = 1;
 		if (corpse > 1.7) opacity = Math.max(0, 1 - (corpse - 1.7) / .95);
 		paintBodyAlpha(root, opacity);
@@ -2765,7 +2769,7 @@ function buildYard(canvas) {
 		pup.x = dry.x;
 		pup.z = dry.z;
 		pup.aim = aim;
-		pup.body.root.position.set(pup.x, traceFloorY(pup.x, pup.z), pup.z);
+		pup.body.root.position.set(pup.x, groundY(pup.x, pup.z), pup.z);
 		noteTrustPlace(pup.def.id, hareDist, hareDist <= reach, Math.hypot(px - pup.x, pz - pup.z), pup.x, pup.z);
 		applyFacing(pup.body.root, aim, basis, xAxis, yAxis, zAxis);
 		if (floater && floater.markId && floater.markId === pup.def.id && floater.markId !== floater.id && floater.amount) spawnWsMark(floater.name, floater.amount, pup.x, 1.7, pup.z);
@@ -3731,7 +3735,7 @@ function buildYard(canvas) {
 		for (const pup of puppets) placePuppet(pup, dt, summoned.indexOf(pup.def.id), floater);
 	}
 	const crystal = buildHomeCrystal();
-	crystal.position.set(HOME_POINTS.crystal.x, 0, HOME_POINTS.crystal.z);
+	crystal.position.set(HOME_POINTS.crystal.x, groundY(HOME_POINTS.crystal.x, HOME_POINTS.crystal.z), HOME_POINTS.crystal.z);
 	scene.add(crystal);
 	colliders.push({
 		minX: HOME_POINTS.crystal.x - .34,
@@ -3740,7 +3744,7 @@ function buildYard(canvas) {
 		maxZ: HOME_POINTS.crystal.z + .34
 	});
 	const portCrystal = buildHomeCrystal();
-	portCrystal.position.set(HOME_POINTS.port.x, 0, HOME_POINTS.port.z);
+	portCrystal.position.set(HOME_POINTS.port.x, groundY(HOME_POINTS.port.x, HOME_POINTS.port.z), HOME_POINTS.port.z);
 	scene.add(portCrystal);
 	colliders.push({
 		minX: HOME_POINTS.port.x - .34,
@@ -3749,7 +3753,7 @@ function buildYard(canvas) {
 		maxZ: HOME_POINTS.port.z + .34
 	});
 	const manual = buildFieldManual(toon);
-	manual.position.set(MANUAL_X, 0, MANUAL_Z);
+	manual.position.set(MANUAL_X, groundY(MANUAL_X, MANUAL_Z), MANUAL_Z);
 	scene.add(manual);
 	colliders.push({
 		minX: MANUAL_X - .38,
@@ -3758,7 +3762,7 @@ function buildYard(canvas) {
 		maxZ: MANUAL_Z + .32
 	});
 	const gateGuard = buildSanGuard(toon);
-	gateGuard.position.set(GUARD_X, 0, GUARD_Z);
+	gateGuard.position.set(GUARD_X, groundY(GUARD_X, GUARD_Z), GUARD_Z);
 	gateGuard.rotation.y = -Math.PI / 2;
 	scene.add(gateGuard);
 	colliders.push({
@@ -3768,12 +3772,12 @@ function buildYard(canvas) {
 		maxZ: GUARD_Z + .42
 	});
 	const fisher = buildAngler(toon);
-	fisher.position.set(FISHER.x, 0, FISHER.z);
+	fisher.position.set(FISHER.x, groundY(FISHER.x, FISHER.z), FISHER.z);
 	fisher.rotation.y = Math.PI / 2;
 	fisher.userData.who = "gallijaux";
 	scene.add(fisher);
 	const joulet = buildAngler(toon, 12035468);
-	joulet.position.set(JOULET.x, 0, JOULET.z);
+	joulet.position.set(JOULET.x, groundY(JOULET.x, JOULET.z), JOULET.z);
 	joulet.rotation.y = -Math.PI / 2;
 	joulet.userData.who = "joulet";
 	scene.add(joulet);
@@ -4074,7 +4078,7 @@ function buildYard(canvas) {
 		} else fishBar.style.display = "none";
 	}
 	const manualOutpost = buildFieldManual(toon);
-	manualOutpost.position.set(MANUAL_OUTPOST_X, 0, MANUAL_OUTPOST_Z);
+	manualOutpost.position.set(MANUAL_OUTPOST_X, groundY(MANUAL_OUTPOST_X, MANUAL_OUTPOST_Z), MANUAL_OUTPOST_Z);
 	scene.add(manualOutpost);
 	colliders.push({
 		minX: MANUAL_OUTPOST_X - .38,
@@ -4083,7 +4087,7 @@ function buildYard(canvas) {
 		maxZ: MANUAL_OUTPOST_Z + .32
 	});
 	const manualEastGate = buildFieldManual(toon);
-	manualEastGate.position.set(MANUAL_EAST_X, 0, MANUAL_EAST_Z);
+	manualEastGate.position.set(MANUAL_EAST_X, groundY(MANUAL_EAST_X, MANUAL_EAST_Z), MANUAL_EAST_Z);
 	scene.add(manualEastGate);
 	colliders.push({
 		minX: MANUAL_EAST_X - .38,
@@ -4092,7 +4096,7 @@ function buildYard(canvas) {
 		maxZ: MANUAL_EAST_Z + .32
 	});
 	const manualEastRoad = buildFieldManual(toon);
-	manualEastRoad.position.set(MANUAL_EAST_ROAD_X, 0, MANUAL_EAST_ROAD_Z);
+	manualEastRoad.position.set(MANUAL_EAST_ROAD_X, groundY(MANUAL_EAST_ROAD_X, MANUAL_EAST_ROAD_Z), MANUAL_EAST_ROAD_Z);
 	scene.add(manualEastRoad);
 	colliders.push({
 		minX: MANUAL_EAST_ROAD_X - .38,
@@ -4101,7 +4105,7 @@ function buildYard(canvas) {
 		maxZ: MANUAL_EAST_ROAD_Z + .32
 	});
 	const forestGuard = buildSanGuard(toon);
-	forestGuard.position.set(FOREST_GUARD_X, 0, FOREST_GUARD_Z);
+	forestGuard.position.set(FOREST_GUARD_X, groundY(FOREST_GUARD_X, FOREST_GUARD_Z), FOREST_GUARD_Z);
 	forestGuard.rotation.y = -Math.PI / 2;
 	scene.add(forestGuard);
 	colliders.push({
@@ -4111,7 +4115,7 @@ function buildYard(canvas) {
 		maxZ: FOREST_GUARD_Z + .42
 	});
 	const perchond = buildSanGuard(toon);
-	perchond.position.set(PASS_NPCS.perchond.x, 0, PASS_NPCS.perchond.z);
+	perchond.position.set(PASS_NPCS.perchond.x, groundY(PASS_NPCS.perchond.x, PASS_NPCS.perchond.z), PASS_NPCS.perchond.z);
 	perchond.rotation.y = .15;
 	scene.add(perchond);
 	colliders.push({
@@ -4121,7 +4125,7 @@ function buildYard(canvas) {
 		maxZ: PASS_NPCS.perchond.z + .42
 	});
 	const myffore = buildSanGuard(toon);
-	myffore.position.set(PASS_NPCS.myffore.x, 0, PASS_NPCS.myffore.z);
+	myffore.position.set(PASS_NPCS.myffore.x, groundY(PASS_NPCS.myffore.x, PASS_NPCS.myffore.z), PASS_NPCS.myffore.z);
 	myffore.rotation.y = -.2;
 	scene.add(myffore);
 	colliders.push({
@@ -4133,7 +4137,7 @@ function buildYard(canvas) {
 	const glacierNpcs = [];
 	for (const npc of GLACIER_NPCS) {
 		const body = npc.kind === "goblin" ? buildGoblin(toon) : buildSanGuard(toon);
-		body.position.set(npc.x, 0, npc.z);
+		body.position.set(npc.x, groundY(npc.x, npc.z), npc.z);
 		body.userData.glacierNpc = npc.id;
 		scene.add(body);
 		glacierNpcs.push(body);
@@ -4251,7 +4255,7 @@ function buildYard(canvas) {
 		side: 2
 	}));
 	rangeRing.rotation.x = -Math.PI / 2;
-	rangeRing.position.set(harePos.x, .035, harePos.z);
+	rangeRing.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.035), harePos.z);
 	rangeRing.visible = false;
 	scene.add(rangeRing);
 	const selfRing = new Mesh(new RingGeometry(.55, .72, 32), new MeshBasicMaterial({
@@ -4872,7 +4876,7 @@ function buildYard(canvas) {
 		}
 		if (!slot) slot = fieldBursts[0];
 		slot.mesh.material.color.setHex(color);
-		slot.mesh.position.set(x, 1.05, z);
+		slot.mesh.position.set(x, groundY(x, z) + (1.05), z);
 		slot.mesh.scale.setScalar(.35 * (scale || 1));
 		slot.mesh.material.opacity = .88;
 		slot.mesh.visible = true;
@@ -5030,7 +5034,8 @@ function buildYard(canvas) {
 			slot.root.userData.variant = body.variant || "";
 			slot.root.visible = body.sink < .97 && !(body.mode === "dead" && body.animLeft <= 0);
 			const hover = body.look === "ghost" || body.look === "hecteyes" || body.look === "ahriman" || body.look === "weapon" ? 0.72 : 0;
-			slot.root.position.set(body.x, (body.look === "worm" ? -body.sink * 1.7 : 0) + hover, body.z);
+			slot.root.userData.seatLift = (body.look === "worm" ? -body.sink * 1.7 : 0) + hover;
+			slot.root.position.set(body.x, groundY(body.x, body.z) + slot.root.userData.seatLift, body.z);
 			let act = "";
 			if (body.castTotal > 0) act = body.castName || body.gesture || "";
 			else if (body.anim === "skill" || body.anim === "cast" || body.anim === "boom") act = body.gesture || "";
@@ -5050,6 +5055,7 @@ function buildYard(canvas) {
 				slot.root.rotateZ(ease * 1.15);
 				const hop = ease < .45 ? ease / .45 : Math.max(0, 1 - (ease - .45) / .55);
 				slot.root.position.y += hop * .22;
+				slot.root.userData.seatLift += hop * .22;
 				const opacity = slot.t > 1.7 ? Math.max(0, 1 - (slot.t - 1.7) / .95) : 1;
 				if (slot.opacity !== opacity) {
 					slot.opacity = opacity;
@@ -5073,7 +5079,7 @@ function buildYard(canvas) {
 		const plate = readField();
 		if (plate && here) {
 			fieldRing.visible = true;
-			fieldRing.position.set(plate.x, .05, plate.z);
+			fieldRing.position.set(plate.x, groundY(plate.x, plate.z) + (.05), plate.z);
 			const ringScale = plate.look === "sheep" || plate.look === "fungus-beetle" || plate.look === "amanita" || plate.look === "jack" || plate.look === "sapling" ? 1.75 : plate.look === "orc" || plate.look === "bomb" || plate.look === "skeleton" || plate.look === "bats" || plate.look === "scorpion" || plate.look === "hecteyes" ? 1.4 : plate.look === "slime" || plate.look === "ghost" ? 1.25 : 1.15;
 			fieldRing.scale.setScalar(ringScale);
 			fieldRing.material.color.setHex(plate.claimed && !plate.nm ? 16729143 : 14925946);
@@ -5083,7 +5089,7 @@ function buildYard(canvas) {
 				max: plate.max,
 				nm: plate.nm,
 				x: plate.x,
-				y: fieldPlateY(plate.look),
+				y: groundY(plate.x, plate.z) + fieldPlateY(plate.look),
 				z: plate.z
 			};
 		} else {
@@ -5096,7 +5102,7 @@ function buildYard(canvas) {
 			const u = 1 - Math.max(0, burst.life) / burst.max;
 			burst.mesh.scale.setScalar((.35 + u * 1.7) * burst.grow);
 			burst.mesh.material.opacity = Math.max(0, .88 * (1 - u));
-			burst.mesh.position.y = 1.05 + u * .85;
+			burst.mesh.position.y = groundY(burst.mesh.position.x, burst.mesh.position.z) + 1.05 + u * .85;
 			if (burst.life <= 0) burst.mesh.visible = false;
 		}
 	}
@@ -5195,7 +5201,7 @@ function buildYard(canvas) {
 					actor.bite = null;
 				}
 			}
-			actor.root.position.set(body.x, traceFloorY(body.x, body.z), body.z);
+			actor.root.position.set(body.x, groundY(body.x, body.z), body.z);
 			applyFacing(actor.root, body.yaw, basis, xAxis, yAxis, zAxis);
 			if (body.hp <= 0) {
 				if (actor.corpse < 0) {
@@ -5778,7 +5784,7 @@ function buildYard(canvas) {
 		const look2 = ELEMENT_LOOK[element] || ELEMENT_LOOK.light;
 		const ring = new Mesh(new RingGeometry(.35, .7, 32), chantMat(look2.accent, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .07, z);
+		ring.position.set(x, groundY(x, z) + (.07), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -5790,7 +5796,7 @@ function buildYard(canvas) {
 		});
 		const column = new Mesh(new CylinderGeometry(.12, .42, 2.2, 10, 1, true), chantMat(hostile ? look2.color : look2.accent, .28));
 		column.material.side = 2;
-		column.position.set(x, 1.1, z);
+		column.position.set(x, groundY(x, z) + (1.1), z);
 		column.userData.ownGeo = true;
 		scene.add(column);
 		embers.push({
@@ -5871,7 +5877,7 @@ function buildYard(canvas) {
 	function paintShell(shell, x, z, t, hostile) {
 		if (!shell) return;
 		shell.visible = true;
-		shell.position.set(x, 0, z);
+		shell.position.set(x, groundY(x, z), z);
 		const equator = shell.getObjectByName("equator");
 		const ground = shell.getObjectByName("ground");
 		const crack = shell.getObjectByName("crack");
@@ -6076,7 +6082,7 @@ function buildYard(canvas) {
 		}
 		const bob = Math.sin(t * 1.5) * .05;
 		luopanRig.visible = true;
-		luopanRig.position.set(luopanLock.x, .82 + bob, luopanLock.z);
+		luopanRig.position.set(luopanLock.x, groundY(luopanLock.x, luopanLock.z) + (.82 + bob), luopanLock.z);
 		const fast = pet.ecliptic === true;
 		const slow = pet.lasting === true && !fast;
 		luopanRig.rotation.y = t * (fast ? .85 : slow ? .22 : .35);
@@ -6169,40 +6175,40 @@ function buildYard(canvas) {
 		const fx = ensureGeoJaFx();
 		fx.bolster.visible = bolsterOn;
 		if (bolsterOn) {
-			fx.bolster.position.set(px, .08, pz);
+			fx.bolster.position.set(px, groundY(px, pz) + (.08), pz);
 			fx.bolster.rotation.z = t * .35;
 		}
 		fx.blaze.visible = blazeOn;
 		if (blazeOn) {
-			fx.blaze.position.set(px, .14, pz);
+			fx.blaze.position.set(px, groundY(px, pz) + (.14), pz);
 			fx.blaze.rotation.z = -t * .9;
 			fx.blaze.material.opacity = .35 + Math.abs(Math.sin(t * 8)) * .35;
 		}
 		fx.fervor.visible = fervorOn;
 		if (fervorOn) {
-			fx.fervor.position.set(px, 0, pz);
+			fx.fervor.position.set(px, groundY(px, pz), pz);
 			applyFacing(fx.fervor, yaw, basis, xAxis, yAxis, zAxis);
 		}
 		fx.entrust.visible = entrustOn;
 		if (entrustOn) {
 			const a = t * 1.7;
-			fx.entrust.position.set(px + Math.cos(a) * .42, 1.38 + Math.sin(t * 2.2) * .06, pz + Math.sin(a) * .42);
+			fx.entrust.position.set(px + Math.cos(a) * .42, groundY(px + Math.cos(a) * .42, pz + Math.sin(a) * .42) + (1.38 + Math.sin(t * 2.2) * .06), pz + Math.sin(a) * .42);
 			fx.entrust.rotation.y = t * 2.2;
 			fx.entrust.rotation.x = t * 1.3;
 		}
 		fx.lasting.visible = lastingOn;
 		if (lastingOn) {
-			fx.lasting.position.set(luopanLock.x, .22, luopanLock.z);
+			fx.lasting.position.set(luopanLock.x, groundY(luopanLock.x, luopanLock.z) + (.22), luopanLock.z);
 			fx.lasting.rotation.z = t * .22;
 		}
 		fx.ecliptic.visible = eclipticOn;
 		if (eclipticOn) {
-			fx.ecliptic.position.set(luopanLock.x, .58 + Math.sin(t * 5) * .04, luopanLock.z);
+			fx.ecliptic.position.set(luopanLock.x, groundY(luopanLock.x, luopanLock.z) + (.58 + Math.sin(t * 5) * .04), luopanLock.z);
 			fx.ecliptic.rotation.z = t * 1.7;
 		}
 		fx.demat.visible = dematOn;
 		if (dematOn) {
-			fx.demat.position.set(luopanLock.x, .9, luopanLock.z);
+			fx.demat.position.set(luopanLock.x, groundY(luopanLock.x, luopanLock.z) + (.9), luopanLock.z);
 			fx.demat.material.opacity = .16 + Math.sin(t * 3) * .08;
 		}
 		if (!geo) return;
@@ -6213,7 +6219,7 @@ function buildYard(canvas) {
 			g.add(ring);
 			const peg = (color, x, z, alongX) => {
 				const mesh = new Mesh(new BoxGeometry(alongX ? .38 : .07, .03, alongX ? .07 : .38), plainMat(color, .95));
-				mesh.position.set(x, .04, z);
+				mesh.position.set(x, groundY(x, z) + (.04), z);
 				g.add(mesh);
 			};
 			peg(12863278, 1.28, 0, true);
@@ -6227,7 +6233,7 @@ function buildYard(canvas) {
 			chantCompass = g;
 		}
 		chantCompass.visible = true;
-		chantCompass.position.set(px, .02, pz);
+		chantCompass.position.set(px, groundY(px, pz) + (.02), pz);
 		const mark = chantCompass.getObjectByName("mark");
 		const fdx = fightX - px;
 		const fdz = fightZ - pz;
@@ -6246,7 +6252,7 @@ function buildYard(canvas) {
 				fx2 = buildSongChant(cast.id, element2);
 				assign(fx2);
 			}
-			fx2.g.position.set(x, 0, z);
+			fx2.g.position.set(x, groundY(x, z), z);
 			fx2.g.scale.setScalar(scale);
 			const notes = fx2.g.getObjectByName("notes");
 			if (notes) placeSongChant(notes, cast.elapsed ?? 0);
@@ -6262,7 +6268,7 @@ function buildYard(canvas) {
 				assign(fx2);
 			}
 			const gate = summonGatePos();
-			fx2.g.position.set(gate.x, 0, gate.z);
+			fx2.g.position.set(gate.x, groundY(gate.x, gate.z), gate.z);
 			const t2 = cast.elapsed ?? 0;
 			const open = Math.min(1, t2 / Math.max(.2, cast.total || 7));
 			const circle2 = fx2.g.getObjectByName("circle");
@@ -6302,7 +6308,7 @@ function buildYard(canvas) {
 				fx2 = buildGeoChant(cast.id, element2, geoSide);
 				assign(fx2);
 			}
-			fx2.g.position.set(x, 0, z);
+			fx2.g.position.set(x, groundY(x, z), z);
 			fx2.g.scale.setScalar(scale);
 			const t2 = cast.elapsed ?? 0;
 			const open = Math.min(1, t2 / .45);
@@ -6338,7 +6344,7 @@ function buildYard(canvas) {
 					mx = x + face.x * 2.4;
 					mz = z + face.z * 2.4;
 				}
-				fx2.mark.position.set(mx, 0, mz);
+				fx2.mark.position.set(mx, groundY(mx, mz), mz);
 				fx2.mark.scale.setScalar((.22 + fill * .95) * scale);
 				const outer = fx2.mark.getObjectByName("outer");
 				const core = fx2.mark.getObjectByName("core");
@@ -6372,7 +6378,7 @@ function buildYard(canvas) {
 			fx = nin ? buildNinChant(cast.id, element) : buildChant(cast.id, element, hex);
 			assign(fx);
 		}
-		fx.g.position.set(x, 0, z);
+		fx.g.position.set(x, groundY(x, z), z);
 		fx.g.scale.setScalar(scale);
 		const t = cast.elapsed ?? 0;
 		if (nin) {
@@ -6420,7 +6426,7 @@ function buildYard(canvas) {
 		if (!look2) return;
 		const ring = new Mesh(new RingGeometry(wide ? 1.15 : .55, wide ? 2.05 : 1.05, wide ? 40 : 32), chantMat(look2.accent, .95));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -6432,7 +6438,7 @@ function buildYard(canvas) {
 		});
 		const shock = new Mesh(new RingGeometry(wide ? .55 : .28, wide ? 1.05 : .55, 28), chantMat(look2.color, .85));
 		shock.rotation.x = -Math.PI / 2;
-		shock.position.set(x, .12, z);
+		shock.position.set(x, groundY(x, z) + (.12), z);
 		shock.userData.ownGeo = true;
 		scene.add(shock);
 		rings.push({
@@ -6443,7 +6449,7 @@ function buildYard(canvas) {
 			hold: .25
 		});
 		const puff = new Mesh(new SphereGeometry(wide ? 1.65 : .95, 14, 10), chantMat(look2.color, wide ? .55 : .6));
-		puff.position.set(x, wide ? 1.05 : 1.15, z);
+		puff.position.set(x, groundY(x, z) + (wide ? 1.05 : 1.15), z);
 		puff.userData.ownGeo = true;
 		scene.add(puff);
 		embers.push({
@@ -6457,7 +6463,7 @@ function buildYard(canvas) {
 			hold: .3
 		});
 		const core = new Mesh(new SphereGeometry(wide ? .72 : .48, 12, 8), chantMat(look2.accent, .75));
-		core.position.set(x, 1.15, z);
+		core.position.set(x, groundY(x, z) + (1.15), z);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -6476,7 +6482,7 @@ function buildYard(canvas) {
 			const mesh = makeElementMote(look2, i);
 			const a = i / n * Math.PI * 2;
 			const low = look2.mote === "dust" || look2.mote === "drop";
-			mesh.position.set(x, low ? wide ? .5 : .4 : 1.15, z);
+			mesh.position.set(x, groundY(x, z) + (low ? wide ? .5 : .4 : 1.15), z);
 			mesh.scale.setScalar(wide ? 2.15 : 1.65);
 			scene.add(mesh);
 			embers.push({
@@ -6501,7 +6507,7 @@ function buildYard(canvas) {
 		const n = heavy ? 12 : 8;
 		const ring = new Mesh(new RingGeometry(.42, .7, heavy ? 40 : 28), chantMat(look2.accent, .92));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -6514,7 +6520,7 @@ function buildYard(canvas) {
 		if (heavy) {
 			const inner = new Mesh(new RingGeometry(.2, .38, 24), chantMat(look2.color, .8));
 			inner.rotation.x = -Math.PI / 2;
-			inner.position.set(x, .1, z);
+			inner.position.set(x, groundY(x, z) + (.1), z);
 			inner.userData.ownGeo = true;
 			scene.add(inner);
 			rings.push({
@@ -6645,7 +6651,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < motes; i++) {
 			const mesh = makeElementMote(look2, i);
 			const a = i / motes * Math.PI * 2;
-			mesh.position.set(x, element === "water" ? .45 : .9, z);
+			mesh.position.set(x, groundY(x, z) + (element === "water" ? .45 : .9), z);
 			mesh.scale.setScalar(heavy ? 1.7 : 1.25);
 			scene.add(mesh);
 			embers.push({
@@ -6664,7 +6670,7 @@ function buildYard(canvas) {
 		if (!look2) return;
 		const ring = new Mesh(new RingGeometry(.12, .36, 18), chantMat(look2.accent, .92));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -6675,7 +6681,7 @@ function buildYard(canvas) {
 			hold: .12
 		});
 		const puff = new Mesh(new SphereGeometry(.22, 8, 6), chantMat(look2.color, .75));
-		puff.position.set(x, .72, z);
+		puff.position.set(x, groundY(x, z) + (.72), z);
 		puff.userData.ownGeo = true;
 		scene.add(puff);
 		embers.push({
@@ -6691,7 +6697,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const mesh = makeElementMote(look2, i);
 			const a = i / 6 * Math.PI * 2;
-			mesh.position.set(x, .62, z);
+			mesh.position.set(x, groundY(x, z) + (.62), z);
 			mesh.scale.setScalar(.8);
 			scene.add(mesh);
 			embers.push({
@@ -6713,7 +6719,7 @@ function buildYard(canvas) {
 		const look2 = ELEMENT_LOOK[element];
 		if (!look2) return;
 		const flash = new Mesh(new SphereGeometry(.38, 10, 8), chantMat(look2.accent, .62));
-		flash.position.set(x, .92, z);
+		flash.position.set(x, groundY(x, z) + (.92), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -6728,7 +6734,7 @@ function buildYard(canvas) {
 		});
 		const column = new Mesh(new CylinderGeometry(.22, .34, 1.45, 10, 1, true), chantMat(look2.color, .28));
 		column.material.side = 2;
-		column.position.set(x, .88, z);
+		column.position.set(x, groundY(x, z) + (.88), z);
 		column.userData.ownGeo = true;
 		scene.add(column);
 		embers.push({
@@ -6861,7 +6867,7 @@ function buildYard(canvas) {
 		const hoop = (inner, outer, y, life, grow, spin) => {
 			const ring = new Mesh(new RingGeometry(inner, outer, 32), chantMat(look2.accent, .9));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, y, z);
+			ring.position.set(x, groundY(x, z) + (y), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -6875,28 +6881,28 @@ function buildYard(canvas) {
 		};
 		if (name === "Flare") {
 			const pillar = new Mesh(new CylinderGeometry(.62, .9, 4.4, 14), chantMat(look2.color, .72));
-			pillar.position.set(x, 2.3, z);
+			pillar.position.set(x, groundY(x, z) + (2.3), z);
 			put(pillar, .85, .45, 0, 0, .28, .35);
 			const core = new Mesh(new CylinderGeometry(.24, .32, 4.8, 10), chantMat(look2.accent, .9));
-			core.position.set(x, 2.5, z);
+			core.position.set(x, groundY(x, z) + (2.5), z);
 			put(core, .62, .65, 0, 0, .2, .4);
 			const bloom = new Mesh(new SphereGeometry(1.05, 14, 10), chantMat(look2.accent, .82));
-			bloom.position.set(x, 4.35, z);
+			bloom.position.set(x, groundY(x, z) + (4.35), z);
 			put(bloom, .55, .25, 0, 0, .85, .3);
 			hoop(.7, 1.35, .08, .7, 1.55);
 			for (let i = 0; i < 14; i++) {
 				const mote = makeElementMote(look2, i);
-				mote.position.set(x, .5 + i % 5 * .55, z);
+				mote.position.set(x, groundY(x, z) + (.5 + i % 5 * .55), z);
 				mote.scale.setScalar(2.6);
 				const a = i / 14 * Math.PI * 2;
 				put(mote, .8, 2.4, Math.cos(a) * .7, Math.sin(a) * .7, 0, .2);
 			}
 		} else if (name === "Freeze") {
 			const shell = new Mesh(new DodecahedronGeometry(1.45, 0), chantMat(look2.color, .55));
-			shell.position.set(x, 1.25, z);
+			shell.position.set(x, groundY(x, z) + (1.25), z);
 			put(shell, .75, 0, 0, 0, .55, .4);
 			const heart = new Mesh(new SphereGeometry(.62, 12, 8), chantMat(look2.accent, .88));
-			heart.position.set(x, 1.25, z);
+			heart.position.set(x, groundY(x, z) + (1.25), z);
 			put(heart, .5, 0, 0, 0, .4, .35);
 			for (let i = 0; i < 14; i++) {
 				const mote = makeElementMote(look2, i);
@@ -6915,21 +6921,21 @@ function buildYard(canvas) {
 				put(bolt, .42, 0, 0, 0, 0, .45);
 			}
 			const flash2 = new Mesh(new SphereGeometry(.95, 12, 8), chantMat(look2.accent, .88));
-			flash2.position.set(x, 1.2, z);
+			flash2.position.set(x, groundY(x, z) + (1.2), z);
 			put(flash2, .45, 0, 0, 0, .75, .4);
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
 				const a = i / 10 * Math.PI * 2;
-				mote.position.set(x, 1.3, z);
+				mote.position.set(x, groundY(x, z) + (1.3), z);
 				mote.scale.setScalar(2.5);
 				put(mote, .5, .35, Math.cos(a) * 3.4, Math.sin(a) * 3.4, 0, .1);
 			}
 		} else if (name === "Flood") {
 			const spout = new Mesh(new CylinderGeometry(.95, .36, 4, 14), chantMat(look2.color, .62));
-			spout.position.set(x, 2.05, z);
+			spout.position.set(x, groundY(x, z) + (2.05), z);
 			put(spout, .85, .3, 0, 0, .25, .3);
 			const vein = new Mesh(new CylinderGeometry(.32, .14, 4.35, 10), chantMat(look2.accent, .82));
-			vein.position.set(x, 2.2, z);
+			vein.position.set(x, groundY(x, z) + (2.2), z);
 			put(vein, .6, .5, 0, 0, .15, .35);
 			hoop(.55, 1.15, .08, .7, 1.55);
 			for (let i = 0; i < 14; i++) {
@@ -6958,7 +6964,7 @@ function buildYard(canvas) {
 			for (let i = 0; i < 14; i++) {
 				const mote = makeElementMote(look2, i);
 				mote.scale.setScalar(2.4);
-				mote.position.set(x, .5, z);
+				mote.position.set(x, groundY(x, z) + (.5), z);
 				put(mote, 1.05, 1.7, 0, 0, 0, .15, {
 					x,
 					z,
@@ -6990,7 +6996,7 @@ function buildYard(canvas) {
 		const hoop = (inner, outer, y, life, grow) => {
 			const ring = new Mesh(new RingGeometry(inner, outer, 28), chantMat(look2.accent, .9));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, y, z);
+			ring.position.set(x, groundY(x, z) + (y), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -7004,7 +7010,7 @@ function buildYard(canvas) {
 		if (name === "Blaze Spikes") {
 			hoop(.45, 1.05, .08, .7, 1.35);
 			const cloak = new Mesh(new CylinderGeometry(.42, .62, 2.15, 12), chantMat(look2.color, .55));
-			cloak.position.set(x, 1.15, z);
+			cloak.position.set(x, groundY(x, z) + (1.15), z);
 			put(cloak, .7, .35, 0, 0, .2);
 			for (let i = 0; i < 12; i++) {
 				const mote = makeElementMote(look2, i);
@@ -7015,12 +7021,12 @@ function buildYard(canvas) {
 			}
 		} else if (name === "Ice Spikes") {
 			const shell = new Mesh(new DodecahedronGeometry(.9, 0), chantMat(look2.color, .5));
-			shell.position.set(x, 1.1, z);
+			shell.position.set(x, groundY(x, z) + (1.1), z);
 			put(shell, .7, 0, 0, 0, .35);
 			for (let i = 0; i < 12; i++) {
 				const mote = makeElementMote(look2, i);
 				const a = i / 12 * Math.PI * 2;
-				mote.position.set(x, 1.05, z);
+				mote.position.set(x, groundY(x, z) + (1.05), z);
 				mote.scale.setScalar(2.6);
 				put(mote, .75, .4 + i % 3 * .25, Math.cos(a) * 1.7, Math.sin(a) * 1.7, 0);
 			}
@@ -7032,7 +7038,7 @@ function buildYard(canvas) {
 				put(bolt, .4, 0, 0, 0, 0);
 			}
 			const flash2 = new Mesh(new SphereGeometry(.62, 10, 8), chantMat(look2.accent, .85));
-			flash2.position.set(x, 1.15, z);
+			flash2.position.set(x, groundY(x, z) + (1.15), z);
 			put(flash2, .35, 0, 0, 0, .6);
 		}
 	}
@@ -7056,32 +7062,32 @@ function buildYard(canvas) {
 		};
 		if (name === "Blaze Spikes") {
 			const puff = new Mesh(new SphereGeometry(.85, 12, 8), chantMat(look2.color, .7));
-			puff.position.set(x, 1.05, z);
+			puff.position.set(x, groundY(x, z) + (1.05), z);
 			put(puff, .45, .3, 0, 0, .7);
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
 				const a = i / 10 * Math.PI * 2;
-				mote.position.set(x, 1, z);
+				mote.position.set(x, groundY(x, z) + (1), z);
 				mote.scale.setScalar(2.1);
 				put(mote, .55, .7, Math.cos(a) * 2.2, Math.sin(a) * 2.2, 0);
 			}
 		} else if (name === "Ice Spikes") {
 			const shell = new Mesh(new DodecahedronGeometry(.7, 0), chantMat(look2.color, .65));
-			shell.position.set(x, 1.05, z);
+			shell.position.set(x, groundY(x, z) + (1.05), z);
 			put(shell, .4, 0, 0, 0, .55);
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
 				const a = i / 10 * Math.PI * 2;
-				mote.position.set(x, 1.05, z);
+				mote.position.set(x, groundY(x, z) + (1.05), z);
 				mote.scale.setScalar(2.4);
 				put(mote, .55, .35, Math.cos(a) * 2.4, Math.sin(a) * 2.4, 0);
 			}
 		} else {
 			const bolt = new Mesh(new CylinderGeometry(.09, .09, 2.6, 6), chantMat(look2.accent, .95));
-			bolt.position.set(x, 1.7, z);
+			bolt.position.set(x, groundY(x, z) + (1.7), z);
 			put(bolt, .32, 0, 0, 0, 0);
 			const flash2 = new Mesh(new SphereGeometry(.55, 10, 8), chantMat(look2.color, .85));
-			flash2.position.set(x, 1.05, z);
+			flash2.position.set(x, groundY(x, z) + (1.05), z);
 			put(flash2, .3, 0, 0, 0, .7);
 		}
 	}
@@ -7162,7 +7168,7 @@ function buildYard(canvas) {
 			const a = t * (name === "Shock Spikes" ? 7 : 1.5) + i / n * Math.PI * 2;
 			const rad = .58;
 			const y = .4 + i % 3 * .42 + Math.sin(t * 3 + i) * .08;
-			spikeAura[i].position.set(px + Math.cos(a) * rad, y, pz + Math.sin(a) * rad);
+			spikeAura[i].position.set(px + Math.cos(a) * rad, groundY(px + Math.cos(a) * rad, pz + Math.sin(a) * rad) + (y), pz + Math.sin(a) * rad);
 			if (name === "Shock Spikes") spikeAura[i].rotation.z = t * 9 + i;
 		}
 	}
@@ -7235,51 +7241,51 @@ function buildYard(canvas) {
 			const part = mesh.userData.part;
 			const i = mesh.userData.slot ?? 0;
 			if (part === "ring") {
-				mesh.position.set(px, .04, pz);
+				mesh.position.set(px, groundY(px, pz) + (.04), pz);
 				mesh.rotation.z = t * .25;
 			} else if (part === "klima") {
-				mesh.position.set(px, .055, pz);
+				mesh.position.set(px, groundY(px, pz) + (.055), pz);
 				mesh.rotation.z = -t * .4;
 			} else if (part === "water" || part === "ice") {
 				const fall = (t * (part === "water" ? .85 : .35) + i / 8) % 1;
 				const a = i / 8 * Math.PI * 2 + (part === "ice" ? t * .3 : 0);
 				const rad = .18 + i % 4 * .12;
-				mesh.position.set(px + Math.cos(a) * rad, 1.85 * (1 - fall) + .08, pz + Math.sin(a) * rad);
+				mesh.position.set(px + Math.cos(a) * rad, groundY(px + Math.cos(a) * rad, pz + Math.sin(a) * rad) + (1.85 * (1 - fall) + .08), pz + Math.sin(a) * rad);
 				mesh.material.opacity = fall < .08 ? fall / .08 : .75;
 			} else if (part === "wind") {
 				const a = t * 3.4 + i;
 				const rad = .48 + i % 3 * .08;
-				mesh.position.set(px + Math.cos(a) * rad, .4 + i % 4 * .28, pz + Math.sin(a) * rad);
+				mesh.position.set(px + Math.cos(a) * rad, groundY(px + Math.cos(a) * rad, pz + Math.sin(a) * rad) + (.4 + i % 4 * .28), pz + Math.sin(a) * rad);
 				mesh.rotation.y = a;
 				mesh.material.opacity = .45 + .35 * Math.abs(Math.sin(t * 2 + i));
 			} else if (part === "fire") {
 				const rise = (t * .45 + i / 8) % 1;
 				const a = t * .8 + i;
-				mesh.position.set(px + Math.cos(a) * (.16 + rise * .2), .12 + rise * 1.35, pz + Math.sin(a) * (.16 + rise * .2));
+				mesh.position.set(px + Math.cos(a) * (.16 + rise * .2), groundY(px + Math.cos(a) * (.16 + rise * .2), pz + Math.sin(a) * (.16 + rise * .2)) + (.12 + rise * 1.35), pz + Math.sin(a) * (.16 + rise * .2));
 				mesh.material.opacity = .15 + (1 - rise) * .7;
 			} else if (part === "earth") {
 				const a = t * 1.6 + i;
 				const rise = (t * .3 + i * .12) % 1;
 				const rad = .35 + rise * .25;
-				mesh.position.set(px + Math.cos(a) * rad, .08 + rise * .7, pz + Math.sin(a) * rad);
+				mesh.position.set(px + Math.cos(a) * rad, groundY(px + Math.cos(a) * rad, pz + Math.sin(a) * rad) + (.08 + rise * .7), pz + Math.sin(a) * rad);
 				mesh.rotation.y = t + i;
 				mesh.material.opacity = .35 + (1 - rise) * .4;
 			} else if (part === "spark") {
 				const a = t * 9 + i * 1.4;
 				const rad = .2 + i % 3 * .12;
-				mesh.position.set(px + Math.cos(a) * rad, .35 + i % 4 * .32, pz + Math.sin(a) * rad);
+				mesh.position.set(px + Math.cos(a) * rad, groundY(px + Math.cos(a) * rad, pz + Math.sin(a) * rad) + (.35 + i % 4 * .32), pz + Math.sin(a) * rad);
 				mesh.material.opacity = .25 + .7 * Math.abs(Math.sin(t * 16 + i));
 			} else if (part === "bolt") {
-				mesh.position.set(px, 1, pz);
+				mesh.position.set(px, groundY(px, pz) + (1), pz);
 				mesh.material.opacity = Math.sin(t * 7) > .92 ? .9 : 0;
 			} else if (part === "dark") {
 				const fall = (t * .22 + i / 8) % 1;
 				const a = t * .5 + i;
-				mesh.position.set(px + Math.cos(a) * .32, 1.5 * (1 - fall) + .1, pz + Math.sin(a) * .32);
+				mesh.position.set(px + Math.cos(a) * .32, groundY(px + Math.cos(a) * .32, pz + Math.sin(a) * .32) + (1.5 * (1 - fall) + .1), pz + Math.sin(a) * .32);
 				mesh.material.opacity = .2 + (1 - fall) * .35;
 			} else if (part === "curtain") {
 				const a = t * .35 + i * (Math.PI / 2);
-				mesh.position.set(px + Math.cos(a) * .4, 1 + Math.sin(t * 1.2 + i) * .06, pz + Math.sin(a) * .4);
+				mesh.position.set(px + Math.cos(a) * .4, groundY(px + Math.cos(a) * .4, pz + Math.sin(a) * .4) + (1 + Math.sin(t * 1.2 + i) * .06), pz + Math.sin(a) * .4);
 				mesh.rotation.y = a;
 				mesh.material.opacity = .22 + .16 * (.5 + .5 * Math.sin(t * 1.4 + i));
 			}
@@ -7365,7 +7371,7 @@ function buildYard(canvas) {
 		const dx = camera.position.x - px;
 		const dz = camera.position.z - pz;
 		const len = Math.hypot(dx, dz) || 1;
-		subGauge.g.position.set(px, .09, pz);
+		subGauge.g.position.set(px, groundY(px, pz) + (.09), pz);
 		subGauge.g.rotation.y = Math.atan2(dz / len, -dx / len);
 		if (!!done || fill >= .999) {
 			const glow = .42 + .58 * (.5 + .5 * Math.sin(t * 3.6));
@@ -7445,19 +7451,19 @@ function buildYard(canvas) {
 			const part = mesh.userData.part;
 			const i = mesh.userData.slot ?? 0;
 			if (part === "lightring" || part === "darkring") {
-				mesh.position.set(px, .06 + i * .015, pz);
+				mesh.position.set(px, groundY(px, pz) + (.06 + i * .015), pz);
 				mesh.rotation.z = t * (part === "lightring" ? .28 : -.36);
 			} else if (part === "red") {
 				const fall = (t * .4 + i * .16) % 1;
 				const a = i * 1.05;
-				mesh.position.set(px + Math.cos(a) * .22, 1.35 - fall * .7, pz + Math.sin(a) * .22);
+				mesh.position.set(px + Math.cos(a) * .22, groundY(px + Math.cos(a) * .22, pz + Math.sin(a) * .22) + (1.35 - fall * .7), pz + Math.sin(a) * .22);
 				mesh.material.opacity = .25 + (1 - fall) * .6;
 			} else if (part === "coil") {
-				mesh.position.set(px, 1.05, pz);
+				mesh.position.set(px, groundY(px, pz) + (1.05), pz);
 				mesh.rotation.x = Math.PI / 2;
 				mesh.rotation.z = t * 1.6;
 			} else if (part === "sigil") {
-				mesh.position.set(px + (i ? .18 : -.18), 1.42, pz);
+				mesh.position.set(px + (i ? .18 : -.18), groundY(px + (i ? .18 : -.18), pz) + (1.42), pz);
 				mesh.rotation.z = t * (i ? -1.4 : 1.4);
 			}
 		}
@@ -7529,7 +7535,7 @@ function buildYard(canvas) {
 				let mote = 0;
 				for (const mesh of meshes) {
 					if (mesh.geometry?.type === "RingGeometry") {
-						mesh.position.set(x, name === "Choke" ? 1.05 : .08, z);
+						mesh.position.set(x, groundY(x, z) + (name === "Choke" ? 1.05 : .08), z);
 						mesh.rotation.z = t * (name === "Choke" ? 3.2 : .6);
 						continue;
 					}
@@ -7593,7 +7599,7 @@ function buildYard(canvas) {
 		const n = land ? 8 : 5;
 		if (name === "Burn") {
 			const cloak = new Mesh(new CylinderGeometry(.18, .28, land ? 1.5 : 1.05, 10), chantMat(look2.color, .45));
-			cloak.position.set(x, land ? .9 : .7, z);
+			cloak.position.set(x, groundY(x, z) + (land ? .9 : .7), z);
 			put(cloak, .4, .4, 0, 0);
 			for (let i = 0; i < n; i++) {
 				const mote = makeElementMote(look2, i);
@@ -7603,7 +7609,7 @@ function buildYard(canvas) {
 			}
 		} else if (name === "Frost") {
 			const shell = new Mesh(new DodecahedronGeometry(land ? .55 : .38, 0), chantMat(look2.color, .4));
-			shell.position.set(x, .95, z);
+			shell.position.set(x, groundY(x, z) + (.95), z);
 			put(shell, .4, 0, 0, 0);
 			for (let i = 0; i < n; i++) {
 				const mote = makeElementMote(look2, i);
@@ -7614,7 +7620,7 @@ function buildYard(canvas) {
 		} else if (name === "Choke") {
 			const collar = new Mesh(new RingGeometry(.22, .42, 24), chantMat(look2.accent, .8));
 			collar.rotation.x = -Math.PI / 2;
-			collar.position.set(x, 1.05, z);
+			collar.position.set(x, groundY(x, z) + (1.05), z);
 			collar.userData.ownGeo = true;
 			scene.add(collar);
 			rings.push({
@@ -7699,7 +7705,7 @@ function buildYard(canvas) {
 		if (!meshes) return;
 		for (const mesh of meshes) {
 			if (mesh.userData.part === "sambaring") {
-				mesh.position.set(x, .14 + Math.sin(t * 3) * .03, z);
+				mesh.position.set(x, groundY(x, z) + (.14 + Math.sin(t * 3) * .03), z);
 				mesh.rotation.z = t * 1.6;
 				mesh.material.opacity = .4 + Math.sin(t * 4) * .2;
 				continue;
@@ -7814,12 +7820,12 @@ function buildYard(canvas) {
 				const part = mesh.userData.part;
 				const i = mesh.userData.slot ?? 0;
 				if (part === "press" || part === "ring" || part === "diahalo") {
-					mesh.position.set(body.x, part === "diahalo" ? .12 : .08, body.z);
+					mesh.position.set(body.x, groundY(body.x, body.z) + (part === "diahalo" ? .12 : .08), body.z);
 					mesh.rotation.z = t * (part === "press" ? .35 : .6);
 					continue;
 				}
 				if (part === "crack") {
-					mesh.position.set(body.x, 1.05, body.z);
+					mesh.position.set(body.x, groundY(body.x, body.z) + (1.05), body.z);
 					mesh.rotation.z = t * .5;
 					continue;
 				}
@@ -8153,22 +8159,22 @@ function buildYard(canvas) {
 						continue;
 					}
 					if (mesh.userData.part === "ring") {
-						mesh.position.set(x, row.name === "Bind" ? .06 : .08, z);
+						mesh.position.set(x, groundY(x, z) + (row.name === "Bind" ? .06 : .08), z);
 						mesh.rotation.z = t * .35;
 						continue;
 					}
 					if (mesh.userData.part === "pool") {
-						mesh.position.set(x, .045, z);
+						mesh.position.set(x, groundY(x, z) + (.045), z);
 						mesh.rotation.z = t * .25;
 						continue;
 					}
 					if (mesh.userData.part === "visor") {
-						mesh.position.set(x, 1.32 + Math.sin(t * 1.6) * .02, z);
+						mesh.position.set(x, groundY(x, z) + (1.32 + Math.sin(t * 1.6) * .02), z);
 						mesh.material.opacity = .32 + Math.sin(t * 2.2) * .08;
 						continue;
 					}
 					if (mesh.userData.part === "slowband") {
-						mesh.position.set(x, .5 + (mesh.userData.slot ?? 0) * .5, z);
+						mesh.position.set(x, groundY(x, z) + (.5 + (mesh.userData.slot ?? 0) * .5), z);
 						mesh.rotation.z = t * .3;
 						continue;
 					}
@@ -8191,12 +8197,12 @@ function buildYard(canvas) {
 					}
 					if (mesh.userData.part === "spark") {
 						const flick = Math.sin(t * 24) > 0 ? 1 : .15;
-						mesh.position.set(x, 1.2, z);
+						mesh.position.set(x, groundY(x, z) + (1.2), z);
 						mesh.material.opacity = .9 * flick;
 						continue;
 					}
 					if (mesh.userData.part === "gag") {
-						mesh.position.set(x, 1.42, z);
+						mesh.position.set(x, groundY(x, z) + (1.42), z);
 						mesh.rotation.x = Math.PI / 2.6;
 						mesh.rotation.z = t * .8;
 						mesh.material.opacity = .45 + Math.sin(t * 3) * .15;
@@ -8210,7 +8216,7 @@ function buildYard(canvas) {
 						continue;
 					}
 					if (mesh.userData.part === "press") {
-						mesh.position.set(x, .08 + Math.sin(t * 2) * .02, z);
+						mesh.position.set(x, groundY(x, z) + (.08 + Math.sin(t * 2) * .02), z);
 						mesh.rotation.z = t * .4;
 						mesh.material.opacity = .4 + Math.sin(t * 3) * .15;
 						continue;
@@ -8224,7 +8230,7 @@ function buildYard(canvas) {
 						continue;
 					}
 					if (mesh.userData.part === "mark") {
-						mesh.position.set(x, .07, z);
+						mesh.position.set(x, groundY(x, z) + (.07), z);
 						mesh.rotation.z = t * .25;
 						continue;
 					}
@@ -8255,7 +8261,7 @@ function buildYard(canvas) {
 						continue;
 					}
 					if (mesh.userData.part === "crack") {
-						mesh.position.set(x, 1.05, z);
+						mesh.position.set(x, groundY(x, z) + (1.05), z);
 						mesh.rotation.z = t * .45;
 						mesh.material.opacity = .45 + Math.sin(t * 3) * .15;
 						continue;
@@ -8268,7 +8274,7 @@ function buildYard(canvas) {
 						continue;
 					}
 					if (mesh.userData.part === "diahalo") {
-						mesh.position.set(x, .1, z);
+						mesh.position.set(x, groundY(x, z) + (.1), z);
 						mesh.rotation.z = t * .5;
 						mesh.material.opacity = .4 + Math.sin(t * 2.4) * .15;
 						continue;
@@ -8282,7 +8288,7 @@ function buildYard(canvas) {
 						continue;
 					}
 					if (mesh.userData.part === "bioshroud") {
-						mesh.position.set(x, 1.15, z);
+						mesh.position.set(x, groundY(x, z) + (1.15), z);
 						mesh.rotation.z = -t * .35;
 						mesh.material.opacity = .35 + Math.sin(t * 2) * .12;
 						continue;
@@ -8299,13 +8305,13 @@ function buildYard(canvas) {
 					if (mesh.userData.part === "stunspark") {
 						const i2 = mesh.userData.slot ?? 0;
 						const flick = Math.sin(t * 28 + i2) > 0 ? 1 : .2;
-						mesh.position.set(x, 1.35, z);
+						mesh.position.set(x, groundY(x, z) + (1.35), z);
 						mesh.rotation.z = t * 6 + i2 * 2.1;
 						mesh.material.opacity = .85 * flick;
 						continue;
 					}
 					if (mesh.userData.part === "fearring") {
-						mesh.position.set(x, .72, z);
+						mesh.position.set(x, groundY(x, z) + (.72), z);
 						mesh.rotation.z = t * .4;
 						mesh.material.opacity = .45 + Math.sin(t * 3) * .15;
 						continue;
@@ -8353,7 +8359,7 @@ function buildYard(canvas) {
 		const z = harePos.z;
 		const ring = new Mesh(new RingGeometry(.28, .62, 28), chantMat(accent, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -8364,7 +8370,7 @@ function buildYard(canvas) {
 			hold: .25
 		});
 		const coil = new Mesh(new SphereGeometry(.42, 12, 8), chantMat(color, .7));
-		coil.position.set(x, 1.05, z);
+		coil.position.set(x, groundY(x, z) + (1.05), z);
 		coil.userData.ownGeo = true;
 		scene.add(coil);
 		embers.push({
@@ -8384,7 +8390,7 @@ function buildYard(canvas) {
 		const uz = dz / len;
 		for (let i = 0; i < 16; i++) {
 			const mesh = new Mesh(new SphereGeometry(hp ? .07 : .055, 6, 5), chantMat(i % 2 ? accent : color, .9));
-			mesh.position.set(x + i % 4 * .04, .7 + i % 5 * .12, z);
+			mesh.position.set(x + i % 4 * .04, groundY(x + i % 4 * .04, z) + (.7 + i % 5 * .12), z);
 			mesh.userData.ownGeo = true;
 			scene.add(mesh);
 			const speed2 = 2.4 + i % 4 * .35;
@@ -8434,7 +8440,7 @@ function buildYard(canvas) {
 			const heavy = name === "Blind II";
 			const visor = new Mesh(new SphereGeometry(heavy ? .42 : .34, 12, 8), chantMat(look2.color, heavy ? .62 : .55));
 			visor.scale.set(heavy ? 1.5 : 1.25, heavy ? .62 : .5, heavy ? 1.1 : .95);
-			visor.position.set(x, 1.34, z);
+			visor.position.set(x, groundY(x, z) + (1.34), z);
 			put(visor, .5, .06, 0, 0);
 			for (let i = 0; i < (heavy ? 12 : 8); i++) {
 				const mote = makeElementMote(look2, i);
@@ -8445,7 +8451,7 @@ function buildYard(canvas) {
 		} else if (name === "Bind") {
 			const ring = new Mesh(new RingGeometry(.2, .72, 28), chantMat(look2.accent, .85));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .08, z);
+			ring.position.set(x, groundY(x, z) + (.08), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -8466,7 +8472,7 @@ function buildYard(canvas) {
 			const tier2 = name === "Sleep II" || name === "Sleepga II";
 			const ring = new Mesh(new RingGeometry(ga > 0 ? ga * .42 : .14, ga > 0 ? ga : .46, 32), chantMat(look2.accent, .75));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, ga > 0 ? .1 : 1.22, z);
+			ring.position.set(x, groundY(x, z) + (ga > 0 ? .1 : 1.22), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -8479,7 +8485,7 @@ function buildYard(canvas) {
 			if (ga > 0) {
 				const disc = new Mesh(new CircleGeometry(ga * .85, 28), chantMat(look2.color, .28));
 				disc.rotation.x = -Math.PI / 2;
-				disc.position.set(x, .06, z);
+				disc.position.set(x, groundY(x, z) + (.06), z);
 				disc.userData.ownGeo = true;
 				scene.add(disc);
 				rings.push({
@@ -8792,7 +8798,7 @@ function buildYard(canvas) {
 		const look2 = ELEMENT_LOOK[element] || ELEMENT_LOOK.light;
 		const ring = new Mesh(new RingGeometry(.42, .58, 40), chantMat(look2.accent, .88));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -8842,7 +8848,7 @@ function buildYard(canvas) {
 		if (area) {
 			const ring = new Mesh(new RingGeometry(.55, .78, 28), chantMat(look2.accent, .7));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .06, z);
+			ring.position.set(x, groundY(x, z) + (.06), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -8884,7 +8890,7 @@ function buildYard(canvas) {
 		if (area && withRing) {
 			const ring = new Mesh(new RingGeometry(.4, .58, 28), chantMat(look2.accent, .72));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .07, z);
+			ring.position.set(x, groundY(x, z) + (.07), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -8900,7 +8906,7 @@ function buildYard(canvas) {
 	function spawnThrenodyStab(name, x, z) {
 		const look2 = ELEMENT_LOOK[threnodyHue(name)];
 		const streak = new Mesh(new CylinderGeometry(.035, .09, 2.1, 6), chantMat(look2.accent, .85));
-		streak.position.set(x, 1.7, z);
+		streak.position.set(x, groundY(x, z) + (1.7), z);
 		streak.userData.ownGeo = true;
 		scene.add(streak);
 		embers.push({
@@ -8920,7 +8926,7 @@ function buildYard(canvas) {
 	function spawnFinaleGleam(x, z) {
 		const look2 = ELEMENT_LOOK.light;
 		const gleam = new Mesh(new SphereGeometry(.28, 12, 8), chantMat(look2.accent, .9));
-		gleam.position.set(x, 1.25, z);
+		gleam.position.set(x, groundY(x, z) + (1.25), z);
 		gleam.userData.ownGeo = true;
 		scene.add(gleam);
 		embers.push({
@@ -8961,7 +8967,7 @@ function buildYard(canvas) {
 			const streak = new Mesh(new BoxGeometry(chocobo ? .42 : .55, .025, .05), chantMat(look2.accent, .88));
 			streak.userData.ownGeo = true;
 			const a = i / n * Math.PI * 2;
-			streak.position.set(x, .12, z);
+			streak.position.set(x, groundY(x, z) + (.12), z);
 			streak.rotation.y = -a;
 			scene.add(streak);
 			embers.push({
@@ -9002,7 +9008,7 @@ function buildYard(canvas) {
 	function spawnHymnusColumn(x, z) {
 		const look2 = ELEMENT_LOOK.light;
 		const pillar = new Mesh(new CylinderGeometry(.16, .38, 2.6, 10), chantMat(look2.color, .42));
-		pillar.position.set(x, 1.4, z);
+		pillar.position.set(x, groundY(x, z) + (1.4), z);
 		pillar.userData.ownGeo = true;
 		scene.add(pillar);
 		embers.push({
@@ -9245,7 +9251,7 @@ function buildYard(canvas) {
 		const t = w.tee / sum;
 		const c = w.chest / sum;
 		const mix = (meet, tee, chest) => meet * m + tee * t + chest * c;
-		hero.root.position.y = 0;
+		hero.root.position.y = groundY(px, pz);
 		hero.hips.position.y = .78;
 		setBoneEuler(hero.hips, mix(.06, -.04, .1), 0, 0);
 		setBoneEuler(hero.legR.upper, .08, 0, .05);
@@ -9312,7 +9318,7 @@ function buildYard(canvas) {
 		kickGhostT = -1;
 		kickGhost.root.visible = false;
 		kickGhost.root.scale.setScalar(1);
-		kickGhost.root.position.y = 0;
+		kickGhost.root.position.y = groundY(kickGhost.root.position.x, kickGhost.root.position.z);
 		kickDriver.stopAttack();
 		paintKickGhost(0);
 	}
@@ -9335,7 +9341,7 @@ function buildYard(canvas) {
 		kickGhostHome.z = gz;
 		kickGhostHome.nx = nx;
 		kickGhostHome.nz = nz;
-		kickGhost.root.position.set(gx, 0, gz);
+		kickGhost.root.position.set(gx, groundY(gx, gz), gz);
 		kickGhost.root.scale.setScalar(.62);
 		applyFacing(kickGhost.root, Math.atan2(-nx, -nz), basis, xAxis, yAxis, zAxis);
 		kickDriver.playAttack(hareFootKickClip);
@@ -9349,7 +9355,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 7; i++) spawnWisp(i % 2 ? 8308991 : 14087935, 1.28, .26);
 		const ring = new Mesh(new RingGeometry(.18, .42, 20), chantMat(8308991, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(gx, .05, gz);
+		ring.position.set(gx, groundY(gx, gz) + (.05), gz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -9401,7 +9407,7 @@ function buildYard(canvas) {
 		kickGhostHome.z = gz;
 		kickGhostHome.nx = nx;
 		kickGhostHome.nz = nz;
-		kickGhost.root.position.set(gx, 0, gz);
+		kickGhost.root.position.set(gx, groundY(gx, gz), gz);
 		kickGhost.root.scale.setScalar(.62);
 		applyFacing(kickGhost.root, Math.atan2(-nx, -nz), basis, xAxis, yAxis, zAxis);
 		kickDriver.playAttack(hareCarrotClip);
@@ -9421,11 +9427,11 @@ function buildYard(canvas) {
 		const p = Math.min(1, kickGhostT / dur);
 		kickDriver.setAttackTime(Math.min(kickGhostT, dur * .999));
 		kickDriver.update(0, 0, false, true);
-		if (blueCopy === "carrot") kickGhost.root.position.set(kickGhostHome.x, 0, kickGhostHome.z);
+		if (blueCopy === "carrot") kickGhost.root.position.set(kickGhostHome.x, groundY(kickGhostHome.x, kickGhostHome.z), kickGhostHome.z);
 		else {
 			const hop = p < .28 ? p / .28 : p < .5 ? 1 - (p - .28) / .22 : 0;
 			const reach = p < .3 ? 0 : p < .48 ? (p - .3) / .18 : Math.max(0, 1 - (p - .48) / .3);
-			kickGhost.root.position.set(kickGhostHome.x + kickGhostHome.nx * reach * .22, Math.max(0, hop) * .26, kickGhostHome.z + kickGhostHome.nz * reach * .22);
+			kickGhost.root.position.set(kickGhostHome.x + kickGhostHome.nx * reach * .22, groundY(kickGhostHome.x + kickGhostHome.nx * reach * .22, kickGhostHome.z + kickGhostHome.nz * reach * .22) + (Math.max(0, hop) * .26), kickGhostHome.z + kickGhostHome.nz * reach * .22);
 		}
 		const fadeIn = Math.min(1, kickGhostT / .06);
 		const fadeOut = kickGhostT < dur * .72 ? 1 : Math.max(0, 1 - (kickGhostT - dur * .72) / (total - dur * .72));
@@ -9448,7 +9454,7 @@ function buildYard(canvas) {
 		if (blueKicking) {
 			blueKicking = false;
 			hero.hips.position.y = .78;
-			hero.root.position.y = 0;
+			hero.root.position.y = groundY(px, pz);
 		}
 		const cast = blueCast();
 		if (!cast) {
@@ -12589,7 +12595,7 @@ function buildYard(canvas) {
 			useGame.getState().setCombat({ inRange });
 			prevInRange = inRange;
 		}
-		hero.root.position.set(px, traceFloorY(px, pz), pz);
+		hero.root.position.set(px, groundY(px, pz), pz);
 		syncColures();
 		tickGeoJaAuras();
 		skillP = skillBusy && attackDur > 0 ? 1 - attackT / attackDur : 0;
@@ -12701,12 +12707,10 @@ function buildYard(canvas) {
 			}
 		} else if (skillBusy && skillName === "Savage Blade" && attackDur > 0) {
 			const p = skillP;
-			let y = 0;
-			if (p < .18) y = 0;
-			else if (p < .42) y = 1.45 * smoothStep((p - .18) / .24);
-			else if (p < .72) y = 1.45;
-			else y = 1.45 * (1 - smoothStep(Math.min(1, (p - .72) / .16)));
-			hero.root.position.y = y;
+			const y = skillHop("Savage Blade", p);
+			const foot = groundY(px, pz);
+			hero.root.position.y = foot + y;
+			if (y < -1e-4) throw new Error("hero below traced floor");
 			for (let i = 0; i < skillMarks.length; i++) if (!skillMarksFired[i] && p >= skillMarks[i]) {
 				skillMarksFired[i] = true;
 				spawnImpact(i === 0 ? -1 : 1);
@@ -12841,12 +12845,10 @@ function buildYard(canvas) {
 			if (skillName === "Dark Harvest" || skillName === "Shadow of Death" || skillName === "Infernal Scythe" || skillName === "Entropy" || skillName === "Nightmare Scythe") igniteBlade(p, "dark");
 			else if (skillName === "Catastrophe" || skillName === "Quietus" || skillName === "Spiral Hell") igniteBlade(Math.min(1, p / .7), "dark");
 			if (skillName === "Spiral Hell") {
-				let y = 0;
-				if (p < .2) y = 0;
-				else if (p < .45) y = 1.15 * smoothStep((p - .2) / .25);
-				else if (p < .7) y = 1.15;
-				else y = 1.15 * (1 - smoothStep(Math.min(1, (p - .7) / .2)));
-				hero.root.position.y = y;
+				const y = skillHop("Spiral Hell", p);
+				const foot = groundY(px, pz);
+				hero.root.position.y = foot + y;
+				if (y < -1e-4) throw new Error("hero below traced floor");
 			}
 			if (skillName === "Insurgency") {
 				const step = Math.min(1, p / .8);
@@ -12866,24 +12868,20 @@ function buildYard(canvas) {
 		if (skillBusy && family === "polearm" && attackDur > 0) {
 			const p = skillP;
 			if (skillName === "Raiden Thrust") {
-				let y = 0;
-				if (p < .2) y = 0;
-				else if (p < .42) y = .55 * smoothStep((p - .2) / .22);
-				else y = .55 * (1 - smoothStep(Math.min(1, (p - .42) / .28)));
-				hero.root.position.y = y;
+				const y = skillHop("Raiden Thrust", p);
+				const foot = groundY(px, pz);
+				hero.root.position.y = foot + y;
+				if (y < -1e-4) throw new Error("hero below traced floor");
 			} else if (skillName === "Impulse Drive") {
-				let y = 0;
-				if (p < .55) y = 0;
-				else if (p < .72) y = 1.15 * smoothStep((p - .55) / .17);
-				else y = 1.15 * (1 - smoothStep(Math.min(1, (p - .72) / .2)));
-				hero.root.position.y = y;
+				const y = skillHop("Impulse Drive", p);
+				const foot = groundY(px, pz);
+				hero.root.position.y = foot + y;
+				if (y < -1e-4) throw new Error("hero below traced floor");
 			} else if (skillName === "Stardiver") {
-				let y = 0;
-				if (p < .12) y = 0;
-				else if (p < .36) y = 2.6 * smoothStep((p - .12) / .24);
-				else if (p < .74) y = 2.6 * (1 - smoothStep((p - .36) / .38));
-				else y = 0;
-				hero.root.position.y = y;
+				const y = skillHop("Stardiver", p);
+				const foot = groundY(px, pz);
+				hero.root.position.y = foot + y;
+				if (y < -1e-4) throw new Error("hero below traced floor");
 			}
 			if (skillName === "Geirskogul" && p >= .38 && p <= .86) tickLanceBeam(p);
 			else if (skillName === "Geirskogul") clearBeam();
@@ -13337,8 +13335,8 @@ function buildYard(canvas) {
 		tickDebuffAuras(timer.getElapsed());
 		tickWeatherAura(timer.getElapsed());
 		tickEnfeebleAuras(timer.getElapsed());
-		hare.root.position.set(harePos.x, 0, harePos.z);
-		rangeRing.position.set(harePos.x, .035, harePos.z);
+		hare.root.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
+		rangeRing.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.035), harePos.z);
 		const cast = useGame.getState().cast;
 		const verdict = aggros({
 			detect: FOREST_HARE_DETECT,
@@ -13382,7 +13380,7 @@ function buildYard(canvas) {
 			const move = hareBite.move;
 			if (move === "Foot Kick") {
 				const hop = p < .28 ? p / .28 : p < .5 ? 1 - (p - .28) / .22 : 0;
-				hare.root.position.y = Math.max(0, hop) * .26 * heavy;
+				hare.root.position.y = groundY(hare.root.position.x, hare.root.position.z) + Math.max(0, hop) * .26 * heavy;
 				if (!hareBite.ordered || hareBite.target === "kin") {
 					const step = (p < .3 ? 0 : p < .48 ? (p - .3) / .18 : Math.max(0, 1 - (p - .48) / .3)) * .22 * heavy;
 					hare.root.position.x += (bx - harePos.x) / len * step;
@@ -13390,7 +13388,7 @@ function buildYard(canvas) {
 				}
 			} else if (move === "Dust Cloud") {
 				const hop = p < .22 ? p / .22 : p < .42 ? 1 - (p - .22) / .2 : 0;
-				hare.root.position.y = Math.max(0, hop) * .32 * heavy;
+				hare.root.position.y = groundY(hare.root.position.x, hare.root.position.z) + Math.max(0, hop) * .32 * heavy;
 			} else if (move !== "Whirl Claws" && move !== "Wild Carrot" && !hareBite.ordered) {
 				const step = (p < .45 ? p / .45 : Math.max(0, 1 - (p - .45) / .4)) * .4 * heavy;
 				hare.root.position.x += (bx - harePos.x) / len * step;
@@ -13430,8 +13428,8 @@ function buildYard(canvas) {
 			hareBox.maxX = harePos.x + .42;
 			hareBox.minZ = harePos.z - .5;
 			hareBox.maxZ = harePos.z + .5;
-			hare.root.position.set(harePos.x, 0, harePos.z);
-			rangeRing.position.set(harePos.x, .035, harePos.z);
+			hare.root.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
+			rangeRing.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.035), harePos.z);
 			hareYaw = Math.PI;
 			applyFacing(hare.root, hareYaw, basis, xAxis, yAxis, zAxis);
 			hare.root.visible = true;
@@ -13461,7 +13459,7 @@ function buildYard(canvas) {
 			const marked = livePack().find((row) => row.id === packMark.id);
 			if (marked && marked.hp > 0) {
 				rangeRing.visible = true;
-				rangeRing.position.set(marked.x, .035, marked.z);
+				rangeRing.position.set(marked.x, groundY(marked.x, marked.z) + (.035), marked.z);
 			}
 		}
 		const sh = reduced ? 0 : shake;
@@ -13560,7 +13558,7 @@ function buildYard(canvas) {
 						passLights[i].intensity = 0;
 						continue;
 					}
-					passLights[i].position.set(spot.t.x, 1.7, spot.t.z);
+					passLights[i].position.set(spot.t.x, groundY(spot.t.x, spot.t.z) + (1.7), spot.t.z);
 					passLights[i].intensity = 78 * (1 + 0.05 * Math.sin(elapsed * 8.5 + i * 1.3));
 				}
 			}
@@ -13616,7 +13614,7 @@ function buildYard(canvas) {
 					}
 					light.color.setHex(yugHere ? 0xffa050 : 0xff6a2a);
 					light.distance = yugHere ? 12 : 14;
-					light.position.set(spot.fire.x, traceFloorY(spot.fire.x, spot.fire.z) + 1.6, spot.fire.z);
+					light.position.set(spot.fire.x, groundY(spot.fire.x, spot.fire.z) + 1.6, spot.fire.z);
 					const flicker = 1 + 0.12 * Math.sin(elapsed * 6.5 + i * 1.7);
 					light.intensity = (yugHere ? 1.6 : 28) * flicker;
 				}
@@ -13629,7 +13627,7 @@ function buildYard(canvas) {
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
 		const bias = portrait ? 2.32 : -2.2;
-		let foot = traceFloorY(px, pz);
+		let foot = groundY(px, pz);
 		if (fortLiftDeck) {
 			const span = fortLift();
 			const ride = (Math.sin(elapsed * 0.32) + 1) / 2;
@@ -13650,13 +13648,14 @@ function buildYard(canvas) {
 		shake = Math.max(0, shake - dt * 3.2);
 		const hud = useGame.getState();
 		selfRing.visible = hud.selfTargeted;
-		if (hud.selfTargeted) selfRing.position.set(px, .04, pz);
+		if (hud.selfTargeted) selfRing.position.set(px, groundY(px, pz) + (.04), pz);
 		const targetedPup = puppets.find((pup) => pup.def.id === hud.trustTargeted && pup.body.root.visible) ?? null;
 		const targetedPet = hud.petTargeted ? petMeshes.get(hud.petTargeted) : null;
 		const petMark = targetedPet && targetedPet.visible ? targetedPet : null;
 		trustRing.visible = targetedPup != null || petMark != null;
-		if (petMark) trustRing.position.set(petMark.position.x, .04, petMark.position.z);
-		else if (targetedPup) trustRing.position.set(targetedPup.x, .04, targetedPup.z);
+		if (petMark) trustRing.position.set(petMark.position.x, groundY(petMark.position.x, petMark.position.z) + (.04), petMark.position.z);
+		else if (targetedPup) trustRing.position.set(targetedPup.x, groundY(targetedPup.x, targetedPup.z) + (.04), targetedPup.z);
+		publishSeatAudit();
 		if (swingEl) {
 			const fieldBar = readField();
 			const fieldClock = fieldBar && fieldBar.claimed ? fieldSwingClock() : null;
@@ -13729,6 +13728,10 @@ function buildYard(canvas) {
 		}
 		for (let i = floaters.length - 1; i >= 0; i--) {
 			const f = floaters[i];
+			if (!f.seated) {
+				f.y += groundY(f.x, f.z);
+				f.seated = true;
+			}
 			f.age += dt;
 			if (f.stick) {
 				f.x = px;
@@ -13754,7 +13757,7 @@ function buildYard(canvas) {
 			castName.textContent = hud.cast.name;
 			castTime.textContent = `${left.toFixed(2)}s`;
 			castFill.style.width = `${Math.max(0, Math.min(1, hud.cast.elapsed / hud.cast.total)) * 100}%`;
-			proj.set(px, 0, pz).project(camera);
+			proj.set(px, hero.root.position.y, pz).project(camera);
 			castBar.style.left = `${(proj.x * .5 + .5) * w}px`;
 			castBar.style.top = `${(-proj.y * .5 + .5) * h + h * .012}px`;
 		} else castBar.style.display = "none";
@@ -13770,7 +13773,7 @@ function buildYard(canvas) {
 				parts.bar.style.display = "none";
 				continue;
 			}
-			proj.set(body.x, 0, body.z).project(camera);
+			proj.set(body.x, groundY(body.x, body.z) + 1.15, body.z).project(camera);
 			if (proj.z > 1) {
 				parts.bar.style.display = "none";
 				continue;
@@ -13795,7 +13798,7 @@ function buildYard(canvas) {
 			trustCastBar.name.textContent = trustCast.name;
 			trustCastBar.time.textContent = `${remain.toFixed(2)}s`;
 			trustCastBar.fill.style.width = `${Math.max(0, Math.min(1, (trustCast.total - remain) / Math.max(.001, trustCast.total))) * 100}%`;
-			proj.set(castingPup.body.root.position.x, 0, castingPup.body.root.position.z).project(camera);
+			proj.set(castingPup.body.root.position.x, castingPup.body.root.position.y, castingPup.body.root.position.z).project(camera);
 			trustCastBar.bar.style.left = `${(proj.x * .5 + .5) * w}px`;
 			trustCastBar.bar.style.top = `${(-proj.y * .5 + .5) * h + h * .012}px`;
 		} else trustCastBar.bar.style.display = "none";
@@ -13881,7 +13884,7 @@ function buildYard(canvas) {
 	const _hold = new Vector3();
 	function aimGear(x, y, z, dx, dy, dz, ax, ay, az) {
 		const gear = hero.armR.gear;
-		gear.position.set(x, y, z);
+		gear.position.set(x, groundY(x, z) + (y), z);
 		_aim.set(dx, dy, dz).normalize();
 		_q.setFromUnitVectors(_down, _aim);
 		_x.set(1, 0, 0).applyQuaternion(_q);
@@ -16670,7 +16673,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -16688,7 +16691,7 @@ function buildYard(canvas) {
 			toneMapped: false,
 			side: 2
 		}));
-		column.position.set(x, .68, z);
+		column.position.set(x, groundY(x, z) + (.68), z);
 		scene.add(column);
 		embers.push({
 			mesh: column,
@@ -16806,7 +16809,7 @@ function buildYard(canvas) {
 				y: .78 + i % 4 * .16,
 				z: aim.z + nx * spread * .45
 			};
-			mesh.position.set(from.x, from.y, from.z);
+			mesh.position.set(from.x, groundY(from.x, from.z) + (from.y), from.z);
 			mesh.visible = false;
 			scene.add(mesh);
 			charmHearts.push({
@@ -16896,7 +16899,7 @@ function buildYard(canvas) {
 			kinWait = 0;
 			kinChaseWait = 0;
 			kinChaseOut = false;
-			kin.root.position.set(kinPos.x, 0, kinPos.z);
+			kin.root.position.set(kinPos.x, groundY(kinPos.x, kinPos.z), kinPos.z);
 			applyFacing(kin.root, kinYaw, basis, xAxis, yAxis, zAxis);
 			if (poseRabbitDeath(kin.root, kinCorpse) <= .02) {
 				kin.root.visible = false;
@@ -17180,7 +17183,7 @@ function buildYard(canvas) {
 				}
 			}
 		}
-		kin.root.position.set(kinPos.x, kinPop > 0 ? 0 : 0, kinPos.z);
+		kin.root.position.set(kinPos.x, groundY(kinPos.x, kinPos.z) + (kinPop > 0 ? 0 : 0), kinPos.z);
 		if (kinBite && kinBite.target) {
 			const p = 1 - kinBite.t / Math.max(.001, kinBite.dur);
 			let bx = px;
@@ -17205,13 +17208,13 @@ function buildYard(canvas) {
 			const move = kinBite.move;
 			if (move === "Foot Kick") {
 				const hop = p < .28 ? p / .28 : p < .5 ? 1 - (p - .28) / .22 : 0;
-				kin.root.position.y = Math.max(0, hop) * .26 * heavy;
+				kin.root.position.y = groundY(kin.root.position.x, kin.root.position.z) + Math.max(0, hop) * .26 * heavy;
 				const hopStep = (p < .3 ? 0 : p < .48 ? (p - .3) / .18 : Math.max(0, 1 - (p - .48) / .3)) * .22 * heavy;
 				kin.root.position.x += (bx - kinPos.x) / len * hopStep;
 				kin.root.position.z += (bz - kinPos.z) / len * hopStep;
 			} else if (move === "Dust Cloud") {
 				const hop = p < .22 ? p / .22 : p < .42 ? 1 - (p - .22) / .2 : 0;
-				kin.root.position.y = Math.max(0, hop) * .32 * heavy;
+				kin.root.position.y = groundY(kin.root.position.x, kin.root.position.z) + Math.max(0, hop) * .32 * heavy;
 			} else if (move !== "Whirl Claws" && move !== "Wild Carrot") {
 				const hopStep = (p < .45 ? p / .45 : Math.max(0, 1 - (p - .45) / .4)) * .4 * heavy;
 				kin.root.position.x += (bx - kinPos.x) / len * hopStep;
@@ -17261,14 +17264,16 @@ function buildYard(canvas) {
 				const travel = h.landed ? u : Math.min(u, .58);
 				const e = travel * travel * (3 - 2 * travel);
 				const arc = Math.sin(Math.min(1, travel / (h.landed ? 1 : .58)) * Math.PI) * .55;
-				h.mesh.position.set(h.from.x + (h.to.x - h.from.x) * e, h.from.y + (h.to.y - h.from.y) * e + arc, h.from.z + (h.to.z - h.from.z) * e);
+				h.mesh.position.set(h.from.x + (h.to.x - h.from.x) * e, groundY(h.from.x + (h.to.x - h.from.x) * e, h.from.z + (h.to.z - h.from.z) * e) + (h.from.y + (h.to.y - h.from.y) * e + arc), h.from.z + (h.to.z - h.from.z) * e);
 				h.mesh.material.opacity = h.landed || u < .45 ? .96 : Math.max(0, 1 - (u - .45) / .2);
 				faceHeart(h.mesh, h.spin);
 				if (!h.landed && u >= .58) shatterCharmHeart(h);
 			} else if (h.landed) {
 				const orbit = age - h.fly;
 				h.ang += dt * 2.4;
-				h.mesh.position.set(h.to.x + Math.cos(h.ang) * h.rad, .7 + Math.sin(orbit * 3 + h.ang) * .14, h.to.z + Math.sin(h.ang) * h.rad);
+				const hx = h.to.x + Math.cos(h.ang) * h.rad;
+				const hz = h.to.z + Math.sin(h.ang) * h.rad;
+				h.mesh.position.set(hx, groundY(hx, hz) + .7 + Math.sin(orbit * 3 + h.ang) * .14, hz);
 				const left = h.hold - orbit;
 				h.mesh.material.opacity = left > .4 ? .96 : Math.max(0, left / .4);
 				faceHeart(h.mesh, h.spin);
@@ -17300,7 +17305,7 @@ function buildYard(canvas) {
 		if (on) {
 			const pulse = .94 + Math.sin(charmMarkT * 3.2) * .06;
 			charmMark.scale.set(pulse, pulse, 1);
-			charmMark.position.set(onKin ? kinPos.x : harePos.x, .04, onKin ? kinPos.z : harePos.z);
+			charmMark.position.set(onKin ? kinPos.x : harePos.x, groundY(onKin ? kinPos.x : harePos.x, onKin ? kinPos.z : harePos.z) + (.04), onKin ? kinPos.z : harePos.z);
 		}
 	}
 	function spawnManeuver(name) {
@@ -17332,7 +17337,7 @@ function buildYard(canvas) {
 		const hoop = (inner, outer, y, life, grow, spin) => {
 			const ring = new Mesh(new RingGeometry(inner, outer, 28), chantMat(look2.accent, .92));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, y, z);
+			ring.position.set(x, groundY(x, z) + (y), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -17347,10 +17352,10 @@ function buildYard(canvas) {
 		hoop(.32, .52, .06, .75, 1.2);
 		if (element === "fire") {
 			const tongue = new Mesh(new CylinderGeometry(.16, .46, 1.8, 10), chantMat(look2.color, .72));
-			tongue.position.set(x, 1.15, z);
+			tongue.position.set(x, groundY(x, z) + (1.15), z);
 			put(tongue, .55, .85, 0, 0, .3, .28);
 			const heart = new Mesh(new SphereGeometry(.26, 10, 8), chantMat(look2.accent, .9));
-			heart.position.set(x, 1.7, z);
+			heart.position.set(x, groundY(x, z) + (1.7), z);
 			put(heart, .4, 1.1, 0, 0, .45, .22);
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
@@ -17361,7 +17366,7 @@ function buildYard(canvas) {
 			}
 		} else if (element === "ice") {
 			const shell = new Mesh(new DodecahedronGeometry(.62, 0), chantMat(look2.color, .55));
-			shell.position.set(x, 1.15, z);
+			shell.position.set(x, groundY(x, z) + (1.15), z);
 			put(shell, .7, .05, 0, 0, .28, .35);
 			for (let i = 0; i < 8; i++) {
 				const a = i / 8 * Math.PI * 2;
@@ -17370,7 +17375,7 @@ function buildYard(canvas) {
 				shard.rotation.z = Math.cos(a) * .45;
 				put(shard, .75, .12, 0, 0, 0, .32);
 				const mote = makeElementMote(look2, i);
-				mote.position.set(x, 1.25, z);
+				mote.position.set(x, groundY(x, z) + (1.25), z);
 				mote.scale.setScalar(1.8);
 				put(mote, .8, .35, Math.cos(a) * .9, Math.sin(a) * .9);
 			}
@@ -17380,7 +17385,7 @@ function buildYard(canvas) {
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
 				mote.scale.setScalar(1.8);
-				mote.position.set(x, 1.05 + i % 3 * .25, z);
+				mote.position.set(x, groundY(x, z) + (1.05 + i % 3 * .25), z);
 				put(mote, .85, .15, 0, 0, 0, .12, {
 					x,
 					z,
@@ -17411,18 +17416,18 @@ function buildYard(canvas) {
 				put(bolt, .38, 0, 0, 0, 0, .4);
 			}
 			const flash = new Mesh(new SphereGeometry(.42, 10, 8), chantMat(look2.accent, .88));
-			flash.position.set(x, 1.35, z);
+			flash.position.set(x, groundY(x, z) + (1.35), z);
 			put(flash, .32, 0, 0, 0, .7, .25);
 			for (let i = 0; i < 8; i++) {
 				const mote = makeElementMote(look2, i);
 				const a = i / 8 * Math.PI * 2;
-				mote.position.set(x, 1.4, z);
+				mote.position.set(x, groundY(x, z) + (1.4), z);
 				mote.scale.setScalar(1.7);
 				put(mote, .45, .2, Math.cos(a) * 2.4, Math.sin(a) * 2.4);
 			}
 		} else if (element === "water") {
 			const spout = new Mesh(new CylinderGeometry(.34, .16, 1.7, 12), chantMat(look2.color, .62));
-			spout.position.set(x, 1.15, z);
+			spout.position.set(x, groundY(x, z) + (1.15), z);
 			put(spout, .6, .35, 0, 0, .2, .28);
 			for (let i = 0; i < 12; i++) {
 				const mote = makeElementMote(look2, i);
@@ -17433,21 +17438,21 @@ function buildYard(canvas) {
 			}
 		} else if (element === "light") {
 			const shaft = new Mesh(new CylinderGeometry(.22, .4, 2.6, 12), chantMat(look2.accent, .7));
-			shaft.position.set(x, 1.45, z);
+			shaft.position.set(x, groundY(x, z) + (1.45), z);
 			put(shaft, .6, .4, 0, 0, .25, .32);
 			const core = new Mesh(new SphereGeometry(.36, 10, 8), chantMat(16777215, .9));
-			core.position.set(x, 1.35, z);
+			core.position.set(x, groundY(x, z) + (1.35), z);
 			put(core, .4, .2, 0, 0, .55, .28);
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
 				const a = i / 10 * Math.PI * 2;
-				mote.position.set(x, 1.2, z);
+				mote.position.set(x, groundY(x, z) + (1.2), z);
 				mote.scale.setScalar(1.8);
 				put(mote, .65, 1.15, Math.cos(a) * 1.3, Math.sin(a) * 1.3);
 			}
 		} else {
 			const shroud = new Mesh(new SphereGeometry(.7, 12, 8), chantMat(look2.color, .62));
-			shroud.position.set(x, 1.1, z);
+			shroud.position.set(x, groundY(x, z) + (1.1), z);
 			put(shroud, .7, .05, 0, 0, .4, .35);
 			for (let i = 0; i < 10; i++) {
 				const mote = makeElementMote(look2, i);
@@ -17634,7 +17639,7 @@ function buildYard(canvas) {
 		dropEmber(mark, .9, .04, 0, 0, .12);
 		const veil = new Mesh(new SphereGeometry(.92, 14, 10), plainMat(9306032, .12));
 		veil.material.side = 2;
-		veil.position.set(hero.root.position.x, 1.05, hero.root.position.z);
+		veil.position.set(hero.root.position.x, groundY(hero.root.position.x, hero.root.position.z) + (1.05), hero.root.position.z);
 		dropEmber(veil, .8, 0, 0, 0, .18);
 		RUNE_ORDER.forEach((el, i) => {
 			const t = i / 7;
@@ -17643,7 +17648,7 @@ function buildYard(canvas) {
 			const y = at.y;
 			const z = at.z;
 			const bit = runePlane(el, .3, true);
-			bit.position.set(x, y, z);
+			bit.position.set(x, groundY(x, z) + (y), z);
 			bit.material.color.setHex(14086282);
 			bit.lookAt(camera.position);
 			dropEmber(bit, .75, .06, 0, 0);
@@ -17667,11 +17672,11 @@ function buildYard(canvas) {
 		}
 		if (name === "Swordplay") {
 			const arc = new Mesh(new TorusGeometry(.55, .028, 6, 14, Math.PI), plainMat(ELEMENT_LOOK.wind.accent, .92));
-			arc.position.set(px, 1.2, pz);
+			arc.position.set(px, groundY(px, pz) + (1.2), pz);
 			arc.rotation.set(.4, yaw, .6);
 			dropRing(arc, .4, .15);
 			const streak = makeElementMote(ELEMENT_LOOK.wind, 0);
-			streak.position.set(px, 1.15, pz);
+			streak.position.set(px, groundY(px, pz) + (1.15), pz);
 			streak.scale.setScalar(1.8);
 			dropEmber(streak, .35, .4, 0, 0);
 			return;
@@ -17695,7 +17700,7 @@ function buildYard(canvas) {
 		if (name === "Elemental Sforzo") {
 			const shell = new Mesh(new CylinderGeometry(.62, .7, 1.7, 16, 1, true), plainMat(13017434, .3));
 			shell.material.side = 2;
-			shell.position.set(px, .95, pz);
+			shell.position.set(px, groundY(px, pz) + (.95), pz);
 			dropEmber(shell, .95, .06, 0, 0, .35);
 			[
 				"fire",
@@ -17709,7 +17714,7 @@ function buildYard(canvas) {
 			].forEach((el, i) => {
 				const mote = makeElementMote(ELEMENT_LOOK[el], i);
 				const a = i / 8 * Math.PI * 2;
-				mote.position.set(px + Math.cos(a) * .48, .35, pz + Math.sin(a) * .48);
+				mote.position.set(px + Math.cos(a) * .48, groundY(px + Math.cos(a) * .48, pz + Math.sin(a) * .48) + (.35), pz + Math.sin(a) * .48);
 				mote.scale.setScalar(1.4);
 				dropEmber(mote, .85, 1.25, 0, 0);
 			});
@@ -17929,7 +17934,7 @@ function buildYard(canvas) {
 			const mesh = fly.mesh;
 			if (fly.arrived) {
 				const foe = foeStand();
-				mesh.position.set(foe.x, 1.15, foe.z);
+				mesh.position.set(foe.x, groundY(foe.x, foe.z) + (1.15), foe.z);
 				mesh.lookAt(camera.position);
 				continue;
 			}
@@ -17950,12 +17955,12 @@ function buildYard(canvas) {
 			const step = 11 * dt;
 			if (dist <= step || dist < .18) {
 				if (fly.mode === "orbit") {
-					mesh.position.set(foe.x, ty, foe.z);
+					mesh.position.set(foe.x, groundY(foe.x, foe.z) + (ty), foe.z);
 					gambitOrbit.push(mesh);
 					runeFlights.splice(i, 1);
 				} else {
 					fly.arrived = true;
-					mesh.position.set(foe.x, 1.15, foe.z);
+					mesh.position.set(foe.x, groundY(foe.x, foe.z) + (1.15), foe.z);
 					mesh.lookAt(camera.position);
 				}
 				continue;
@@ -18125,7 +18130,7 @@ function buildYard(canvas) {
 				g.add(halo);
 			});
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		dropRing(g, name === "Valiance" ? 1.35 : 1.05, name === "Valiance" ? .22 : .1);
 	}
 	function spawnWardFoot(x, z) {
@@ -18138,7 +18143,7 @@ function buildYard(canvas) {
 		const mark = symbolPlane("ward", .28);
 		mark.position.y = .06;
 		g.add(mark);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		dropRing(g, .85, .2);
 	}
 	function wardPack(whoId, name) {
@@ -18253,7 +18258,7 @@ function buildYard(canvas) {
 			const holder = holders.find((item) => item.id === row.id && item.name === row.name);
 			if (!holder) continue;
 			for (const mesh of row.meshes) {
-				mesh.position.set(holder.x + (mesh.userData.ox || 0), mesh.userData.oy || .04, holder.z + (mesh.userData.oz || 0));
+				mesh.position.set(holder.x + (mesh.userData.ox || 0), groundY(holder.x + (mesh.userData.ox || 0), holder.z + (mesh.userData.oz || 0)) + (mesh.userData.oy || .04), holder.z + (mesh.userData.oz || 0));
 				if (mesh.userData.spin) mesh.rotation.z = spin;
 			}
 		}
@@ -18291,7 +18296,7 @@ function buildYard(canvas) {
 			dropEmber(mote, .48, .35, 0, 0);
 			if (runeBrandStep % 2 === 0) {
 				const gold = new Mesh(new TorusGeometry(.58, .01, 6, 18), plainMat(13017434, .4));
-				gold.position.set(hero.root.position.x, 1.05, hero.root.position.z);
+				gold.position.set(hero.root.position.x, groundY(hero.root.position.x, hero.root.position.z) + (1.05), hero.root.position.z);
 				gold.rotation.x = Math.PI / 2;
 				dropRing(gold, .4, .04);
 			}
@@ -18311,19 +18316,19 @@ function buildYard(canvas) {
 		if (name === "Bolster") {
 			spawnPillar(14927226);
 			const flash = new Mesh(new SphereGeometry(.7, 12, 8), plainMat(16774864, .28));
-			flash.position.set(px, 1.15, pz);
+			flash.position.set(px, groundY(px, pz) + (1.15), pz);
 			dropEmber(flash, .45, .1, 0, 0, .6);
 			return;
 		}
 		if (name === "Full Circle") {
 			const ring = new Mesh(new TorusGeometry(.46, .035, 8, 18), plainMat(14149364, .9));
-			ring.position.set(mark.x, .85, mark.z);
+			ring.position.set(mark.x, groundY(mark.x, mark.z) + (.85), mark.z);
 			ring.rotation.x = Math.PI / 2;
 			dropEmber(ring, .4, .05, 0, 0, 1.3);
 			for (let i = 0; i < 8; i++) {
 				const mote = new Mesh(new SphereGeometry(.04, 6, 4), plainMat(i % 2 ? 10473727 : 16051412, .95));
 				const y0 = .55 + i * .08;
-				mote.position.set(mark.x, y0, mark.z);
+				mote.position.set(mark.x, groundY(mark.x, mark.z) + (y0), mark.z);
 				const life = .48;
 				dropEmber(mote, life, (1.25 - y0) / life, (px - mark.x) / life, (pz - mark.z) / life);
 			}
@@ -18331,22 +18336,22 @@ function buildYard(canvas) {
 		}
 		if (name === "Lasting Emanation") {
 			const ring = new Mesh(new TorusGeometry(.55, .03, 8, 24), plainMat(8257434, .85));
-			ring.position.set(mark.x, .2, mark.z);
+			ring.position.set(mark.x, groundY(mark.x, mark.z) + (.2), mark.z);
 			ring.rotation.x = Math.PI / 2;
 			dropRing(ring, .9, .4);
 			const halo = new Mesh(new SphereGeometry(.22, 8, 6), plainMat(13172692, .45));
-			halo.position.set(mark.x, .9, mark.z);
+			halo.position.set(mark.x, groundY(mark.x, mark.z) + (.9), mark.z);
 			dropEmber(halo, .6, .08, 0, 0, .8);
 			return;
 		}
 		if (name === "Ecliptic Attrition") {
 			const flare = new Mesh(new TorusGeometry(.32, .05, 8, 20), plainMat(16751162, .92));
-			flare.position.set(mark.x, .8, mark.z);
+			flare.position.set(mark.x, groundY(mark.x, mark.z) + (.8), mark.z);
 			flare.rotation.x = Math.PI / 2;
 			dropEmber(flare, .5, .12, 0, 0, 2.1);
 			const ring = new Mesh(new RingGeometry(.2, .38, 24), plainMat(16757850, .8));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(mark.x, .08, mark.z);
+			ring.position.set(mark.x, groundY(mark.x, mark.z) + (.08), mark.z);
 			dropRing(ring, .7, 1.15);
 			return;
 		}
@@ -18359,12 +18364,12 @@ function buildYard(canvas) {
 				const tick = new Mesh(new BoxGeometry(.08, .03, .34), plainMat(14927226, .9));
 				const dx = Math.cos(a) * rx + Math.sin(a) * face.x;
 				const dz = Math.cos(a) * rz + Math.sin(a) * face.z;
-				tick.position.set(px + dx * .75, .06, pz + dz * .75);
+				tick.position.set(px + dx * .75, groundY(px + dx * .75, pz + dz * .75) + (.06), pz + dz * .75);
 				tick.lookAt(px, .06, pz);
 				dropEmber(tick, .7, .04, 0, 0);
 			}
 			const beam = new Mesh(new BoxGeometry(.05, .04, 1.6), plainMat(16051412, .55));
-			beam.position.set(px + face.x * 1.15, 1.05, pz + face.z * 1.15);
+			beam.position.set(px + face.x * 1.15, groundY(px + face.x * 1.15, pz + face.z * 1.15) + (1.05), pz + face.z * 1.15);
 			beam.lookAt(px + face.x * 3, 1.05, pz + face.z * 3);
 			dropEmber(beam, .55, 0, 0, 0);
 			return;
@@ -18373,24 +18378,24 @@ function buildYard(canvas) {
 			for (let i = 0; i < 7; i++) {
 				const mote = new Mesh(new SphereGeometry(.04, 6, 4), plainMat(i % 2 ? 16730698 : 16747114, .95));
 				const y0 = 1.2 - i * .05;
-				mote.position.set(px, y0, pz);
+				mote.position.set(px, groundY(px, pz) + (y0), pz);
 				const life = .42;
 				dropEmber(mote, life, (.9 - y0) / life, (mark.x - px) / life, (mark.z - pz) / life);
 			}
 			const pulse = new Mesh(new SphereGeometry(.16, 8, 6), plainMat(8257434, .85));
-			pulse.position.set(mark.x, .95, mark.z);
+			pulse.position.set(mark.x, groundY(mark.x, mark.z) + (.95), mark.z);
 			dropEmber(pulse, .5, .12, 0, 0, 1.4);
 			return;
 		}
 		if (name === "Blaze of Glory") {
 			const ring = new Mesh(new TorusGeometry(.42, .03, 8, 20), plainMat(16742938, .9));
-			ring.position.set(px, .12, pz);
+			ring.position.set(px, groundY(px, pz) + (.12), pz);
 			ring.rotation.x = Math.PI / 2;
 			dropRing(ring, .8, .75);
 			for (let i = 0; i < 8; i++) {
 				const ember = new Mesh(new SphereGeometry(.045, 6, 4), plainMat(i % 2 ? 16742938 : 16769162, .92));
 				const a = i / 8 * Math.PI * 2;
-				ember.position.set(px + Math.cos(a) * .28, .25, pz + Math.sin(a) * .28);
+				ember.position.set(px + Math.cos(a) * .28, groundY(px + Math.cos(a) * .28, pz + Math.sin(a) * .28) + (.25), pz + Math.sin(a) * .28);
 				dropEmber(ember, .7, 1.35 + i % 3 * .25, Math.cos(a) * .15, Math.sin(a) * .15);
 			}
 			return;
@@ -18398,17 +18403,17 @@ function buildYard(canvas) {
 		if (name === "Dematerialize") {
 			const shell = new Mesh(new SphereGeometry(.52, 12, 8), plainMat(14149364, .4));
 			shell.material.side = 2;
-			shell.position.set(mark.x, .9, mark.z);
+			shell.position.set(mark.x, groundY(mark.x, mark.z) + (.9), mark.z);
 			dropEmber(shell, .6, 0, 0, 0, .7);
 			const ring = new Mesh(new TorusGeometry(.5, .02, 6, 18), plainMat(16054267, .8));
-			ring.position.set(mark.x, .9, mark.z);
+			ring.position.set(mark.x, groundY(mark.x, mark.z) + (.9), mark.z);
 			ring.rotation.x = Math.PI / 2;
 			dropEmber(ring, .5, .05, 0, 0, .5);
 			return;
 		}
 		if (name === "Entrust") {
 			const sigil = new Mesh(new OctahedronGeometry(.16), plainMat(16051412, .92));
-			sigil.position.set(px + fwd(yaw).x * .4, 1.25, pz + fwd(yaw).z * .4);
+			sigil.position.set(px + fwd(yaw).x * .4, groundY(px + fwd(yaw).x * .4, pz + fwd(yaw).z * .4) + (1.25), pz + fwd(yaw).z * .4);
 			dropEmber(sigil, .8, .55, 0, 0, .4);
 		}
 	}
@@ -18691,7 +18696,7 @@ function buildYard(canvas) {
 			const mesh = new Mesh(new BoxGeometry(.07, .07, .07), mat);
 			const a = Math.random() * Math.PI * 2;
 			const rad = .04 + Math.random() * .3;
-			mesh.position.set(harePos.x + Math.cos(a) * rad, .65 + Math.random() * .75, harePos.z + Math.sin(a) * rad);
+			mesh.position.set(harePos.x + Math.cos(a) * rad, groundY(harePos.x + Math.cos(a) * rad, harePos.z + Math.sin(a) * rad) + (.65 + Math.random() * .75), harePos.z + Math.sin(a) * rad);
 			scene.add(mesh);
 			embers.push({
 				mesh,
@@ -18827,7 +18832,7 @@ function buildYard(canvas) {
 			const side = (i % 2 === 0 ? 1 : -1) * (1.7 + Math.floor(i / 2) * .7);
 			if (!mesh.placed) {
 				const face2 = fwd(yaw);
-				mesh.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, 0, pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
+				mesh.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, groundY(px - face2.x * PET_FOLLOW_BACK + face2.z * side, pz - face2.z * PET_FOLLOW_BACK - face2.x * side), pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
 				mesh.placed = true;
 			}
 			const hx = harePos.x - px;
@@ -18848,6 +18853,10 @@ function buildYard(canvas) {
 			const reach = Math.hypot(harePos.x - mesh.root.position.x, harePos.z - mesh.root.position.z);
 			const limit = row.type === "automaton" ? state.autoFrame === "sharpshot" ? 6.2 : state.autoFrame === "stormwaker" ? 4.2 : 1.85 : 1.85;
 			noteSparePlace(row.id, mesh.root.position.x, mesh.root.position.z, fighting && reach <= limit);
+			if (row.type !== "automaton") {
+				mesh.root.position.y = groundY(mesh.root.position.x, mesh.root.position.z);
+				mesh.root.userData.seatLift = 0;
+			}
 			if (row.type === "jug") poseCrab(mesh, pet.anim || "idle", 0, mesh.autoSide, Math.sin(spareClock * 2.4) * .03);
 			else if (row.type === "wyvern") {
 				const bob = Math.sin(spareClock * 2.2) * .05;
@@ -18878,12 +18887,13 @@ function buildYard(canvas) {
 			return;
 		}
 		jugPet.root.visible = true;
-		jugPet.root.position.y = 0;
+		jugPet.root.position.y = groundY(jugPet.root.position.x, jugPet.root.position.z);
+		jugPet.root.userData.seatLift = 0;
 		jugClock += dt;
 		if (!jugPet.placed) {
 			const face2 = fwd(yaw);
 			const side = -.95;
-			jugPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, 0, pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
+			jugPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, groundY(px - face2.x * PET_FOLLOW_BACK + face2.z * side, pz - face2.z * PET_FOLLOW_BACK - face2.x * side), pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
 			jugPet.placed = true;
 			jugPet.trail = {
 				x: jugPet.root.position.x,
@@ -18935,6 +18945,7 @@ function buildYard(canvas) {
 		const jugDry = leaveWater(jugHeld.x, jugHeld.z, .4);
 		jugPet.root.position.x = jugDry.x;
 		jugPet.root.position.z = jugDry.z;
+		if (!jugPet.root.userData.seatLift) jugPet.root.position.y = groundY(jugPet.root.position.x, jugPet.root.position.z);
 		const reach = Math.hypot(harePos.x - jugPet.root.position.x, harePos.z - jugPet.root.position.z);
 		noteJugPlace(jugPet.root.position.x, jugPet.root.position.z, pet.stance === "fight" && foeUp && reach <= 1.85);
 		const fdx = faceX - jugPet.root.position.x;
@@ -18951,7 +18962,7 @@ function buildYard(canvas) {
 	}
 	function spawnPetBurst(x, z, color) {
 		const core = new Mesh(new SphereGeometry(.28, 10, 8), plainMat(color, .92));
-		core.position.set(x, 1.15, z);
+		core.position.set(x, groundY(x, z) + (1.15), z);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -18966,7 +18977,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.16, .34, 20), plainMat(color, .88));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -18979,7 +18990,7 @@ function buildYard(canvas) {
 	}
 	function spawnArcuballista(x, z) {
 		const streak = new Mesh(new BoxGeometry(.05, .05, .95), plainMat(16775920, .95));
-		streak.position.set((x + harePos.x) / 2, 1.05, (z + harePos.z) / 2);
+		streak.position.set((x + harePos.x) / 2, groundY((x + harePos.x) / 2, (z + harePos.z) / 2) + (1.05), (z + harePos.z) / 2);
 		streak.lookAt(harePos.x, 1.05, harePos.z);
 		streak.userData.ownGeo = true;
 		scene.add(streak);
@@ -19069,11 +19080,12 @@ function buildYard(canvas) {
 			return;
 		}
 		autoPet.root.visible = true;
-		autoPet.root.position.y = 0;
+		autoPet.root.position.y = groundY(autoPet.root.position.x, autoPet.root.position.z);
+		autoPet.root.userData.seatLift = 0;
 		if (!autoPet.placed) {
 			const face2 = fwd(yaw);
 			const side = 1.05;
-			autoPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, 0, pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
+			autoPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, groundY(px - face2.x * PET_FOLLOW_BACK + face2.z * side, pz - face2.z * PET_FOLLOW_BACK - face2.x * side), pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
 			autoPet.placed = true;
 			autoPet.trail = {
 				x: autoPet.root.position.x,
@@ -19132,6 +19144,7 @@ function buildYard(canvas) {
 		const autoDry = leaveWater(autoHeld.x, autoHeld.z, .4);
 		autoPet.root.position.x = autoDry.x;
 		autoPet.root.position.z = autoDry.z;
+		if (!autoPet.root.userData.seatLift) autoPet.root.position.y = groundY(autoPet.root.position.x, autoPet.root.position.z);
 		const dist = Math.hypot(harePos.x - autoPet.root.position.x, harePos.z - autoPet.root.position.z);
 		const reach = dressState.autoFrame === "sharpshot" ? 6.2 : dressState.autoFrame === "stormwaker" ? 4.2 : 1.75;
 		noteAutomatonPlace(autoPet.root.position.x, autoPet.root.position.z, pet.stance === "fight" && foeUp && dist <= reach + .35);
@@ -19165,7 +19178,8 @@ function buildYard(canvas) {
 	function poseAutomaton(rig, pet, frameId, clock) {
 		const sway = Math.sin(clock * 1.35);
 		const bob = Math.sin(clock * 1.75) * .02;
-		rig.root.position.y = bob;
+		rig.root.userData.seatLift = bob;
+		rig.root.position.y = groundY(rig.root.position.x, rig.root.position.z) + bob;
 		const idleR = {
 			x: -.22 + sway * .07,
 			z: .14 + sway * .035
@@ -19203,7 +19217,8 @@ function buildYard(canvas) {
 			rz = .14 + .06 * up;
 			lz = -.14 + -.06 * up;
 			rig.flash.visible = up > .4;
-			rig.root.position.y = bob + .04 * up;
+			rig.root.userData.seatLift = bob + .04 * up;
+			rig.root.position.y = groundY(rig.root.position.x, rig.root.position.z) + bob + .04 * up;
 		} else if (pet.anim === "ability") {
 			const u = Math.min(1, Math.max(0, 1 - pet.animLeft / .55));
 			const k = u < .28 ? smoothStep(u / .28) : u < .62 ? 1 : 1 - smoothStep((u - .62) / .38);
@@ -19278,11 +19293,13 @@ function buildYard(canvas) {
 			rz = posed.rz;
 			lx = posed.lx;
 			lz = posed.lz;
-			rig.root.position.y = bob + posed.bob;
+			rig.root.userData.seatLift = bob + posed.bob;
+			rig.root.position.y = groundY(rig.root.position.x, rig.root.position.z) + bob + posed.bob;
 		}
 		if (repairSheen > 0 && pet.anim === "idle" && !casting) {
 			const k = Math.min(1, repairSheen);
-			rig.root.position.y = bob + .045 * Math.sin(clock * 9) * k;
+			rig.root.userData.seatLift = bob + .045 * Math.sin(clock * 9) * k;
+			rig.root.position.y = groundY(rig.root.position.x, rig.root.position.z) + rig.root.userData.seatLift;
 			rx = -.06;
 			lx = -.06;
 			rz = .38 * k;
@@ -19389,12 +19406,13 @@ function buildYard(canvas) {
 			return;
 		}
 		wyvernPet.root.visible = true;
-		wyvernPet.root.position.y = 0;
+		wyvernPet.root.position.y = groundY(wyvernPet.root.position.x, wyvernPet.root.position.z);
+		wyvernPet.root.userData.seatLift = 0;
 		wyvernClock += dt;
 		if (!wyvernPet.placed) {
 			const face2 = fwd(yaw);
 			const side = .85;
-			wyvernPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, 0, pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
+			wyvernPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, groundY(px - face2.x * PET_FOLLOW_BACK + face2.z * side, pz - face2.z * PET_FOLLOW_BACK - face2.x * side), pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
 			wyvernPet.placed = true;
 			wyvernPet.trail = {
 				x: wyvernPet.root.position.x,
@@ -19420,7 +19438,8 @@ function buildYard(canvas) {
 				y = (1 - k) * 7;
 				hide = k < .22;
 			}
-			wyvernPet.root.position.y = y;
+			wyvernPet.root.position.y = groundY(wyvernPet.root.position.x, wyvernPet.root.position.z) + y;
+			wyvernPet.root.userData.seatLift = y;
 			wyvernPet.root.visible = !hide;
 			wyvernPet.cone.visible = false;
 			wyvernPet.wingL.rotation.z = 1.05;
@@ -19492,6 +19511,7 @@ function buildYard(canvas) {
 		const wyvernDry = leaveWater(wyvernHeld.x, wyvernHeld.z, .4);
 		wyvernPet.root.position.x = wyvernDry.x;
 		wyvernPet.root.position.z = wyvernDry.z;
+		if (!wyvernPet.root.userData.seatLift) wyvernPet.root.position.y = groundY(wyvernPet.root.position.x, wyvernPet.root.position.z);
 		if (pet.anim === "breath") {
 			if (pet.element === "Heal" || pet.element === "Remove") {
 				faceX = pet.aimX;
@@ -19671,7 +19691,7 @@ function buildYard(canvas) {
 		const rad = onAlly ? .15 + Math.random() * .25 : .05;
 		const atX = onAlly ? x + Math.cos(a) * rad : wyvernPet.root.position.x + Math.sin(wyvernPet.root.rotation.y) * .2;
 		const atZ = onAlly ? z + Math.sin(a) * rad : wyvernPet.root.position.z + Math.cos(wyvernPet.root.rotation.y) * .2;
-		mesh.position.set(atX, onAlly ? .7 + Math.random() * .4 : 1.05, atZ);
+		mesh.position.set(atX, groundY(atX, atZ) + (onAlly ? .7 + Math.random() * .4 : 1.05), atZ);
 		mesh.userData.ownGeo = true;
 		scene.add(mesh);
 		embers.push({
@@ -19686,7 +19706,7 @@ function buildYard(canvas) {
 	function spawnJumpDust(x, z) {
 		const ring = new Mesh(new RingGeometry(.16, .4, 18), plainMat(13812388, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -19706,7 +19726,7 @@ function buildYard(canvas) {
 			});
 			const mote = new Mesh(new BoxGeometry(.055, .04, .055), mat);
 			const a = i / 8 * Math.PI * 2;
-			mote.position.set(x, .1, z);
+			mote.position.set(x, groundY(x, z) + (.1), z);
 			scene.add(mote);
 			embers.push({
 				mesh: mote,
@@ -19727,7 +19747,7 @@ function buildYard(canvas) {
 			toneMapped: false
 		});
 		const slash = new Mesh(new BoxGeometry(.08, .5, .04), mat);
-		slash.position.set(harePos.x, 1.05, harePos.z);
+		slash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		slash.rotation.z = -.7;
 		slash.userData.ownGeo = true;
 		scene.add(slash);
@@ -19781,7 +19801,7 @@ function buildYard(canvas) {
 		}
 		avatarClock += dt;
 		if (avatarArrive) {
-			avatarPet.root.position.set(avatarArrive.x, 0, avatarArrive.z);
+			avatarPet.root.position.set(avatarArrive.x, groundY(avatarArrive.x, avatarArrive.z), avatarArrive.z);
 			avatarPet.placed = true;
 			avatarPet.arrive = avatarArrive.left;
 			avatarPet.arriveMax = avatarArrive.max;
@@ -19793,7 +19813,7 @@ function buildYard(canvas) {
 		} else if (!avatarPet.placed) {
 			const face2 = fwd(yaw);
 			const side = -.85;
-			avatarPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, 0, pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
+			avatarPet.root.position.set(px - face2.x * PET_FOLLOW_BACK + face2.z * side, groundY(px - face2.x * PET_FOLLOW_BACK + face2.z * side, pz - face2.z * PET_FOLLOW_BACK - face2.x * side), pz - face2.z * PET_FOLLOW_BACK - face2.x * side);
 			avatarPet.placed = true;
 			avatarPet.trail = {
 				x: avatarPet.root.position.x,
@@ -19865,11 +19885,16 @@ function buildYard(canvas) {
 			const pop = u2 < .42 ? smoothStep(u2 / .42) : 1;
 			const full = avatarPet.fullScale || 1;
 			avatarPet.root.scale.setScalar(full * (.16 + .84 * pop));
-			avatarPet.root.position.y = (1 - pop) * .55;
+			avatarPet.root.position.y = groundY(avatarPet.root.position.x, avatarPet.root.position.z) + (1 - pop) * .55;
+			avatarPet.root.userData.seatLift = (1 - pop) * .55;
 			if (avatarPet.arrive === 0) {
 				avatarPet.root.scale.setScalar(full);
-				avatarPet.root.position.y = 0;
+				avatarPet.root.position.y = groundY(avatarPet.root.position.x, avatarPet.root.position.z);
+				avatarPet.root.userData.seatLift = 0;
 			}
+		} else {
+			avatarPet.root.position.y = groundY(avatarPet.root.position.x, avatarPet.root.position.z);
+			avatarPet.root.userData.seatLift = 0;
 		}
 		const reach = Math.hypot(quarry.x - avatarPet.root.position.x, quarry.z - avatarPet.root.position.z);
 		noteAvatarPlace(avatarPet.root.position.x, avatarPet.root.position.z, pet.assault === true && reach <= 1.85);
@@ -19918,7 +19943,7 @@ function buildYard(canvas) {
 	}
 	function glowBit(geo, color, x, y, z) {
 		const mesh = new Mesh(geo, chantMat(color, .9));
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.userData.ownGeo = true;
 		scene.add(mesh);
 		return mesh;
@@ -19977,7 +20002,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.2, .48, 24), chantMat(16051412, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20013,7 +20038,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.7, 1.7, 36), chantMat(16051412, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20052,7 +20077,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.22 * scale, .48 * scale, 24), chantMat(12859978, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20091,7 +20116,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.4, .7, 28), chantMat(12859978, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20155,7 +20180,7 @@ function buildYard(canvas) {
 		spawnImpact(0, .95);
 		const ring = new Mesh(new RingGeometry(.15, .4, 20), chantMat(12963030, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20203,7 +20228,7 @@ function buildYard(canvas) {
 		spawnMoonDisc(x, 3.6, z, .7, 1312792, .5, -6.6);
 		const ring = new Mesh(new RingGeometry(.5, 1.8, 32), chantMat(3807304, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20242,7 +20267,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.2, .42, 20), chantMat(12963030, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20265,7 +20290,7 @@ function buildYard(canvas) {
 		]]) {
 			const ring = new Mesh(new RingGeometry(inner, inner + .16, 28), chantMat(15265526, .8));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .08, z);
+			ring.position.set(x, groundY(x, z) + (.08), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -20280,7 +20305,7 @@ function buildYard(canvas) {
 	function spawnEclipticGrowl(x, z) {
 		const ring = new Mesh(new RingGeometry(.25, .48, 24), chantMat(14927226, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20308,7 +20333,7 @@ function buildYard(canvas) {
 		spawnImpact(0, 1.05);
 		const ring = new Mesh(new RingGeometry(.12, .32, 16), chantMat(16051412, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20338,7 +20363,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.18, .5, 20), chantMat(12859944, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20380,7 +20405,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.25, .7, 24), chantMat(12859944, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20408,7 +20433,7 @@ function buildYard(canvas) {
 	function spawnCrimsonHowl(x, z) {
 		const ring = new Mesh(new RingGeometry(.28, .52, 24), chantMat(12859944, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20454,7 +20479,7 @@ function buildYard(canvas) {
 		spawnRock(x, z, .32);
 		const ring = new Mesh(new RingGeometry(.2, .48, 18), chantMat(5911064, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20469,7 +20494,7 @@ function buildYard(canvas) {
 		spawnImpact(0, .85);
 		const ring = new Mesh(new RingGeometry(.18, .42, 20), chantMat(12886362, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20484,7 +20509,7 @@ function buildYard(canvas) {
 		spawnImpact(0, .7);
 		const ring = new Mesh(new RingGeometry(.3, .85, 24), chantMat(9067058, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20552,7 +20577,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.35, .6, 24), chantMat(9067058, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20579,7 +20604,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.1, .34, 16), chantMat(3108351, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20607,7 +20632,7 @@ function buildYard(canvas) {
 		});
 		const weight = new Mesh(new RingGeometry(.38, .58, 24), chantMat(1723034, .8));
 		weight.rotation.x = -Math.PI / 2;
-		weight.position.set(x, .06, z);
+		weight.position.set(x, groundY(x, z) + (.06), z);
 		weight.userData.ownGeo = true;
 		scene.add(weight);
 		rings.push({
@@ -20622,7 +20647,7 @@ function buildYard(canvas) {
 		spawnImpact(0, .55);
 		const ring = new Mesh(new RingGeometry(.18, .62, 28), chantMat(3108351, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20697,7 +20722,7 @@ function buildYard(canvas) {
 		]]) {
 			const ring = new Mesh(new RingGeometry(inner, inner + .12, 28), chantMat(3108351, .75));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .08, z);
+			ring.position.set(x, groundY(x, z) + (.08), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -20723,7 +20748,7 @@ function buildYard(canvas) {
 		});
 		const lip = new Mesh(new RingGeometry(.22, .42, 20), chantMat(3108351, .8));
 		lip.rotation.x = -Math.PI / 2;
-		lip.position.set(x, .08, z);
+		lip.position.set(x, groundY(x, z) + (.08), z);
 		lip.userData.ownGeo = true;
 		scene.add(lip);
 		rings.push({
@@ -20814,7 +20839,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.4, .7, 24), chantMat(8257458, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .12, z);
+		ring.position.set(x, groundY(x, z) + (.12), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20829,7 +20854,7 @@ function buildYard(canvas) {
 	function spawnAerialArmor(x, z) {
 		const ring = new Mesh(new RingGeometry(.28, .48, 24), chantMat(8257458, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20885,7 +20910,7 @@ function buildYard(canvas) {
 	function spawnHastega(x, z) {
 		const ring = new Mesh(new RingGeometry(.22, .4, 20), chantMat(8257458, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -20914,7 +20939,7 @@ function buildYard(canvas) {
 		spawnImpact(0, .42);
 		const ring = new Mesh(new RingGeometry(.16, .42, 18), chantMat(10474751, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21031,7 +21056,7 @@ function buildYard(canvas) {
 	function spawnSleepga(x, z) {
 		const ring = new Mesh(new RingGeometry(.2, .46, 24), chantMat(14152959, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21111,7 +21136,7 @@ function buildYard(canvas) {
 		spawnElementRelease("thunder", true, x, z);
 		const ring = new Mesh(new RingGeometry(.35, .6, 24), chantMat(16048762, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21139,7 +21164,7 @@ function buildYard(canvas) {
 	function spawnRollingThunder(x, z) {
 		const ring = new Mesh(new RingGeometry(.25, .46, 20), chantMat(16048762, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21247,7 +21272,7 @@ function buildYard(canvas) {
 	function spawnNightmare(x, z) {
 		const ring = new Mesh(new RingGeometry(.3, .7, 24), chantMat(6957704, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21310,7 +21335,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.4, 1.5, 28), chantMat(6957704, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21324,7 +21349,7 @@ function buildYard(canvas) {
 	function spawnUltimateTerror(x, z) {
 		const ring = new Mesh(new RingGeometry(.25, .55, 20), chantMat(3807304, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21446,7 +21471,7 @@ function buildYard(canvas) {
 		}
 		const ring = new Mesh(new RingGeometry(.35, 1.35, 28), chantMat(16774856, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .1, z);
+		ring.position.set(x, groundY(x, z) + (.1), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21528,7 +21553,7 @@ function buildYard(canvas) {
 	function spawnMewingLullaby(x, z) {
 		const ring = new Mesh(new RingGeometry(.25, .9, 24), chantMat(14711450, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21627,7 +21652,7 @@ function buildYard(canvas) {
 	function spawnRoundhouse(x, z) {
 		const ring = new Mesh(new TorusGeometry(.4, .028, 8, 20), chantMat(12886362, .9));
 		ring.rotation.x = Math.PI / 2;
-		ring.position.set(x, .52, z);
+		ring.position.set(x, groundY(x, z) + (.52), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21657,7 +21682,7 @@ function buildYard(canvas) {
 			const lag = i * .07;
 			pushSongBit(note, 1.05, (mesh, u) => {
 				const t = Math.min(1, Math.max(0, (u - lag) / .7));
-				mesh.position.set(x, 1.05 + Math.sin(t * Math.PI) * .28, z + (i - 2.5) * .11);
+				mesh.position.set(x, groundY(x, z + (i - 2.5) * .11) + (1.05 + Math.sin(t * Math.PI) * .28), z + (i - 2.5) * .11);
 				mesh.rotation.z = .35;
 			});
 		}
@@ -21719,7 +21744,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.35, 1.55, 28), chantMat(16051412, .5));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21740,7 +21765,7 @@ function buildYard(canvas) {
 	}
 	function spawnLunaticVoice(x, z) {
 		const gag = new Mesh(new TorusGeometry(.17, .024, 8, 16), chantMat(12886362, .9));
-		gag.position.set(x, 1.18, z);
+		gag.position.set(x, groundY(x, z) + (1.18), z);
 		gag.userData.ownGeo = true;
 		scene.add(gag);
 		rings.push({
@@ -21753,7 +21778,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.28, 1.1, 24), chantMat(15984336, .48));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21790,7 +21815,7 @@ function buildYard(canvas) {
 		}
 		const ring = new Mesh(new RingGeometry(.18, .46, 24), chantMat(8257458, .35));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21822,7 +21847,7 @@ function buildYard(canvas) {
 		band.userData.ownGeo = true;
 		band.userData.peak = .85;
 		g.add(band);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -21881,7 +21906,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.25, 1.5, 28), chantMat(12963286, .4));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .08, z);
+		ring.position.set(x, groundY(x, z) + (.08), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -21921,7 +21946,7 @@ function buildYard(canvas) {
 	function spawnChronoshift(x, z) {
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new TorusGeometry(.26 + i * .18, .022, 8, 20), chantMat(i === 1 ? 12886362 : 11566335, .8));
-			ring.position.set(x, .55 + i * .32, z);
+			ring.position.set(x, groundY(x, z) + (.55 + i * .32), z);
 			ring.rotation.x = Math.PI / 2.2;
 			ring.userData.ownGeo = true;
 			scene.add(ring);
@@ -21945,7 +21970,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		dome.scale.set(1, .7, 1);
-		dome.position.set(x, .65, z);
+		dome.position.set(x, groundY(x, z) + (.65), z);
 		dome.userData.ownGeo = true;
 		scene.add(dome);
 		embers.push({
@@ -22441,7 +22466,7 @@ function buildYard(canvas) {
 		const look2 = ELEMENT_LOOK[element] || ELEMENT_LOOK.light;
 		const ring = new Mesh(new RingGeometry(.22 * wide, .62 * wide, 36), chantMat(look2.accent, .95));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(gate.x, .06, gate.z);
+		ring.position.set(gate.x, groundY(gate.x, gate.z) + (.06), gate.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -22453,7 +22478,7 @@ function buildYard(canvas) {
 		});
 		const inner = new Mesh(new RingGeometry(.08 * wide, .24 * wide, 6), chantMat(look2.color, .8));
 		inner.rotation.x = -Math.PI / 2;
-		inner.position.set(gate.x, .08, gate.z);
+		inner.position.set(gate.x, groundY(gate.x, gate.z) + (.08), gate.z);
 		inner.userData.ownGeo = true;
 		scene.add(inner);
 		rings.push({
@@ -22467,7 +22492,7 @@ function buildYard(canvas) {
 		const h = kind === "astral" ? 3.3 : kind === "spirit" ? 1.5 : 2.35;
 		const pillar = new Mesh(new CylinderGeometry(.08 * wide, .34 * wide, h, 12, 1, true), chantMat(look2.color, .62));
 		pillar.material.side = 2;
-		pillar.position.set(gate.x, h * .48, gate.z);
+		pillar.position.set(gate.x, groundY(gate.x, gate.z) + (h * .48), gate.z);
 		pillar.userData.ownGeo = true;
 		scene.add(pillar);
 		embers.push({
@@ -22484,7 +22509,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < n; i++) {
 			const mote = makeElementMote(look2, i);
 			const a = i / n * Math.PI * 2;
-			mote.position.set(gate.x, .2, gate.z);
+			mote.position.set(gate.x, groundY(gate.x, gate.z) + (.2), gate.z);
 			mote.scale.setScalar(kind === "astral" ? 1.8 : 1.35);
 			scene.add(mote);
 			embers.push({
@@ -22705,7 +22730,7 @@ function buildYard(canvas) {
 					side: 2
 				});
 				const mesh = new Mesh(new PlaneGeometry(cardW / 2, cardH / 2), mat);
-				mesh.position.set(x, 3.8, z);
+				mesh.position.set(x, groundY(x, z) + (3.8), z);
 				put(mesh, 2.05, { rollCard: {
 					shard: true,
 					follow: follow === true,
@@ -22782,7 +22807,7 @@ function buildYard(canvas) {
 			toneMapped: false
 		});
 		const mesh = new Mesh(new BoxGeometry(.34, 2.8, .34), mat);
-		mesh.position.set(px, 1.4, pz);
+		mesh.position.set(px, groundY(px, pz) + (1.4), pz);
 		scene.add(mesh);
 		embers.push({
 			mesh,
@@ -22794,7 +22819,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.28, .46, 24), plainMat(color, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -22816,7 +22841,7 @@ function buildYard(canvas) {
 			toneMapped: false,
 			side: 2
 		}));
-		ring.position.set(px, 1.05, pz);
+		ring.position.set(px, groundY(px, pz) + (1.05), pz);
 		ring.rotation.y = yaw;
 		scene.add(ring);
 		rings.push({
@@ -22837,7 +22862,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -22850,7 +22875,7 @@ function buildYard(canvas) {
 	}
 	function spawnProvokeLand() {
 		const halo = new Mesh(new TorusGeometry(.16, .03, 8, 16), plainMat(13777739, .95));
-		halo.position.set(harePos.x, 1.55, harePos.z);
+		halo.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.55), harePos.z);
 		halo.rotation.x = Math.PI / 2;
 		halo.userData.ownGeo = true;
 		scene.add(halo);
@@ -22864,7 +22889,7 @@ function buildYard(canvas) {
 			hold: .25
 		});
 		const spin = new Mesh(new RingGeometry(.1, .2, 18), plainMat(13777739, .9));
-		spin.position.set(harePos.x, 1.35, harePos.z);
+		spin.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.35), harePos.z);
 		spin.rotation.x = -Math.PI / 2;
 		spin.userData.ownGeo = true;
 		scene.add(spin);
@@ -22880,7 +22905,7 @@ function buildYard(canvas) {
 	function spawnAggressor() {
 		spawnWisp(14925178, 1.15, .2);
 		const streak = new Mesh(new BoxGeometry(.06, .06, .85), plainMat(14925178, .88));
-		streak.position.set((px + harePos.x) / 2, 1.1, (pz + harePos.z) / 2);
+		streak.position.set((px + harePos.x) / 2, groundY((px + harePos.x) / 2, (pz + harePos.z) / 2) + (1.1), (pz + harePos.z) / 2);
 		streak.lookAt(harePos.x, 1.1, harePos.z);
 		streak.userData.ownGeo = true;
 		scene.add(streak);
@@ -22906,7 +22931,7 @@ function buildYard(canvas) {
 	function spawnHundredFists() {
 		const ring = new Mesh(new RingGeometry(.34, .5, 24), plainMat(16054271, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -22919,7 +22944,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const mesh = new Mesh(new BoxGeometry(.11, .06, .15), plainMat(i % 2 ? 16777215 : 14149375, .92));
 			const ang = i / 10 * Math.PI * 2;
-			mesh.position.set(px + Math.cos(ang) * .55, .82 + i % 3 * .28, pz + Math.sin(ang) * .55);
+			mesh.position.set(px + Math.cos(ang) * .55, groundY(px + Math.cos(ang) * .55, pz + Math.sin(ang) * .55) + (.82 + i % 3 * .28), pz + Math.sin(ang) * .55);
 			mesh.userData.ownGeo = true;
 			scene.add(mesh);
 			embers.push({
@@ -22942,7 +22967,7 @@ function buildYard(canvas) {
 	}
 	function spawnBoost() {
 		const core = new Mesh(new SphereGeometry(.2, 8, 6), plainMat(16734770, .85));
-		core.position.set(px, 1.18, pz);
+		core.position.set(px, groundY(px, pz) + (1.18), pz);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -22961,7 +22986,7 @@ function buildYard(canvas) {
 	}
 	function spawnDodge() {
 		const streak = new Mesh(new BoxGeometry(.7, .07, .07), plainMat(10473727, .88));
-		streak.position.set(px, 1.05, pz);
+		streak.position.set(px, groundY(px, pz) + (1.05), pz);
 		streak.rotation.y = yaw + Math.PI / 2;
 		streak.userData.ownGeo = true;
 		scene.add(streak);
@@ -22981,7 +23006,7 @@ function buildYard(canvas) {
 		const g = new Group();
 		g.add(new Mesh(new BoxGeometry(.24, .03, .03), plainMat(16773288, 1)));
 		g.add(new Mesh(new BoxGeometry(.03, .24, .03), plainMat(16773288, 1)));
-		g.position.set(px, 1.64, pz);
+		g.position.set(px, groundY(px, pz) + (1.64), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -22992,7 +23017,7 @@ function buildYard(canvas) {
 	}
 	function spawnChakra() {
 		const pillar = new Mesh(new CylinderGeometry(.14, .2, 1.35, 10, 1, true), plainMat(8257434, .55));
-		pillar.position.set(px, .78, pz);
+		pillar.position.set(px, groundY(px, pz) + (.78), pz);
 		pillar.userData.ownGeo = true;
 		scene.add(pillar);
 		embers.push({
@@ -23016,7 +23041,7 @@ function buildYard(canvas) {
 		halo.userData.ownGeo = true;
 		halo.userData.peak = .4;
 		g.add(core, halo);
-		g.position.set(px, 1.15, pz);
+		g.position.set(px, groundY(px, pz) + (1.15), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -23033,7 +23058,7 @@ function buildYard(canvas) {
 	}
 	function spawnChiImpact() {
 		const glow = new Mesh(new SphereGeometry(.4, 10, 8), plainMat(16249316, .75));
-		glow.position.set(harePos.x, 1.05, harePos.z);
+		glow.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		glow.userData.ownGeo = true;
 		scene.add(glow);
 		embers.push({
@@ -23047,7 +23072,7 @@ function buildYard(canvas) {
 			hold: .12
 		});
 		const ring = new Mesh(new RingGeometry(.1, .26, 18), plainMat(16777215, .9));
-		ring.position.set(harePos.x, 1.15, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		ring.lookAt(camera.position);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
@@ -23065,7 +23090,7 @@ function buildYard(canvas) {
 	function spawnCounterstance() {
 		const ring = new Mesh(new RingGeometry(.38, .56, 24), plainMat(13928250, .82));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23081,7 +23106,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const puff = new Mesh(new BoxGeometry(.12, .05, .12), plainMat(12891274, .75));
 			const a = i / 5 * Math.PI * 2;
-			puff.position.set(px + Math.cos(a) * .22, .08, pz + Math.sin(a) * .22);
+			puff.position.set(px + Math.cos(a) * .22, groundY(px + Math.cos(a) * .22, pz + Math.sin(a) * .22) + (.08), pz + Math.sin(a) * .22);
 			puff.userData.ownGeo = true;
 			scene.add(puff);
 			embers.push({
@@ -23129,7 +23154,7 @@ function buildYard(canvas) {
 		spawnDust();
 		const ring = new Mesh(new RingGeometry(.2, .46, 24), plainMat(16777215, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23140,7 +23165,7 @@ function buildYard(canvas) {
 			hold: .1
 		});
 		const g = new Group();
-		g.position.set(harePos.x, 1.2, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.2), harePos.z);
 		for (let i = 0; i < 3; i++) {
 			const star = new Group();
 			const mat = plainMat(15783274, .95);
@@ -23165,7 +23190,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .9;
 		g.add(disc, core);
-		g.position.set(px, 1.02, pz);
+		g.position.set(px, groundY(px, pz) + (1.02), pz);
 		g.lookAt(camera.position);
 		scene.add(g);
 		sparks.push({
@@ -23184,7 +23209,7 @@ function buildYard(canvas) {
 	}
 	function spawnInchPop() {
 		const ring = new Mesh(new RingGeometry(.08, .2, 18), plainMat(16777215, .9));
-		ring.position.set(harePos.x, 1.08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.08), harePos.z);
 		ring.lookAt(camera.position);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
@@ -23202,7 +23227,7 @@ function buildYard(canvas) {
 	}
 	function spawnBackhandArc() {
 		const arc = new Mesh(new TorusGeometry(.62, .04, 6, 20, Math.PI * 1.15), plainMat(16777215, .92));
-		arc.position.set(harePos.x, 1.18, harePos.z);
+		arc.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.18), harePos.z);
 		arc.rotation.y = yaw;
 		arc.rotation.z = .55;
 		arc.userData.ownGeo = true;
@@ -23220,7 +23245,7 @@ function buildYard(canvas) {
 	}
 	function spawnFistGlint() {
 		const mote = new Mesh(new BoxGeometry(.05, .05, .22), plainMat(16777215, .75));
-		mote.position.set(harePos.x, 1.15, harePos.z);
+		mote.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		mote.rotation.y = yaw + .6;
 		mote.userData.ownGeo = true;
 		scene.add(mote);
@@ -23237,7 +23262,7 @@ function buildYard(canvas) {
 	function spawnSpinRing() {
 		const ring = new Mesh(new RingGeometry(.35, .55, 28), plainMat(15985368, .82));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23249,7 +23274,7 @@ function buildYard(canvas) {
 		});
 		const white = new Mesh(new RingGeometry(.48, .56, 28), plainMat(16777215, .75));
 		white.rotation.x = -Math.PI / 2;
-		white.position.set(px, .08, pz);
+		white.position.set(px, groundY(px, pz) + (.08), pz);
 		white.userData.ownGeo = true;
 		scene.add(white);
 		rings.push({
@@ -23264,7 +23289,7 @@ function buildYard(canvas) {
 	function spawnSpinPuff() {
 		const a = Math.random() * Math.PI * 2;
 		const puff = new Mesh(new BoxGeometry(.1, .05, .1), plainMat(12891274, .7));
-		puff.position.set(px + Math.cos(a) * .35, .08, pz + Math.sin(a) * .35);
+		puff.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (.08), pz + Math.sin(a) * .35);
 		puff.userData.ownGeo = true;
 		scene.add(puff);
 		embers.push({
@@ -23289,7 +23314,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .95;
 		g.add(cone, core);
-		g.position.set(px, 1.12, pz);
+		g.position.set(px, groundY(px, pz) + (1.12), pz);
 		g.lookAt(harePos.x, 1.05, harePos.z);
 		scene.add(g);
 		sparks.push({
@@ -23308,7 +23333,7 @@ function buildYard(canvas) {
 	}
 	function spawnHowlBurst() {
 		const glow = new Mesh(new SphereGeometry(.48, 10, 8), plainMat(14018303, .55));
-		glow.position.set(harePos.x, 1.05, harePos.z);
+		glow.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		glow.userData.ownGeo = true;
 		scene.add(glow);
 		embers.push({
@@ -23322,7 +23347,7 @@ function buildYard(canvas) {
 			hold: .08
 		});
 		const ring = new Mesh(new RingGeometry(.12, .32, 20), plainMat(16777215, .9));
-		ring.position.set(harePos.x, 1.12, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.12), harePos.z);
 		ring.lookAt(camera.position);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
@@ -23340,7 +23365,7 @@ function buildYard(canvas) {
 	function spawnKickFlash(high) {
 		const y = high ? 1.38 : .62;
 		const streak = new Mesh(new BoxGeometry(.1, .1, 1.15), plainMat(16249316, .88));
-		streak.position.set((px + harePos.x) / 2, y, (pz + harePos.z) / 2);
+		streak.position.set((px + harePos.x) / 2, groundY((px + harePos.x) / 2, (pz + harePos.z) / 2) + (y), (pz + harePos.z) / 2);
 		streak.lookAt(harePos.x, y, harePos.z);
 		streak.userData.ownGeo = true;
 		scene.add(streak);
@@ -23360,7 +23385,7 @@ function buildYard(canvas) {
 		const mesh = new Mesh(new BoxGeometry(.22, .1, .26), plainMat(Math.random() < .55 ? 8014548 : 14927226, .88));
 		const a = Math.random() * Math.PI * 2;
 		const rad = .28 + Math.random() * .55;
-		mesh.position.set(harePos.x + Math.cos(a) * rad, .78 + Math.random() * .62, harePos.z + Math.sin(a) * rad);
+		mesh.position.set(harePos.x + Math.cos(a) * rad, groundY(harePos.x + Math.cos(a) * rad, harePos.z + Math.sin(a) * rad) + (.78 + Math.random() * .62), harePos.z + Math.sin(a) * rad);
 		mesh.rotation.set(Math.random(), Math.random(), Math.random());
 		mesh.userData.ownGeo = true;
 		scene.add(mesh);
@@ -23425,7 +23450,7 @@ function buildYard(canvas) {
 			mote.userData.phase = i / 16;
 			g.add(mote);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -23458,7 +23483,7 @@ function buildYard(canvas) {
 			orb.position.set(Math.cos(orb.userData.ang) * rad, y, 0);
 			g.add(orb);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -23473,7 +23498,7 @@ function buildYard(canvas) {
 	function spawnComposure() {
 		const ring = new Mesh(new RingGeometry(.2, .3, 24), plainMat(13943638, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23484,7 +23509,7 @@ function buildYard(canvas) {
 			hold: .3
 		});
 		const brim = new Mesh(new TorusGeometry(.16, .02, 6, 16), plainMat(13783116, .85));
-		brim.position.set(px, 1.7, pz);
+		brim.position.set(px, groundY(px, pz) + (1.7), pz);
 		brim.rotation.x = Math.PI / 2;
 		brim.userData.ownGeo = true;
 		scene.add(brim);
@@ -23604,7 +23629,7 @@ function buildYard(canvas) {
 			const at = schAim === "kin" ? kinPos : harePos;
 			const seal = new Mesh(new TorusGeometry(.34, .028, 8, 24), plainMat(violet, .92));
 			seal.rotation.x = Math.PI / 2;
-			seal.position.set(at.x, .9, at.z);
+			seal.position.set(at.x, groundY(at.x, at.z) + (.9), at.z);
 			seal.userData.ownGeo = true;
 			scene.add(seal);
 			rings.push({
@@ -23617,7 +23642,7 @@ function buildYard(canvas) {
 			});
 			const inner = new Mesh(new TorusGeometry(.16, .016, 8, 20), plainMat(gold, .9));
 			inner.rotation.x = Math.PI / 2;
-			inner.position.set(at.x, .9, at.z);
+			inner.position.set(at.x, groundY(at.x, at.z) + (.9), at.z);
 			inner.userData.ownGeo = true;
 			scene.add(inner);
 			rings.push({
@@ -23633,7 +23658,7 @@ function buildYard(canvas) {
 		if (name === "Sublimation") {
 			const ring = new Mesh(new RingGeometry(.28, .48, 24), plainMat(schRelease ? 7255551 : 12866362, .75));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(px, .08, pz);
+			ring.position.set(px, groundY(px, pz) + (.08), pz);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -23646,7 +23671,7 @@ function buildYard(canvas) {
 			for (let i = 0; i < 10; i++) {
 				const mote = new Mesh(new SphereGeometry(.04, 6, 5), plainMat(schRelease ? 7255551 : 12866362, .9));
 				const a = i / 10 * Math.PI * 2;
-				mote.position.set(px + Math.cos(a) * .26, schRelease ? .85 : 1.45, pz + Math.sin(a) * .26);
+				mote.position.set(px + Math.cos(a) * .26, groundY(px + Math.cos(a) * .26, pz + Math.sin(a) * .26) + (schRelease ? .85 : 1.45), pz + Math.sin(a) * .26);
 				mote.userData.ownGeo = true;
 				scene.add(mote);
 				embers.push({
@@ -23665,7 +23690,7 @@ function buildYard(canvas) {
 			const color = schDarkJa(name) ? violet : gold;
 			const rune = new Mesh(new RingGeometry(.07, .15, 18), plainMat(color, .95));
 			rune.rotation.x = -Math.PI / 2;
-			rune.position.set(px, 1.32, pz);
+			rune.position.set(px, groundY(px, pz) + (1.32), pz);
 			rune.userData.ownGeo = true;
 			scene.add(rune);
 			rings.push({
@@ -23681,7 +23706,7 @@ function buildYard(canvas) {
 		if (schAddendum(name)) {
 			const dark = name === "Addendum: Black";
 			const page = new Mesh(new BoxGeometry(.16, .012, .11), plainMat(dark ? leaf : pale, .95));
-			page.position.set(px, 1.2, pz);
+			page.position.set(px, groundY(px, pz) + (1.2), pz);
 			page.rotation.y = yaw;
 			page.userData.ownGeo = true;
 			scene.add(page);
@@ -23700,7 +23725,7 @@ function buildYard(canvas) {
 		const dark = schDarkJa(name);
 		const ring = new Mesh(new RingGeometry(.32, both ? .86 : .52, 28), plainMat(both ? pale : dark ? violet : pale, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23713,7 +23738,7 @@ function buildYard(canvas) {
 		if (both) {
 			const inner = new Mesh(new RingGeometry(.28, .4, 24), plainMat(violet, .7));
 			inner.rotation.x = -Math.PI / 2;
-			inner.position.set(px, .1, pz);
+			inner.position.set(px, groundY(px, pz) + (.1), pz);
 			inner.userData.ownGeo = true;
 			scene.add(inner);
 			rings.push({
@@ -23729,7 +23754,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < n; i++) {
 			const page = new Mesh(new BoxGeometry(.16, .01, .11), plainMat(both && i % 2 ? leaf : dark ? leaf : gold, .92));
 			const a = i / n * Math.PI * 2;
-			page.position.set(px + Math.cos(a) * .12, 1.15, pz + Math.sin(a) * .12);
+			page.position.set(px + Math.cos(a) * .12, groundY(px + Math.cos(a) * .12, pz + Math.sin(a) * .12) + (1.15), pz + Math.sin(a) * .12);
 			page.rotation.y = a;
 			page.userData.ownGeo = true;
 			scene.add(page);
@@ -23746,7 +23771,7 @@ function buildYard(canvas) {
 	}
 	function spawnManafont() {
 		const pillar = new Mesh(new CylinderGeometry(.22, .46, 2.8, 12), plainMat(3894527, .42));
-		pillar.position.set(px, 1.4, pz);
+		pillar.position.set(px, groundY(px, pz) + (1.4), pz);
 		pillar.userData.ownGeo = true;
 		scene.add(pillar);
 		embers.push({
@@ -23761,7 +23786,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.35, .62, 28), plainMat(7327999, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23774,7 +23799,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 14; i++) {
 			const drop = new Mesh(new SphereGeometry(.045, 6, 5), plainMat(i % 2 ? 10468351 : 3894527, .9));
 			const a = i / 14 * Math.PI * 2;
-			drop.position.set(px + Math.cos(a) * .28, .25 + i % 5 * .12, pz + Math.sin(a) * .28);
+			drop.position.set(px + Math.cos(a) * .28, groundY(px + Math.cos(a) * .28, pz + Math.sin(a) * .28) + (.25 + i % 5 * .12), pz + Math.sin(a) * .28);
 			drop.userData.ownGeo = true;
 			scene.add(drop);
 			embers.push({
@@ -23790,7 +23815,7 @@ function buildYard(canvas) {
 	}
 	function spawnElementalSeal() {
 		const seal = new Mesh(new RingGeometry(.16, .28, 24), plainMat(15721180, .92));
-		seal.position.set(px, 1.25, pz);
+		seal.position.set(px, groundY(px, pz) + (1.25), pz);
 		seal.rotation.y = yaw;
 		seal.userData.ownGeo = true;
 		scene.add(seal);
@@ -23804,7 +23829,7 @@ function buildYard(canvas) {
 		});
 		const feet = new Mesh(new RingGeometry(.28, .4, 24), plainMat(11567359, .7));
 		feet.rotation.x = -Math.PI / 2;
-		feet.position.set(px, .08, pz);
+		feet.position.set(px, groundY(px, pz) + (.08), pz);
 		feet.userData.ownGeo = true;
 		scene.add(feet);
 		rings.push({
@@ -23825,7 +23850,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < hues.length; i++) {
 			const mote = new Mesh(new SphereGeometry(.04, 6, 5), plainMat(hues[i], .9));
 			const a = i / hues.length * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .42, 1.15, pz + Math.sin(a) * .42);
+			mote.position.set(px + Math.cos(a) * .42, groundY(px + Math.cos(a) * .42, pz + Math.sin(a) * .42) + (1.15), pz + Math.sin(a) * .42);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -23841,7 +23866,7 @@ function buildYard(canvas) {
 	}
 	function spawnBenediction() {
 		const pillar = new Mesh(new CylinderGeometry(.22, .5, 2.6, 12), plainMat(16775920, .4));
-		pillar.position.set(px, 1.3, pz);
+		pillar.position.set(px, groundY(px, pz) + (1.3), pz);
 		pillar.userData.ownGeo = true;
 		scene.add(pillar);
 		embers.push({
@@ -23856,7 +23881,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.42, .7, 28), plainMat(14925946, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -23869,7 +23894,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const gleam = new Mesh(new SphereGeometry(.04, 6, 5), plainMat(i % 2 ? 16775920 : 14925946, .9));
 			const a = i / 10 * Math.PI * 2;
-			gleam.position.set(px + Math.cos(a) * .34, .28 + i % 4 * .16, pz + Math.sin(a) * .34);
+			gleam.position.set(px + Math.cos(a) * .34, groundY(px + Math.cos(a) * .34, pz + Math.sin(a) * .34) + (.28 + i % 4 * .16), pz + Math.sin(a) * .34);
 			gleam.userData.ownGeo = true;
 			scene.add(gleam);
 			embers.push({
@@ -23886,7 +23911,7 @@ function buildYard(canvas) {
 	}
 	function spawnDivineSeal() {
 		const seal = new Mesh(new RingGeometry(.14, .26, 24), plainMat(14925946, .95));
-		seal.position.set(px, 1.52, pz);
+		seal.position.set(px, groundY(px, pz) + (1.52), pz);
 		seal.rotation.y = yaw;
 		seal.userData.ownGeo = true;
 		scene.add(seal);
@@ -23899,7 +23924,7 @@ function buildYard(canvas) {
 			spin: 2.2
 		});
 		const inner = new Mesh(new RingGeometry(.05, .11, 20), plainMat(16053460, .8));
-		inner.position.set(px, 1.52, pz);
+		inner.position.set(px, groundY(px, pz) + (1.52), pz);
 		inner.rotation.y = yaw;
 		inner.userData.ownGeo = true;
 		scene.add(inner);
@@ -23914,7 +23939,7 @@ function buildYard(canvas) {
 	}
 	function spawnDivineHealSeal(x, z) {
 		const seal = new Mesh(new RingGeometry(.16, .28, 22), plainMat(14925946, .92));
-		seal.position.set(x, 1.65, z);
+		seal.position.set(x, groundY(x, z) + (1.65), z);
 		seal.rotation.x = -Math.PI / 2;
 		seal.userData.ownGeo = true;
 		scene.add(seal);
@@ -23931,7 +23956,7 @@ function buildYard(canvas) {
 		const core = misery ? 11566335 : 16053460;
 		const edge = misery ? 7020543 : 14925946;
 		const bloom = new Mesh(new SphereGeometry(misery ? .26 : .34, 12, 10), plainMat(core, misery ? .3 : .34));
-		bloom.position.set(px, 1.15, pz);
+		bloom.position.set(px, groundY(px, pz) + (1.15), pz);
 		bloom.userData.ownGeo = true;
 		scene.add(bloom);
 		embers.push({
@@ -23948,7 +23973,7 @@ function buildYard(canvas) {
 			const gleam = new Mesh(new SphereGeometry(.035, 6, 5), plainMat(i % 2 ? core : edge, .85));
 			const a = i / 8 * Math.PI * 2;
 			const rad = misery ? .2 : .4;
-			gleam.position.set(px + Math.cos(a) * rad, .95 + i % 3 * .08, pz + Math.sin(a) * rad);
+			gleam.position.set(px + Math.cos(a) * rad, groundY(px + Math.cos(a) * rad, pz + Math.sin(a) * rad) + (.95 + i % 3 * .08), pz + Math.sin(a) * rad);
 			gleam.userData.ownGeo = true;
 			scene.add(gleam);
 			embers.push({
@@ -23964,7 +23989,7 @@ function buildYard(canvas) {
 	}
 	function spawnSealFlash() {
 		const seal = new Mesh(new RingGeometry(.12, .26, 20), plainMat(15721180, .95));
-		seal.position.set(px, 1.3, pz);
+		seal.position.set(px, groundY(px, pz) + (1.3), pz);
 		seal.rotation.y = yaw;
 		seal.userData.ownGeo = true;
 		scene.add(seal);
@@ -24130,7 +24155,7 @@ function buildYard(canvas) {
 	}
 	function holdRangedProp(mesh, hand, x, y, z, rx, ry, rz) {
 		mountRangedProp(mesh, hand);
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.rotation.set(rx, ry, rz);
 	}
 	function standBow(mesh, pitch = 0) {
@@ -26334,7 +26359,7 @@ function buildYard(canvas) {
 			ring.userData.ownGeo = true;
 			g.add(ring);
 		}
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		rings.push({
 			g,
@@ -26347,7 +26372,7 @@ function buildYard(canvas) {
 	}
 	function spawnWindSlash(color) {
 		const ring = new Mesh(new TorusGeometry(.42, .03, 8, 20, Math.PI * 1.2), chantMat(color, .9));
-		ring.position.set(harePos.x, 1.05, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		ring.rotation.y = yaw;
 		ring.userData.ownGeo = true;
 		scene.add(ring);
@@ -26363,7 +26388,7 @@ function buildYard(canvas) {
 	function spawnShadowPool() {
 		const disc = new Mesh(new CircleGeometry(.78, 24), chantMat(1179668, .82));
 		disc.rotation.x = -Math.PI / 2;
-		disc.position.set(harePos.x, .04, harePos.z);
+		disc.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.04), harePos.z);
 		disc.userData.ownGeo = true;
 		scene.add(disc);
 		rings.push({
@@ -26383,7 +26408,7 @@ function buildYard(canvas) {
 			needle.userData.ownGeo = true;
 			g.add(needle);
 		}
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -26396,7 +26421,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < (heavy ? 8 : 5); i++) {
 			const mote = new Mesh(new SphereGeometry(heavy ? .07 : .05, 6, 5), chantMat(color, .9));
 			const a = i / 5 * Math.PI * 2;
-			mote.position.set(harePos.x + Math.cos(a) * .2, .9, harePos.z + Math.sin(a) * .2);
+			mote.position.set(harePos.x + Math.cos(a) * .2, groundY(harePos.x + Math.cos(a) * .2, harePos.z + Math.sin(a) * .2) + (.9), harePos.z + Math.sin(a) * .2);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -26412,7 +26437,7 @@ function buildYard(canvas) {
 	}
 	function spawnCleave(color) {
 		const slash = new Mesh(new BoxGeometry(.7, .06, .06), chantMat(color, .95));
-		slash.position.set(harePos.x, 1.05, harePos.z);
+		slash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		slash.rotation.z = .6;
 		slash.userData.ownGeo = true;
 		scene.add(slash);
@@ -27592,7 +27617,7 @@ function buildYard(canvas) {
 			depthWrite: false,
 			toneMapped: false
 		}));
-		mist.position.set(harePos.x, 1.05, harePos.z);
+		mist.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		scene.add(mist);
 		embers.push({
 			mesh: mist,
@@ -28966,7 +28991,7 @@ function buildYard(canvas) {
 		heatTint = 13369344;
 		heatFlash = .42;
 		const g = new Group();
-		g.position.set(harePos.x, 1.05, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		g.rotation.y = yaw;
 		for (let i = 0; i < 8; i++) {
 			const mat = new MeshBasicMaterial({
@@ -29018,7 +29043,7 @@ function buildYard(canvas) {
 			});
 			const ember = new Mesh(new BoxGeometry(.05, .05, .05), mat);
 			const a = i / 8 * Math.PI * 2;
-			ember.position.set(harePos.x + Math.cos(a) * .15, 1 + i % 3 * .12, harePos.z + Math.sin(a) * .15);
+			ember.position.set(harePos.x + Math.cos(a) * .15, groundY(harePos.x + Math.cos(a) * .15, harePos.z + Math.sin(a) * .15) + (1 + i % 3 * .12), harePos.z + Math.sin(a) * .15);
 			scene.add(ember);
 			embers.push({
 				mesh: ember,
@@ -29034,7 +29059,7 @@ function buildYard(canvas) {
 		heatTint = 16737050;
 		heatFlash = .32;
 		const g = new Group();
-		g.position.set(harePos.x, .85, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.85), harePos.z);
 		for (let i = 0; i < 6; i++) {
 			const mat = new MeshBasicMaterial({
 				color: 16742442,
@@ -29262,7 +29287,7 @@ function buildYard(canvas) {
 		clearTrustChant(pup);
 		const quarry = playerFoe() === "kin" ? kinPos : harePos;
 		const hareDist = Math.hypot(quarry.x - pup.x, quarry.z - pup.z) || 1e-4;
-		pup.body.root.position.set(pup.x, traceFloorY(pup.x, pup.z), pup.z);
+		pup.body.root.position.set(pup.x, groundY(pup.x, pup.z), pup.z);
 		pup.body.root.visible = true;
 		applyFacing(pup.body.root, pup.aim || 0, basis, xAxis, yAxis, zAxis);
 		noteTrustPlace(pup.def.id, hareDist, false, Math.hypot(px - pup.x, pz - pup.z), pup.x, pup.z);
@@ -29276,7 +29301,7 @@ function buildYard(canvas) {
 			if (heroCorpse >= 0) {
 				heroCorpse = -1;
 				hero.hips.position.y = .78;
-				hero.root.position.y = traceFloorY(px, pz);
+				hero.root.position.y = groundY(px, pz);
 			}
 			if (heroDeathIcon) heroDeathIcon.visible = false;
 			return;
@@ -29284,7 +29309,7 @@ function buildYard(canvas) {
 		if (heroCorpse < 0) heroCorpse = 0;
 		const before = heroCorpse;
 		heroCorpse += dt;
-		hero.root.position.y = traceFloorY(px, pz);
+		hero.root.position.y = groundY(px, pz);
 		poseHumanDeath(hero, heroCorpse);
 		heroDeathIcon = placeDeathIcon(heroDeathIcon, px, pz, yaw, heroCorpse);
 		if (before < .58 && heroCorpse >= .58) puffCorpse(px, pz, yaw);
@@ -29329,6 +29354,37 @@ function buildYard(canvas) {
 		setBoneEuler(hero.legL.upper, -bend, 0, 0);
 		setBoneEuler(hero.legR.lower, bend * 1.15, 0, 0);
 		setBoneEuler(hero.legL.lower, bend * 1.15, 0, 0);
+	}
+	function skillHop(name, p) {
+		if (name === "Savage Blade") {
+			if (p < .18) return 0;
+			if (p < .42) return 1.45 * smoothStep((p - .18) / .24);
+			if (p < .72) return 1.45;
+			return 1.45 * (1 - smoothStep(Math.min(1, (p - .72) / .16)));
+		}
+		if (name === "Spiral Hell") {
+			if (p < .2) return 0;
+			if (p < .45) return 1.15 * smoothStep((p - .2) / .25);
+			if (p < .7) return 1.15;
+			return 1.15 * (1 - smoothStep(Math.min(1, (p - .7) / .2)));
+		}
+		if (name === "Raiden Thrust") {
+			if (p < .2) return 0;
+			if (p < .42) return .55 * smoothStep((p - .2) / .22);
+			return .55 * (1 - smoothStep(Math.min(1, (p - .42) / .28)));
+		}
+		if (name === "Impulse Drive") {
+			if (p < .55) return 0;
+			if (p < .72) return 1.15 * smoothStep((p - .55) / .17);
+			return 1.15 * (1 - smoothStep(Math.min(1, (p - .72) / .2)));
+		}
+		if (name === "Stardiver") {
+			if (p < .12) return 0;
+			if (p < .36) return 2.6 * smoothStep((p - .12) / .24);
+			if (p < .74) return 2.6 * (1 - smoothStep((p - .36) / .38));
+			return 0;
+		}
+		return 0;
 	}
 	function smoothStep(u) {
 		const x = Math.max(0, Math.min(1, u));
@@ -29377,7 +29433,7 @@ function buildYard(canvas) {
 			depthWrite: false,
 			toneMapped: false
 		}));
-		glow.position.set(harePos.x, 1.05, harePos.z);
+		glow.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		scene.add(glow);
 		trails.push({
 			mesh: glow,
@@ -29387,7 +29443,7 @@ function buildYard(canvas) {
 	}
 	function spawnGroundRing() {
 		const g = new Group();
-		g.position.set(px, .04, pz);
+		g.position.set(px, groundY(px, pz) + (.04), pz);
 		const earth = new Mesh(new RingGeometry(.35, .62, 28), new MeshBasicMaterial({
 			color: 12889620,
 			transparent: true,
@@ -29497,7 +29553,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .05, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.05), harePos.z);
 		scene.add(ring);
 		rings.push({
 			g: ring,
@@ -29542,7 +29598,7 @@ function buildYard(canvas) {
 			});
 			const puff = new Mesh(new BoxGeometry(.12, .06, .12), mat);
 			const a = i / 6 * Math.PI * 2;
-			puff.position.set(px + Math.cos(a) * .2, .08, pz + Math.sin(a) * .2);
+			puff.position.set(px + Math.cos(a) * .2, groundY(px + Math.cos(a) * .2, pz + Math.sin(a) * .2) + (.08), pz + Math.sin(a) * .2);
 			scene.add(puff);
 			embers.push({
 				mesh: puff,
@@ -29619,7 +29675,7 @@ function buildYard(canvas) {
 		arc.rotation.z = -.35;
 		arc.position.y = .9;
 		g.add(arc);
-		g.position.set(ax, 0, az);
+		g.position.set(ax, groundY(ax, az), az);
 		const dx = camera.position.x - ax;
 		const dz = camera.position.z - az;
 		g.rotation.y = Math.atan2(dx, dz);
@@ -29635,7 +29691,7 @@ function buildYard(canvas) {
 	}
 	function spawnWhirlClaws(x, z) {
 		const g = new Group();
-		g.position.set(x ?? harePos.x, 0, z ?? harePos.z);
+		g.position.set(x ?? harePos.x, groundY(x ?? harePos.x, z ?? harePos.z), z ?? harePos.z);
 		for (let i = 0; i < 4; i++) {
 			const claw = new Mesh(new BoxGeometry(.46, .028, .05), chantMat(i % 2 ? 16774872 : 16051412, .92));
 			claw.userData.ownGeo = true;
@@ -29671,7 +29727,7 @@ function buildYard(canvas) {
 			slash.rotation.z = -.7 + i * .55;
 			slash.position.y = .95 + (i - 1) * .14;
 			g.add(slash);
-			g.position.set(ax, 0, az);
+			g.position.set(ax, groundY(ax, az), az);
 			const dx = camera.position.x - ax;
 			const dz = camera.position.z - az;
 			g.rotation.y = Math.atan2(dx, dz);
@@ -29700,7 +29756,7 @@ function buildYard(canvas) {
 			const puff = new Mesh(i % 2 ? new SphereGeometry(.08, 6, 5) : new BoxGeometry(.16, .1, .13), mat);
 			puff.userData.ownGeo = true;
 			const spread = (i - 4.5) * .05;
-			puff.position.set(sx - nz * spread, .18 + i % 3 * .04, sz + nx * spread);
+			puff.position.set(sx - nz * spread, groundY(sx - nz * spread, sz + nx * spread) + (.18 + i % 3 * .04), sz + nx * spread);
 			scene.add(puff);
 			embers.push({
 				mesh: puff,
@@ -29715,7 +29771,7 @@ function buildYard(canvas) {
 		}
 		const ring = new Mesh(new RingGeometry(.12, .36, 20), chantMat(12876602, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(sx, .04, sz);
+		ring.position.set(sx, groundY(sx, sz) + (.04), sz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -29728,7 +29784,7 @@ function buildYard(canvas) {
 	}
 	function spawnDustCloudHit(x, z) {
 		const g = new Group();
-		g.position.set(x ?? px, 0, z ?? pz);
+		g.position.set(x ?? px, groundY(x ?? px, z ?? pz), z ?? pz);
 		for (let i = 0; i < 3; i++) {
 			const cloud = new Mesh(new SphereGeometry(.2 + i * .09, 8, 6), chantMat(i === 1 ? 16051412 : 9267778, .42));
 			cloud.position.y = .65 + i * .14;
@@ -29750,7 +29806,7 @@ function buildYard(canvas) {
 		const sx = x ?? harePos.x;
 		const sz = z ?? harePos.z;
 		const g = new Group();
-		g.position.set(sx, 0, sz);
+		g.position.set(sx, groundY(sx, sz), sz);
 		const glow = new Mesh(new SphereGeometry(.4, 10, 8), chantMat(8257434, .32));
 		glow.position.y = .34;
 		glow.userData.ownGeo = true;
@@ -29802,7 +29858,7 @@ function buildYard(canvas) {
 		const sz = z ?? harePos.z;
 		const ring = new Mesh(new RingGeometry(.16, .42, 24), chantMat(8257434, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(sx, .05, sz);
+		ring.position.set(sx, groundY(sx, sz) + (.05), sz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -29828,7 +29884,7 @@ function buildYard(canvas) {
 			star.add(new Mesh(new BoxGeometry(.14, .03, .03), mat));
 			star.add(new Mesh(new BoxGeometry(.03, .14, .03), mat));
 			const a = i / 10 * Math.PI * 2 + Math.random() * .4;
-			star.position.set(harePos.x, 1.15, harePos.z);
+			star.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 			scene.add(star);
 			sparkles.push({
 				g: star,
@@ -29855,7 +29911,7 @@ function buildYard(canvas) {
 		const slap = new Mesh(new BoxGeometry(.62, .07, .38), mat);
 		slap.position.y = 1.28;
 		g.add(slap);
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		g.rotation.y = yaw;
 		scene.add(g);
 		sparks.push({
@@ -29878,7 +29934,7 @@ function buildYard(canvas) {
 		const face = new Mesh(new CircleGeometry(.34, 14), mat);
 		face.userData.ownGeo = true;
 		g.add(face);
-		g.position.set(harePos.x, 1.12, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.12), harePos.z);
 		g.lookAt(px, 1.12, pz);
 		scene.add(g);
 		sparks.push({
@@ -29891,7 +29947,7 @@ function buildYard(canvas) {
 	function spawnStun(y = .92) {
 		stunHold = 1.15;
 		const g = new Group();
-		g.position.set(harePos.x, y, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (y), harePos.z);
 		for (let i = 0; i < 3; i++) {
 			const mat = new MeshBasicMaterial({
 				color: 15920352,
@@ -30029,7 +30085,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -30052,7 +30108,7 @@ function buildYard(canvas) {
 		g.add(new Mesh(new BoxGeometry(.04, .42 * scale, .04), mat));
 		g.add(new Mesh(new BoxGeometry(.42 * scale, .04, .04), mat));
 		g.add(new Mesh(new BoxGeometry(.04, .04, .42 * scale), mat));
-		g.position.set(harePos.x, 1.15, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -30087,7 +30143,7 @@ function buildYard(canvas) {
 					toneMapped: false
 				}));
 				const a = i / n * Math.PI * 2;
-				mote.position.set(harePos.x, 1.1, harePos.z);
+				mote.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.1), harePos.z);
 				mote.userData.ownGeo = true;
 				scene.add(mote);
 				embers.push({
@@ -30117,7 +30173,7 @@ function buildYard(canvas) {
 					depthWrite: false,
 					toneMapped: false
 				}));
-				mote.position.set(harePos.x, .8 + i % 4 * .12, harePos.z);
+				mote.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.8 + i % 4 * .12), harePos.z);
 				mote.userData.ownGeo = true;
 				scene.add(mote);
 				embers.push({
@@ -30148,7 +30204,7 @@ function buildYard(canvas) {
 			});
 			const chip = new Mesh(new BoxGeometry(.05 * scale, .14 * scale, .04 * scale), mat);
 			const a = i / n * Math.PI * 2;
-			chip.position.set(harePos.x + Math.cos(a) * .16, 1.08, harePos.z + Math.sin(a) * .16);
+			chip.position.set(harePos.x + Math.cos(a) * .16, groundY(harePos.x + Math.cos(a) * .16, harePos.z + Math.sin(a) * .16) + (1.08), harePos.z + Math.sin(a) * .16);
 			chip.rotation.z = a;
 			scene.add(chip);
 			embers.push({
@@ -30167,7 +30223,7 @@ function buildYard(canvas) {
 			depthWrite: false,
 			toneMapped: false
 		}));
-		mist.position.set(harePos.x, 1.05, harePos.z);
+		mist.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		scene.add(mist);
 		embers.push({
 			mesh: mist,
@@ -30188,7 +30244,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .06, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.06), harePos.z);
 		scene.add(ring);
 		rings.push({
 			g: ring,
@@ -30211,7 +30267,7 @@ function buildYard(canvas) {
 			crack.position.y = .03;
 			g.add(crack);
 		}
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparkles.push({
 			g,
@@ -30384,7 +30440,7 @@ function buildYard(canvas) {
 		g.add(new Mesh(new BoxGeometry(.05 * scale, .05 * scale, .55 * scale), mat));
 		const right = new Vector3(1, 0, 0).applyQuaternion(hero.root.quaternion);
 		const lean = heavy ? 0 : side;
-		g.position.set(harePos.x + right.x * lean * .22, heavy ? .72 : .58, harePos.z + right.z * lean * .22);
+		g.position.set(harePos.x + right.x * lean * .22, groundY(harePos.x + right.x * lean * .22, harePos.z + right.z * lean * .22) + (heavy ? .72 : .58), harePos.z + right.z * lean * .22);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -30401,7 +30457,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -30437,7 +30493,7 @@ function buildYard(canvas) {
 		const cross = new Mesh(new BoxGeometry(.72 * scale, .07, .07), mat);
 		cross.position.y = .72 * scale;
 		g.add(pillar, glow, cross);
-		g.position.set(harePos.x, .2, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.2), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -30453,7 +30509,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -30472,7 +30528,7 @@ function buildYard(canvas) {
 				toneMapped: false
 			}));
 			const a = n / 6 * Math.PI * 2;
-			mote.position.set(harePos.x + Math.cos(a) * .16, .45, harePos.z + Math.sin(a) * .16);
+			mote.position.set(harePos.x + Math.cos(a) * .16, groundY(harePos.x + Math.cos(a) * .16, harePos.z + Math.sin(a) * .16) + (.45), harePos.z + Math.sin(a) * .16);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -30498,7 +30554,7 @@ function buildYard(canvas) {
 			g.add(new Mesh(new BoxGeometry(.22, .04, .04), mat));
 			g.add(new Mesh(new BoxGeometry(.04, .22, .04), mat));
 			const a = i / 10 * Math.PI * 2;
-			g.position.set(px + Math.cos(a) * .45, 2.4 + i % 4 * .18, pz + Math.sin(a) * .45);
+			g.position.set(px + Math.cos(a) * .45, groundY(px + Math.cos(a) * .45, pz + Math.sin(a) * .45) + (2.4 + i % 4 * .18), pz + Math.sin(a) * .45);
 			scene.add(g);
 			sparkles.push({
 				g,
@@ -30520,7 +30576,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -30538,7 +30594,7 @@ function buildYard(canvas) {
 			toneMapped: false,
 			side: 2
 		}));
-		moon.position.set(px, 1.35, pz);
+		moon.position.set(px, groundY(px, pz) + (1.35), pz);
 		moon.rotation.x = .55;
 		moon.userData.ownGeo = true;
 		scene.add(moon);
@@ -30560,7 +30616,7 @@ function buildYard(canvas) {
 				toneMapped: false
 			}));
 			const a = i / 6 * Math.PI * 2;
-			mote.position.set(harePos.x, .72, harePos.z);
+			mote.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.72), harePos.z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -30588,7 +30644,7 @@ function buildYard(canvas) {
 			depthWrite: false,
 			toneMapped: false
 		}));
-		ring.position.set(harePos.x, dark ? .52 : .74, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (dark ? .52 : .74), harePos.z);
 		ring.rotation.x = Math.PI / 2;
 		ring.userData.ownGeo = true;
 		scene.add(ring);
@@ -30613,7 +30669,7 @@ function buildYard(canvas) {
 		});
 		g.add(new Mesh(new BoxGeometry(.05, .38, .05), mat));
 		g.add(new Mesh(new BoxGeometry(.38, .05, .05), mat));
-		g.position.set(harePos.x, 1.08, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.08), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -30629,7 +30685,7 @@ function buildYard(canvas) {
 				toneMapped: false
 			}));
 			const a = i / 3 * Math.PI * 2;
-			mote.position.set(harePos.x + Math.cos(a) * .1, 1.05, harePos.z + Math.sin(a) * .1);
+			mote.position.set(harePos.x + Math.cos(a) * .1, groundY(harePos.x + Math.cos(a) * .1, harePos.z + Math.sin(a) * .1) + (1.05), harePos.z + Math.sin(a) * .1);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -30659,7 +30715,7 @@ function buildYard(canvas) {
 			mote.userData.peak = .88;
 			g.add(mote);
 		}
-		g.position.set(atX == null ? px : atX, 0, atZ == null ? pz : atZ);
+		g.position.set(atX == null ? px : atX, groundY(atX == null ? px : atX, atZ == null ? pz : atZ), atZ == null ? pz : atZ);
 		g.rotation.y = yaw;
 		scene.add(g);
 		sparks.push({
@@ -30680,7 +30736,7 @@ function buildYard(canvas) {
 			const mote = makeElementMote(look2, i);
 			mote.scale.setScalar(1.3);
 			const a = i / 6 * Math.PI * 2;
-			mote.position.set(x, 1.05, z);
+			mote.position.set(x, groundY(x, z) + (1.05), z);
 			scene.add(mote);
 			embers.push({
 				mesh: mote,
@@ -30739,7 +30795,7 @@ function buildYard(canvas) {
 			});
 			const leaf = new Mesh(new BoxGeometry(.12, .02, .05), mat);
 			const a = i / 6 * Math.PI * 2;
-			leaf.position.set(harePos.x + Math.cos(a) * .15, 1.05, harePos.z + Math.sin(a) * .15);
+			leaf.position.set(harePos.x + Math.cos(a) * .15, groundY(harePos.x + Math.cos(a) * .15, harePos.z + Math.sin(a) * .15) + (1.05), harePos.z + Math.sin(a) * .15);
 			scene.add(leaf);
 			embers.push({
 				mesh: leaf,
@@ -30761,7 +30817,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		scene.add(ring);
 		rings.push({
 			g: ring,
@@ -30784,7 +30840,7 @@ function buildYard(canvas) {
 			toneMapped: false,
 			side: 2
 		}));
-		ring.position.set(harePos.x, 1.05, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		ring.rotation.y = yaw;
 		scene.add(ring);
 		rings.push({
@@ -30808,7 +30864,7 @@ function buildYard(canvas) {
 			band.rotation.y = i * .7;
 			g.add(band);
 		}
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparkles.push({
 			g,
@@ -30937,7 +30993,7 @@ function buildYard(canvas) {
 			}));
 			const a = i / count * Math.PI * 2;
 			const y0 = .7 + i % 3 * .25;
-			mote.position.set(harePos.x + Math.cos(a) * .18, y0, harePos.z + Math.sin(a) * .18);
+			mote.position.set(harePos.x + Math.cos(a) * .18, groundY(harePos.x + Math.cos(a) * .18, harePos.z + Math.sin(a) * .18) + (y0), harePos.z + Math.sin(a) * .18);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -30953,7 +31009,7 @@ function buildYard(canvas) {
 	function spawnBlindVeil() {
 		const veil = new Mesh(new SphereGeometry(.32, 12, 8), chantMat(1706530, .7));
 		veil.scale.set(1.3, .45, 1);
-		veil.position.set(harePos.x, 1.35, harePos.z);
+		veil.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.35), harePos.z);
 		veil.userData.ownGeo = true;
 		scene.add(veil);
 		embers.push({
@@ -30968,7 +31024,7 @@ function buildYard(canvas) {
 	}
 	function spawnSilenceGag() {
 		const ring = new Mesh(new TorusGeometry(.16, .02, 8, 16), chantMat(14221284, .9));
-		ring.position.set(harePos.x, 1.15, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		ring.lookAt(px, 1.15, pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
@@ -30983,7 +31039,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 4; i++) {
 			const mote = makeElementMote(ELEMENT_LOOK.wind, i);
 			const a = i / 4 * Math.PI * 2;
-			mote.position.set(harePos.x + Math.cos(a) * .12, 1.15, harePos.z + Math.sin(a) * .12);
+			mote.position.set(harePos.x + Math.cos(a) * .12, groundY(harePos.x + Math.cos(a) * .12, harePos.z + Math.sin(a) * .12) + (1.15), harePos.z + Math.sin(a) * .12);
 			scene.add(mote);
 			embers.push({
 				mesh: mote,
@@ -31004,7 +31060,7 @@ function buildYard(canvas) {
 		];
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new TorusGeometry(.28 + i * .1, .025, 8, 18), chantMat(colors[i], .85));
-			ring.position.set(harePos.x, .55 + i * .45, harePos.z);
+			ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.55 + i * .45), harePos.z);
 			ring.rotation.x = Math.PI / 2.6;
 			ring.userData.ownGeo = true;
 			scene.add(ring);
@@ -31019,7 +31075,7 @@ function buildYard(canvas) {
 	}
 	function spawnDarkColumn() {
 		const pillar = new Mesh(new CylinderGeometry(.22, .42, 2.6, 10, 1, true), chantMat(3807304, .7));
-		pillar.position.set(harePos.x, 1.3, harePos.z);
+		pillar.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.3), harePos.z);
 		pillar.userData.ownGeo = true;
 		scene.add(pillar);
 		embers.push({
@@ -31107,7 +31163,7 @@ function buildYard(canvas) {
 		ring.position.z = -2.5;
 		ring.userData.ownGeo = true;
 		g.add(ring);
-		g.position.set(px, .95, pz);
+		g.position.set(px, groundY(px, pz) + (.95), pz);
 		g.lookAt(harePos.x, .95, harePos.z);
 		scene.add(g);
 		sparks.push({
@@ -31246,7 +31302,7 @@ function buildYard(canvas) {
 		star.add(new Mesh(new BoxGeometry(.16, .035, .035), mat));
 		star.add(new Mesh(new BoxGeometry(.035, .16, .035), mat));
 		g.add(star);
-		g.position.set(harePos.x + side * .16, y, harePos.z);
+		g.position.set(harePos.x + side * .16, groundY(harePos.x + side * .16, harePos.z) + (y), harePos.z);
 		scene.add(g);
 		sparkles.push({
 			g,
@@ -31267,7 +31323,7 @@ function buildYard(canvas) {
 		});
 		const g = new Group();
 		g.add(new Mesh(new BoxGeometry(.5, .08, .28), mat));
-		g.position.set(harePos.x, 1.2, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.2), harePos.z);
 		g.rotation.y = yaw;
 		scene.add(g);
 		sparks.push({
@@ -31293,7 +31349,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .06, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.06), harePos.z);
 		scene.add(ring);
 		rings.push({
 			g: ring,
@@ -31310,7 +31366,7 @@ function buildYard(canvas) {
 			toneMapped: false,
 			side: 2
 		}));
-		ring.position.set(px, 1.05, pz);
+		ring.position.set(px, groundY(px, pz) + (1.05), pz);
 		ring.rotation.y = yaw;
 		scene.add(ring);
 		rings.push({
@@ -31356,7 +31412,7 @@ function buildYard(canvas) {
 			ring.position.y = .06;
 			g.add(ring);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31420,7 +31476,7 @@ function buildYard(canvas) {
 		ring.rotation.x = -Math.PI / 2;
 		ring.position.y = .06;
 		g.add(ring);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31495,7 +31551,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .75;
 		g.add(core);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31543,7 +31599,7 @@ function buildYard(canvas) {
 		column.userData.ownGeo = true;
 		column.userData.peak = .55;
 		g.add(column);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31614,7 +31670,7 @@ function buildYard(canvas) {
 		ring.userData.ownGeo = true;
 		ring.userData.peak = .9;
 		g.add(ring);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31661,7 +31717,7 @@ function buildYard(canvas) {
 		column.userData.ownGeo = true;
 		column.userData.peak = .6;
 		g.add(column);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31713,7 +31769,7 @@ function buildYard(canvas) {
 		const look2 = ELEMENT_LOOK[element] || ELEMENT_LOOK.earth;
 		const ring = new Mesh(new RingGeometry(.28, .92, 28), chantMat(look2.accent, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		weatherPut(ring, 1.8, 0, 0, 0, null, .35);
 		const n = element === "light" ? 5 : 12;
 		for (let i = 0; i < n; i++) {
@@ -31778,7 +31834,7 @@ function buildYard(canvas) {
 		}
 		if (element === "thunder") {
 			const bolt = new Mesh(new BoxGeometry(.05, 1.7, .05), chantMat(look2.accent, .95));
-			bolt.position.set(x, 1.05, z);
+			bolt.position.set(x, groundY(x, z) + (1.05), z);
 			weatherPut(bolt, .28, 0, 0, 0, null, .2);
 		}
 	}
@@ -31787,11 +31843,11 @@ function buildYard(canvas) {
 		const look2 = ELEMENT_LOOK.dark;
 		const ring = new Mesh(new RingGeometry(.34, .62, 6), chantMat(look2.accent, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		weatherPut(ring, 1.8, 0, 0, 0);
 		const inner = new Mesh(new RingGeometry(.12, .2, 5), chantMat(look2.color, .9));
 		inner.rotation.x = -Math.PI / 2;
-		inner.position.set(x, .07, z);
+		inner.position.set(x, groundY(x, z) + (.07), z);
 		weatherPut(inner, 1.8, 0, 0, 0);
 		for (let i = 0; i < 8; i++) {
 			const mote = makeElementMote(look2, i);
@@ -31829,7 +31885,7 @@ function buildYard(canvas) {
 			streak.userData.peak = .92;
 			g.add(streak);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31860,7 +31916,7 @@ function buildYard(canvas) {
 	function ninRing(x, z, inner, outer, color, life, grow) {
 		const ring = new Mesh(new RingGeometry(inner, outer, 28), chantMat(color, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -31874,17 +31930,17 @@ function buildYard(canvas) {
 	function spawnKatonLand(tier, x, z) {
 		const rad = tier === 3 ? .95 : tier === 2 ? .68 : .46;
 		const ball = new Mesh(new SphereGeometry(rad, 14, 10), chantMat(14703130, .72));
-		ball.position.set(x, 1.05, z);
+		ball.position.set(x, groundY(x, z) + (1.05), z);
 		ninPut(ball, .62, .12, 0, 0, .95, .25);
 		const core = new Mesh(new SphereGeometry(rad * .42, 10, 8), chantMat(16773570, .92));
-		core.position.set(x, 1.08, z);
+		core.position.set(x, groundY(x, z) + (1.08), z);
 		ninPut(core, .3, .04, 0, 0, 1.25, .15);
 		const n = tier === 3 ? 16 : tier === 2 ? 12 : 8;
 		const speed2 = 1.5 + tier * .5;
 		for (let i = 0; i < n; i++) {
 			const mote = makeElementMote(ELEMENT_LOOK.fire, i);
 			const a = i / n * Math.PI * 2;
-			mote.position.set(x, .75 + i % 3 * .2, z);
+			mote.position.set(x, groundY(x, z) + (.75 + i % 3 * .2), z);
 			mote.scale.setScalar(tier === 1 ? 1.45 : 1.9);
 			ninPut(mote, .7, .35 + i % 3 * .22, Math.cos(a) * speed2, Math.sin(a) * speed2, 0, .12);
 		}
@@ -31893,13 +31949,13 @@ function buildYard(canvas) {
 		const n = tier === 3 ? 16 : tier === 2 ? 12 : 8;
 		const len = tier === 3 ? .55 : tier === 2 ? .4 : .28;
 		const flash2 = new Mesh(new SphereGeometry(tier === 1 ? .2 : .32, 10, 8), chantMat(16055295, .9));
-		flash2.position.set(x, 1.1, z);
+		flash2.position.set(x, groundY(x, z) + (1.1), z);
 		ninPut(flash2, .26, 0, 0, 0, 1.45, .12);
 		const speed2 = 2.1 + tier * .45;
 		for (let i = 0; i < n; i++) {
 			const shard = new Mesh(new BoxGeometry(.035, .035, len), chantMat(i % 2 ? 16055295 : 10474751, .92));
 			const a = i / n * Math.PI * 2;
-			shard.position.set(x, 1.05, z);
+			shard.position.set(x, groundY(x, z) + (1.05), z);
 			shard.rotation.y = Math.PI / 2 - a;
 			ninPut(shard, .72, (i % 3 - 1) * .85, Math.cos(a) * speed2, Math.sin(a) * speed2, 0, .1);
 		}
@@ -31919,7 +31975,7 @@ function buildYard(canvas) {
 		funnel.userData.ownGeo = true;
 		funnel.userData.peak = .4;
 		g.add(funnel);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31931,7 +31987,7 @@ function buildYard(canvas) {
 		const n = tier === 3 ? 12 : tier === 2 ? 9 : 7;
 		for (let i = 0; i < n; i++) {
 			const streak = makeElementMote(ELEMENT_LOOK.wind, i);
-			streak.position.set(x, .3 + i % 4 * .28, z);
+			streak.position.set(x, groundY(x, z) + (.3 + i % 4 * .28), z);
 			streak.scale.setScalar(1.7);
 			ninPut(streak, .9, 1.2, 0, 0, 0, .16, {
 				x,
@@ -31958,7 +32014,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const dust = makeElementMote(ELEMENT_LOOK.earth, i);
 			const a = i / 8 * Math.PI * 2;
-			dust.position.set(x, .18, z);
+			dust.position.set(x, groundY(x, z) + (.18), z);
 			dust.scale.setScalar(1.25);
 			ninPut(dust, .65, .3, Math.cos(a) * 1.05, Math.sin(a) * 1.05, 0, .12);
 		}
@@ -31978,7 +32034,7 @@ function buildYard(canvas) {
 			bolt.userData.flicker = i + 1;
 			g.add(bolt);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -31988,13 +32044,13 @@ function buildYard(canvas) {
 			spin: bolts === 1 ? 0 : .4
 		});
 		const flash2 = new Mesh(new SphereGeometry(.36 + tier * .12, 12, 8), chantMat(15787775, .88));
-		flash2.position.set(x, 1.12, z);
+		flash2.position.set(x, groundY(x, z) + (1.12), z);
 		ninPut(flash2, .34, 0, 0, 0, 1.15, .16);
 		const n = 6 + tier * 2;
 		for (let i = 0; i < n; i++) {
 			const mote = makeElementMote(ELEMENT_LOOK.thunder, i);
 			const a = i / n * Math.PI * 2;
-			mote.position.set(x, 1.05, z);
+			mote.position.set(x, groundY(x, z) + (1.05), z);
 			mote.scale.setScalar(1.55);
 			ninPut(mote, .42, .15, Math.cos(a) * 2.6, Math.sin(a) * 2.6, 0, .06);
 		}
@@ -32019,7 +32075,7 @@ function buildYard(canvas) {
 		bulb.userData.ownGeo = true;
 		bulb.userData.peak = .65;
 		g.add(bulb);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32042,18 +32098,18 @@ function buildYard(canvas) {
 		const heavy = tier >= 2;
 		const cloud = new Mesh(new SphereGeometry(heavy ? .72 : .48, 14, 10), chantMat(1050126, .8));
 		cloud.scale.set(heavy ? 1.55 : 1.35, .68, 1.15);
-		cloud.position.set(x, 1.4, z);
+		cloud.position.set(x, groundY(x, z) + (1.4), z);
 		ninPut(cloud, 1.25, .05, 0, 0, 0, .4);
 		if (heavy) {
 			const brim = new Mesh(new SphereGeometry(.4, 10, 8), chantMat(2756664, .55));
 			brim.scale.set(1.7, .45, 1.3);
-			brim.position.set(x, 1.22, z);
+			brim.position.set(x, groundY(x, z) + (1.22), z);
 			ninPut(brim, 1.15, .02, 0, 0, 0, .35);
 		}
 		const n = heavy ? 10 : 6;
 		for (let i = 0; i < n; i++) {
 			const wisp = new Mesh(new SphereGeometry(.065, 6, 5), chantMat(i % 2 ? 5908600 : 1312784, .75));
-			wisp.position.set(x, 1.42, z);
+			wisp.position.set(x, groundY(x, z) + (1.42), z);
 			ninPut(wisp, 1.2, 0, 0, 0, 0, .3, {
 				x,
 				z,
@@ -32081,7 +32137,7 @@ function buildYard(canvas) {
 		tail.userData.ownGeo = true;
 		tail.userData.peak = .85;
 		g.add(tail);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32129,7 +32185,7 @@ function buildYard(canvas) {
 			spark.userData.flicker = i + 1;
 			g.add(spark);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32175,7 +32231,7 @@ function buildYard(canvas) {
 	}
 	function placeUtsuBar(bar, rad, t) {
 		const bob = Math.sin(t * 2.2 + bar.slot) * .035;
-		bar.mesh.position.set(px + Math.cos(bar.ang) * rad, .72 + bob, pz + Math.sin(bar.ang) * rad);
+		bar.mesh.position.set(px + Math.cos(bar.ang) * rad, groundY(px + Math.cos(bar.ang) * rad, pz + Math.sin(bar.ang) * rad) + (.72 + bob), pz + Math.sin(bar.ang) * rad);
 		bar.mesh.rotation.y = Math.PI / 2 - bar.ang;
 	}
 	function launchPlayerShadows(count) {
@@ -32183,7 +32239,7 @@ function buildYard(canvas) {
 		const n = Math.max(1, Math.min(4, count));
 		for (let i = 0; i < n; i++) utsuBars.push(makeUtsuBar(i, n));
 		const flash2 = new Mesh(new SphereGeometry(.28, 10, 8), chantMat(15269844, .4));
-		flash2.position.set(px, .95, pz);
+		flash2.position.set(px, groundY(px, pz) + (.95), pz);
 		ninPut(flash2, .2, 0, 0, 0, .65, .08);
 	}
 	const BLINK_RADIUS = 1.14;
@@ -32228,7 +32284,7 @@ function buildYard(canvas) {
 	function placeBlinkOrb(orb, rad, t) {
 		const ang = blinkSpin + orb.offset;
 		const bob = Math.sin(t * 2.6 + orb.offset * 2) * .07;
-		orb.mesh.position.set(px + Math.cos(ang) * rad, 1.18 + bob, pz + Math.sin(ang) * rad);
+		orb.mesh.position.set(px + Math.cos(ang) * rad, groundY(px + Math.cos(ang) * rad, pz + Math.sin(ang) * rad) + (1.18 + bob), pz + Math.sin(ang) * rad);
 	}
 	function steerBlinkOrb(orb, dt) {
 		const d = Math.atan2(Math.sin(orb.goal - orb.offset), Math.cos(orb.goal - orb.offset));
@@ -32359,7 +32415,7 @@ function buildYard(canvas) {
 	function placeManeuverOrb(orb, rad, t) {
 		const ang = maneuverSpin + orb.offset;
 		const bob = Math.sin(t * 2.4 + orb.offset * 2) * .06;
-		orb.mesh.position.set(px + Math.cos(ang) * rad, 1.02 + bob, pz + Math.sin(ang) * rad);
+		orb.mesh.position.set(px + Math.cos(ang) * rad, groundY(px + Math.cos(ang) * rad, pz + Math.sin(ang) * rad) + (1.02 + bob), pz + Math.sin(ang) * rad);
 		orb.mesh.rotation.y = t * .8 + orb.offset;
 	}
 	function steerManeuverOrb(orb, dt) {
@@ -32424,7 +32480,7 @@ function buildYard(canvas) {
 			return;
 		}
 		const flash2 = new Mesh(new SphereGeometry(.32, 10, 8), chantMat(15269844, .5));
-		flash2.position.set(x, 1, z);
+		flash2.position.set(x, groundY(x, z) + (1), z);
 		ninPut(flash2, .28, 0, 0, 0, .85, .12);
 		for (let i = 0; i < n; i++) {
 			const ghost = new Mesh(new BoxGeometry(.26, 1.22, .1), chantMat(i % 2 ? 14678228 : 9420678, .5));
@@ -32461,7 +32517,7 @@ function buildYard(canvas) {
 		sheen.userData.peak = .26;
 		sheen.userData.flicker = 1;
 		g.add(sheen);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32525,7 +32581,7 @@ function buildYard(canvas) {
 			ghost.userData.flicker = i + 1;
 			g.add(ghost);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32557,7 +32613,7 @@ function buildYard(canvas) {
 		band.userData.ownGeo = true;
 		band.userData.peak = .75;
 		g.add(band);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32589,7 +32645,7 @@ function buildYard(canvas) {
 		spike.userData.ownGeo = true;
 		spike.userData.peak = .9;
 		g.add(spike);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32600,7 +32656,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.2, .32, 24), chantMat(16774864, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -32631,7 +32687,7 @@ function buildYard(canvas) {
 		band.userData.ownGeo = true;
 		band.userData.peak = .8;
 		g.add(band);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32669,7 +32725,7 @@ function buildYard(canvas) {
 			chevron.userData.peak = .85;
 			g.add(chevron);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32709,7 +32765,7 @@ function buildYard(canvas) {
 		gap.userData.ownGeo = true;
 		gap.userData.peak = .7;
 		g.add(gap);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32752,7 +32808,7 @@ function buildYard(canvas) {
 			band.userData.peak = .8;
 			g.add(band);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32796,7 +32852,7 @@ function buildYard(canvas) {
 		spark.userData.peak = .95;
 		spark.userData.flicker = 3;
 		g.add(spark);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32822,7 +32878,7 @@ function buildYard(canvas) {
 			ring.userData.peak = .8;
 			g.add(ring);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32859,7 +32915,7 @@ function buildYard(canvas) {
 			ring.userData.peak = 1;
 			g.add(ring);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		const dx = camera.position.x - x;
 		const dz = camera.position.z - z;
 		g.rotation.y = Math.atan2(dx, dz);
@@ -32892,7 +32948,7 @@ function buildYard(canvas) {
 			ring.userData.peak = .85;
 			g.add(ring);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32948,7 +33004,7 @@ function buildYard(canvas) {
 			pillar.userData.peak = .95;
 			g.add(pillar);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -32993,7 +33049,7 @@ function buildYard(canvas) {
 			mist.userData.peak = .45;
 			g.add(mist);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33031,7 +33087,7 @@ function buildYard(canvas) {
 			ring.userData.peak = .85;
 			g.add(ring);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33067,7 +33123,7 @@ function buildYard(canvas) {
 			ring.userData.peak = .8;
 			g.add(ring);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33079,7 +33135,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const mote = new Mesh(new SphereGeometry(.035, 6, 5), chantMat(i % 2 ? 7023242 : 1706530, .9));
 			const a = i / 6 * Math.PI * 2;
-			mote.position.set(x, .55, z);
+			mote.position.set(x, groundY(x, z) + (.55), z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -33100,7 +33156,7 @@ function buildYard(canvas) {
 			});
 		}
 		const gleam = new Mesh(new SphereGeometry(.055, 8, 6), chantMat(16051412, .95));
-		gleam.position.set(x, .95, z);
+		gleam.position.set(x, groundY(x, z) + (.95), z);
 		gleam.userData.ownGeo = true;
 		scene.add(gleam);
 		embers.push({
@@ -33127,7 +33183,7 @@ function buildYard(canvas) {
 		water.userData.ownGeo = true;
 		water.userData.peak = .7;
 		g.add(water);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33170,7 +33226,7 @@ function buildYard(canvas) {
 			streak.userData.peak = .75;
 			g.add(streak);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33188,7 +33244,7 @@ function buildYard(canvas) {
 		halo.userData.ownGeo = true;
 		halo.userData.peak = .9;
 		g.add(halo);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33244,7 +33300,7 @@ function buildYard(canvas) {
 			feather.userData.peak = .88;
 			g.add(feather);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33264,7 +33320,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -33332,7 +33388,7 @@ function buildYard(canvas) {
 			band.userData.peak = .95;
 			g.add(band);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33352,7 +33408,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		seal.rotation.x = -Math.PI / 2;
-		seal.position.set(x, .07, z);
+		seal.position.set(x, groundY(x, z) + (.07), z);
 		seal.userData.ownGeo = true;
 		scene.add(seal);
 		rings.push({
@@ -33372,7 +33428,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -33392,7 +33448,7 @@ function buildYard(canvas) {
 			side: 2
 		}));
 		wardRing.rotation.x = -Math.PI / 2;
-		wardRing.position.set(x, .06, z);
+		wardRing.position.set(x, groundY(x, z) + (.06), z);
 		wardRing.userData.ownGeo = true;
 		scene.add(wardRing);
 		rings.push({
@@ -33503,7 +33559,7 @@ function buildYard(canvas) {
 				g.add(ring);
 			}
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33524,7 +33580,7 @@ function buildYard(canvas) {
 				side: 2
 			}));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .05, z);
+			ring.position.set(x, groundY(x, z) + (.05), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -33560,7 +33616,7 @@ function buildYard(canvas) {
 		rim.rotation.x = -Math.PI / 2;
 		rim.position.y = .05;
 		g.add(rim);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33614,7 +33670,7 @@ function buildYard(canvas) {
 		rim.rotation.x = -Math.PI / 2;
 		rim.position.y = .05;
 		g.add(rim);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33627,7 +33683,7 @@ function buildYard(canvas) {
 		const grow = 2.8 + (tier - 1) * .55;
 		const ring = new Mesh(new RingGeometry(.06, .16, 32), plainMat(14925946, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -33640,7 +33696,7 @@ function buildYard(canvas) {
 		});
 		const inner = new Mesh(new RingGeometry(.02, .07, 24), plainMat(16777215, .85));
 		inner.rotation.x = -Math.PI / 2;
-		inner.position.set(x, .07, z);
+		inner.position.set(x, groundY(x, z) + (.07), z);
 		inner.userData.ownGeo = true;
 		scene.add(inner);
 		rings.push({
@@ -33652,7 +33708,7 @@ function buildYard(canvas) {
 			spin: -1.1
 		});
 		const core = new Mesh(new SphereGeometry(.08, 10, 8), plainMat(16053460, .7));
-		core.position.set(x, .85, z);
+		core.position.set(x, groundY(x, z) + (.85), z);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -33669,7 +33725,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < n; i++) {
 			const mote = new Mesh(new SphereGeometry(.035, 6, 5), plainMat(i % 2 ? 16777215 : 14925946, .9));
 			const a = i / n * Math.PI * 2;
-			mote.position.set(x, .35 + i % 3 * .08, z);
+			mote.position.set(x, groundY(x, z) + (.35 + i % 3 * .08), z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -33686,7 +33742,7 @@ function buildYard(canvas) {
 	function spawnCuraLand(x, z) {
 		const ring = new Mesh(new RingGeometry(.03, .07, 40), plainMat(16775920, .92));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .04, z);
+		ring.position.set(x, groundY(x, z) + (.04), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -33699,7 +33755,7 @@ function buildYard(canvas) {
 		});
 		const inner = new Mesh(new RingGeometry(.015, .035, 32), plainMat(16777215, .8));
 		inner.rotation.x = -Math.PI / 2;
-		inner.position.set(x, .06, z);
+		inner.position.set(x, groundY(x, z) + (.06), z);
 		inner.userData.ownGeo = true;
 		scene.add(inner);
 		rings.push({
@@ -33711,7 +33767,7 @@ function buildYard(canvas) {
 			spin: -.4
 		});
 		const wash = new Mesh(new CylinderGeometry(.16, .34, .035, 20), plainMat(16053460, .5));
-		wash.position.set(x, .78, z);
+		wash.position.set(x, groundY(x, z) + (.78), z);
 		wash.userData.ownGeo = true;
 		scene.add(wash);
 		embers.push({
@@ -33728,7 +33784,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < n; i++) {
 			const feather = new Mesh(new BoxGeometry(.03, .18, .01), plainMat(i % 2 ? 16777215 : 14925946, .92));
 			const a = i / n * Math.PI * 2;
-			feather.position.set(x, .62, z);
+			feather.position.set(x, groundY(x, z) + (.62), z);
 			feather.rotation.z = Math.cos(a) * .55;
 			feather.rotation.x = Math.sin(a) * .35;
 			feather.userData.ownGeo = true;
@@ -33794,7 +33850,7 @@ function buildYard(canvas) {
 			flash2.position.y = 1.05;
 			g.add(flash2);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		const life = undead ? .32 : .58;
 		sparks.push({
@@ -33859,7 +33915,7 @@ function buildYard(canvas) {
 			ground.position.y = .06;
 			g.add(ground);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33872,7 +33928,7 @@ function buildYard(canvas) {
 		const two = name === "Banishga II";
 		const ring = new Mesh(new RingGeometry(.32, .44, 32), divineMat(16775920, .92));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -33885,7 +33941,7 @@ function buildYard(canvas) {
 		if (two) {
 			const outer = new Mesh(new RingGeometry(.5, .62, 36), divineMat(14925946, .78));
 			outer.rotation.x = -Math.PI / 2;
-			outer.position.set(x, .08, z);
+			outer.position.set(x, groundY(x, z) + (.08), z);
 			outer.userData.ownGeo = true;
 			scene.add(outer);
 			rings.push({
@@ -33897,7 +33953,7 @@ function buildYard(canvas) {
 			});
 		}
 		const spark = new Mesh(new SphereGeometry(two ? .16 : .11, 10, 8), divineMat(16777215, .95));
-		spark.position.set(x, .32, z);
+		spark.position.set(x, groundY(x, z) + (.32), z);
 		spark.userData.ownGeo = true;
 		scene.add(spark);
 		embers.push({
@@ -33947,7 +34003,7 @@ function buildYard(canvas) {
 		const bar = new Mesh(new BoxGeometry(.78, .06, .06), divineMat(16777215, .96));
 		bar.position.y = 1.15;
 		g.add(bar);
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -33987,7 +34043,7 @@ function buildYard(canvas) {
 		const bloom = new Mesh(new SphereGeometry(.16, 10, 8), divineMat(16777215, .45));
 		bloom.position.y = y;
 		g.add(bloom);
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34005,7 +34061,7 @@ function buildYard(canvas) {
 		const x = px;
 		const z = pz;
 		const core = new Mesh(new SphereGeometry(.42, 14, 10), divineMat(16777215, .95));
-		core.position.set(x, 1.15, z);
+		core.position.set(x, groundY(x, z) + (1.15), z);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -34019,7 +34075,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const column = new Mesh(new CylinderGeometry(.16, .62, 3.4, 14, 1, true), divineMat(16774864, .42));
-		column.position.set(x, 1.7, z);
+		column.position.set(x, groundY(x, z) + (1.7), z);
 		column.userData.ownGeo = true;
 		scene.add(column);
 		embers.push({
@@ -34035,7 +34091,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new RingGeometry(.2 + i * .08, .42 + i * .1, 32), divineMat(i === 1 ? 16774864 : 16777215, .82));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .06 + i * .03, z);
+			ring.position.set(x, groundY(x, z) + (.06 + i * .03), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -34086,22 +34142,22 @@ function buildYard(canvas) {
 			});
 		};
 		const shell = new Mesh(new SphereGeometry(.72, 12, 10), chantMat(look2.accent, .55));
-		shell.position.set(px, 1.15, pz);
+		shell.position.set(px, groundY(px, pz) + (1.15), pz);
 		put(shell, .45, 0, 0, 0, .7);
 		for (let i = 0; i < 8; i++) {
 			const a = i / 8 * Math.PI * 2;
 			const bolt = new Mesh(new CylinderGeometry(.045, .045, 2.15, 5), chantMat(i % 2 ? look2.accent : look2.color, .95));
-			bolt.position.set(px + Math.cos(a) * .42, 1.2, pz + Math.sin(a) * .42);
+			bolt.position.set(px + Math.cos(a) * .42, groundY(px + Math.cos(a) * .42, pz + Math.sin(a) * .42) + (1.2), pz + Math.sin(a) * .42);
 			bolt.rotation.z = Math.sin(a) * .45;
 			put(bolt, .5, .15, 0, 0, 0);
 			const mote = makeElementMote(look2, i);
-			mote.position.set(px + Math.cos(a) * .2, .35, pz + Math.sin(a) * .2);
+			mote.position.set(px + Math.cos(a) * .2, groundY(px + Math.cos(a) * .2, pz + Math.sin(a) * .2) + (.35), pz + Math.sin(a) * .2);
 			mote.scale.setScalar(2.2);
 			put(mote, .7, 1.6, Math.cos(a) * .35, Math.sin(a) * .35, 0);
 		}
 		const ring = new Mesh(new RingGeometry(.35, .85, 28), chantMat(look2.accent, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34132,7 +34188,7 @@ function buildYard(canvas) {
 		pupil.userData.ownGeo = true;
 		pupil.userData.peak = 1;
 		eye.add(pupil);
-		eye.position.set(x, 1.35, z);
+		eye.position.set(x, groundY(x, z) + (1.35), z);
 		eye.lookAt(harePos.x, 1.35, harePos.z);
 		scene.add(eye);
 		sparks.push({
@@ -34143,7 +34199,7 @@ function buildYard(canvas) {
 			spin: .2
 		});
 		const beam = new Mesh(new BoxGeometry(.04, .04, dist), chantMat(15761535, .55));
-		beam.position.set(x + dx * .5, 1.32, z + dz * .5);
+		beam.position.set(x + dx * .5, groundY(x + dx * .5, z + dz * .5) + (1.32), z + dz * .5);
 		beam.lookAt(harePos.x, 1.32, harePos.z);
 		beam.userData.ownGeo = true;
 		scene.add(beam);
@@ -34196,7 +34252,7 @@ function buildYard(canvas) {
 		cloak.userData.ownGeo = true;
 		cloak.userData.peak = .85;
 		g.add(cloak);
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34207,7 +34263,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.3, .72, 28), chantMat(14286816, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34240,7 +34296,7 @@ function buildYard(canvas) {
 			thread.userData.peak = .85;
 			g.add(thread);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34251,7 +34307,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.28, .7, 28), chantMat(12887146, .65));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34277,7 +34333,7 @@ function buildYard(canvas) {
 			streak.userData.peak = .9;
 			g.add(streak);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34287,7 +34343,7 @@ function buildYard(canvas) {
 			spin: 3.2
 		});
 		const flare = new Mesh(new SphereGeometry(.16, 10, 8), chantMat(16757850, .9));
-		flare.position.set(px, 1.15, pz);
+		flare.position.set(px, groundY(px, pz) + (1.15), pz);
 		flare.userData.ownGeo = true;
 		scene.add(flare);
 		embers.push({
@@ -34303,7 +34359,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const mote = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(i % 2 ? 16738858 : 8257440, .85));
 			const a = i / 5 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .18, 1.1, pz + Math.sin(a) * .18);
+			mote.position.set(px + Math.cos(a) * .18, groundY(px + Math.cos(a) * .18, pz + Math.sin(a) * .18) + (1.1), pz + Math.sin(a) * .18);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -34325,7 +34381,7 @@ function buildYard(canvas) {
 		const x = px;
 		const z = pz;
 		const core = new Mesh(new SphereGeometry(.28, 12, 8), divineMat(16774864, .85));
-		core.position.set(x, 1.15, z);
+		core.position.set(x, groundY(x, z) + (1.15), z);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -34340,7 +34396,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.28, .62, 28), divineMat(16774864, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34370,7 +34426,7 @@ function buildYard(canvas) {
 	function spawnSheepSleep(x, z) {
 		for (let i = 0; i < 3; i++) {
 			const mote = new Mesh(new SphereGeometry(.055, 8, 6), divineMat(16774864, .75));
-			mote.position.set(x + (i - 1) * .16, 1.35, z);
+			mote.position.set(x + (i - 1) * .16, groundY(x + (i - 1) * .16, z) + (1.35), z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -34393,7 +34449,7 @@ function buildYard(canvas) {
 		spawnHealingBreezeAt(px, pz);
 		const torus = new Mesh(new TorusGeometry(.55, .035, 8, 24), chantMat(14286816, .7));
 		torus.rotation.x = Math.PI / 2;
-		torus.position.set(px, .85, pz);
+		torus.position.set(px, groundY(px, pz) + (.85), pz);
 		torus.userData.ownGeo = true;
 		scene.add(torus);
 		sparks.push({
@@ -34437,7 +34493,7 @@ function buildYard(canvas) {
 			blade.userData.ownGeo = true;
 			g.add(blade);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34448,7 +34504,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.35, .7, 28), chantMat(12876602, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34487,7 +34543,7 @@ function buildYard(canvas) {
 		const len = Math.hypot(dx, dz) || 1;
 		const g = new Group();
 		const shaft = new Mesh(new BoxGeometry(.12, .7, .12), chantMat(12963286, .85));
-		shaft.position.set(px + dx / len * .45, 1.15, pz + dz / len * .45);
+		shaft.position.set(px + dx / len * .45, groundY(px + dx / len * .45, pz + dz / len * .45) + (1.15), pz + dz / len * .45);
 		shaft.rotation.z = -.5;
 		shaft.rotation.y = Math.atan2(dx, dz);
 		shaft.userData.ownGeo = true;
@@ -34501,7 +34557,7 @@ function buildYard(canvas) {
 			spin: 0
 		});
 		const flash = new Mesh(new SphereGeometry(.22, 10, 8), chantMat(16051412, .9));
-		flash.position.set(harePos.x, 1.15, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -34530,7 +34586,7 @@ function buildYard(canvas) {
 			band.userData.peak = .8;
 			g.add(band);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34542,7 +34598,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const mote = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 14206116 : 7031338, .85));
 			const a = i / 10 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .35, .2, pz + Math.sin(a) * .35);
+			mote.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (.2), pz + Math.sin(a) * .35);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -34580,7 +34636,7 @@ function buildYard(canvas) {
 	*/
 	function spawnPollen() {
 		const glow = new Mesh(new SphereGeometry(.32, 12, 8), chantMat(8257434, .45));
-		glow.position.set(px, 1.05, pz);
+		glow.position.set(px, groundY(px, pz) + (1.05), pz);
 		glow.userData.ownGeo = true;
 		scene.add(glow);
 		embers.push({
@@ -34596,7 +34652,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 12; i++) {
 			const mote = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(i % 2 ? 16774064 : 16777215, .9));
 			const a = i / 12 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .28, .55 + i % 4 * .12, pz + Math.sin(a) * .28);
+			mote.position.set(px + Math.cos(a) * .28, groundY(px + Math.cos(a) * .28, pz + Math.sin(a) * .28) + (.55 + i % 4 * .12), pz + Math.sin(a) * .28);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -34616,7 +34672,7 @@ function buildYard(canvas) {
 	*/
 	function spawnPowerAttack() {
 		const horn = new Mesh(new CylinderGeometry(.05, .16, .95, 6), chantMat(7031338, .95));
-		horn.position.set(harePos.x, 1.7, harePos.z);
+		horn.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.7), harePos.z);
 		horn.userData.ownGeo = true;
 		scene.add(horn);
 		embers.push({
@@ -34629,7 +34685,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const flash = new Mesh(new SphereGeometry(.34, 10, 8), chantMat(16051412, .9));
-		flash.position.set(harePos.x, 1.05, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -34644,7 +34700,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.2, .48, 20), chantMat(14206116, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34664,7 +34720,7 @@ function buildYard(canvas) {
 		const dz = harePos.z - pz;
 		const len = Math.hypot(dx, dz) || 1;
 		const branch = new Mesh(new BoxGeometry(.12, .08, .85), chantMat(4037178, .9));
-		branch.position.set(px + dx / len * .55, 1.05, pz + dz / len * .55);
+		branch.position.set(px + dx / len * .55, groundY(px + dx / len * .55, pz + dz / len * .55) + (1.05), pz + dz / len * .55);
 		branch.rotation.y = Math.atan2(dx, dz);
 		branch.rotation.z = .35;
 		branch.userData.ownGeo = true;
@@ -34680,7 +34736,7 @@ function buildYard(canvas) {
 		});
 		for (let i = 0; i < 4; i++) {
 			const leaf = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 11985802 : 4037178, .85));
-			leaf.position.set(harePos.x + (i - 1.5) * .08, 1.1, harePos.z);
+			leaf.position.set(harePos.x + (i - 1.5) * .08, groundY(harePos.x + (i - 1.5) * .08, harePos.z) + (1.1), harePos.z);
 			leaf.userData.ownGeo = true;
 			scene.add(leaf);
 			embers.push({
@@ -34708,7 +34764,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const side = (i - 2) * .12;
 			const seed = new Mesh(new SphereGeometry(.045, 6, 5), chantMat(i % 2 ? 15123818 : 9267762, .95));
-			seed.position.set(px - nz * side, 1.05 + (i % 2 ? .08 : -.04), pz + nx * side);
+			seed.position.set(px - nz * side, groundY(px - nz * side, pz + nx * side) + (1.05 + (i % 2 ? .08 : -.04)), pz + nx * side);
 			seed.userData.ownGeo = true;
 			scene.add(seed);
 			embers.push({
@@ -34728,7 +34784,7 @@ function buildYard(canvas) {
 				for (let i = 0; i < 7; i++) {
 					const mote = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(i % 2 ? 6989903 : 12886122, .8));
 					const a = i / 7 * Math.PI * 2;
-					mote.position.set(harePos.x + Math.cos(a) * .16, 1.15, harePos.z + Math.sin(a) * .16);
+					mote.position.set(harePos.x + Math.cos(a) * .16, groundY(harePos.x + Math.cos(a) * .16, harePos.z + Math.sin(a) * .16) + (1.15), harePos.z + Math.sin(a) * .16);
 					mote.userData.ownGeo = true;
 					scene.add(mote);
 					embers.push({
@@ -34764,7 +34820,7 @@ function buildYard(canvas) {
 			band.userData.peak = .9;
 			g.add(band);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -34788,7 +34844,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const spore = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 7031434 : 9293418, .85));
 			const a = i / 8 * Math.PI * 2;
-			spore.position.set(px + Math.cos(a) * .16, 1.05 + i % 3 * .08, pz + Math.sin(a) * .16);
+			spore.position.set(px + Math.cos(a) * .16, groundY(px + Math.cos(a) * .16, pz + Math.sin(a) * .16) + (1.05 + i % 3 * .08), pz + Math.sin(a) * .16);
 			spore.userData.ownGeo = true;
 			scene.add(spore);
 			embers.push({
@@ -34814,7 +34870,7 @@ function buildYard(canvas) {
 	function spawnHeadButt(knock) {
 		const helm = new Mesh(new SphereGeometry(.28, 10, 8), chantMat(9074016, .95));
 		helm.scale.set(1.15, .72, 1.15);
-		helm.position.set(harePos.x, 1.85, harePos.z);
+		helm.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.85), harePos.z);
 		helm.userData.ownGeo = true;
 		scene.add(helm);
 		embers.push({
@@ -34827,7 +34883,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const flash = new Mesh(new SphereGeometry(.3, 10, 8), chantMat(14206116, .85));
-		flash.position.set(harePos.x, 1.1, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.1), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -34843,7 +34899,7 @@ function buildYard(canvas) {
 		if (!knock) return;
 		const ring = new Mesh(new RingGeometry(.18, .46, 20), chantMat(14206116, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34869,7 +34925,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const side = (i - 2.5) * .14;
 			const feather = new Mesh(new BoxGeometry(.06, .02, .28), chantMat(i % 2 ? 16051412 : 12886122, .95));
-			feather.position.set(px - nz * side, 1.15 + (i % 2 ? .08 : -.04), pz + nx * side);
+			feather.position.set(px - nz * side, groundY(px - nz * side, pz + nx * side) + (1.15 + (i % 2 ? .08 : -.04)), pz + nx * side);
 			feather.rotation.y = yaw + (i - 2.5) * .18;
 			feather.userData.ownGeo = true;
 			scene.add(feather);
@@ -34890,7 +34946,7 @@ function buildYard(canvas) {
 				for (let i = 0; i < 6; i++) {
 					const mote = new Mesh(new SphereGeometry(.035, 6, 5), chantMat(i % 2 ? 9293418 : 7031434, .8));
 					const a = i / 6 * Math.PI * 2;
-					mote.position.set(harePos.x + Math.cos(a) * .14, 1.1, harePos.z + Math.sin(a) * .14);
+					mote.position.set(harePos.x + Math.cos(a) * .14, groundY(harePos.x + Math.cos(a) * .14, harePos.z + Math.sin(a) * .14) + (1.1), harePos.z + Math.sin(a) * .14);
 					mote.userData.ownGeo = true;
 					scene.add(mote);
 					embers.push({
@@ -34913,7 +34969,7 @@ function buildYard(canvas) {
 	function spawnSoporific() {
 		const ring = new Mesh(new RingGeometry(.35, .7, 28), chantMat(4860520, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -34926,7 +34982,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const mote = new Mesh(new SphereGeometry(.045, 6, 5), chantMat(i % 2 ? 7031434 : 13219583, .8));
 			const a = i / 8 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .35, .35, pz + Math.sin(a) * .35);
+			mote.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (.35), pz + Math.sin(a) * .35);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -34943,7 +34999,7 @@ function buildYard(canvas) {
 	function spawnSoporificSleep(x, z) {
 		for (let i = 0; i < 3; i++) {
 			const mote = new Mesh(new SphereGeometry(.06, 8, 6), chantMat(13219583, .75));
-			mote.position.set(x + (i - 1) * .16, 1.4, z);
+			mote.position.set(x + (i - 1) * .16, groundY(x + (i - 1) * .16, z) + (1.4), z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -34964,7 +35020,7 @@ function buildYard(canvas) {
 		const face = fwd(yaw);
 		for (let i = 0; i < 3; i++) {
 			const bit = new Mesh(new CylinderGeometry(.04, .07, .28, 6), chantMat(i === 1 ? 16054267 : 10406911, .92));
-			bit.position.set(harePos.x - face.x * (.15 + i * .16), 1.15, harePos.z - face.z * (.15 + i * .16));
+			bit.position.set(harePos.x - face.x * (.15 + i * .16), groundY(harePos.x - face.x * (.15 + i * .16), harePos.z - face.z * (.15 + i * .16)) + (1.15), harePos.z - face.z * (.15 + i * .16));
 			bit.rotation.x = Math.PI / 2;
 			bit.rotation.z = i * .9;
 			bit.userData.ownGeo = true;
@@ -34997,7 +35053,7 @@ function buildYard(canvas) {
 		spark.userData.ownGeo = true;
 		spark.userData.peak = .95;
 		g.add(shell, fuse, spark);
-		g.position.set(px, 1.35, pz);
+		g.position.set(px, groundY(px, pz) + (1.35), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -35016,7 +35072,7 @@ function buildYard(canvas) {
 	}
 	function spawnBombTossImpact(x, z) {
 		const flash = new Mesh(new SphereGeometry(.48, 12, 10), chantMat(16742938, .85));
-		flash.position.set(x, .9, z);
+		flash.position.set(x, groundY(x, z) + (.9), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -35052,7 +35108,7 @@ function buildYard(canvas) {
 	function spawnGrandSlam() {
 		const ring = new Mesh(new RingGeometry(.2, .45, 28), chantMat(15123818, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -35063,7 +35119,7 @@ function buildYard(canvas) {
 			hold: .05
 		});
 		const slam = new Mesh(new CylinderGeometry(.22, .28, .12, 8), chantMat(9074016, .9));
-		slam.position.set(px, .2, pz);
+		slam.position.set(px, groundY(px, pz) + (.2), pz);
 		slam.userData.ownGeo = true;
 		scene.add(slam);
 		embers.push({
@@ -35095,7 +35151,7 @@ function buildYard(canvas) {
 		pupil.userData.ownGeo = true;
 		pupil.userData.peak = 1;
 		eye.add(pupil);
-		eye.position.set(x, 1.35, z);
+		eye.position.set(x, groundY(x, z) + (1.35), z);
 		eye.lookAt(harePos.x, 1.35, harePos.z);
 		scene.add(eye);
 		sparks.push({
@@ -35106,7 +35162,7 @@ function buildYard(canvas) {
 			spin: .2
 		});
 		const beam = new Mesh(new BoxGeometry(.04, .04, dist), chantMat(16774864, .5));
-		beam.position.set(x + dx * .5, 1.32, z + dz * .5);
+		beam.position.set(x + dx * .5, groundY(x + dx * .5, z + dz * .5) + (1.32), z + dz * .5);
 		beam.lookAt(harePos.x, 1.32, harePos.z);
 		beam.userData.ownGeo = true;
 		scene.add(beam);
@@ -35131,7 +35187,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const slash = new Mesh(new BoxGeometry(.06, .02, .85), chantMat(i === 1 ? 16056312 : 10406911, .92));
 			const lift = (i - 1) * .16;
-			slash.position.set(px + dx * .35, 1.15 + lift, pz + dz * .35);
+			slash.position.set(px + dx * .35, groundY(px + dx * .35, pz + dz * .35) + (1.15 + lift), pz + dz * .35);
 			slash.lookAt(harePos.x, 1.05 + lift, harePos.z);
 			slash.userData.ownGeo = true;
 			scene.add(slash);
@@ -35153,7 +35209,7 @@ function buildYard(canvas) {
 	function spawnMysteriousLight() {
 		const ring = new Mesh(new RingGeometry(.25, .55, 28), chantMat(16056312, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -35166,7 +35222,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const mote = new Mesh(new SphereGeometry(.06, 8, 6), chantMat(i % 2 ? 16777215 : 8257472, .9));
 			const a = i / 8 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .35, .8, pz + Math.sin(a) * .35);
+			mote.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (.8), pz + Math.sin(a) * .35);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -35186,7 +35242,7 @@ function buildYard(canvas) {
 	*/
 	function spawnTerrorTouch(weakened) {
 		const hand = new Mesh(new BoxGeometry(.28, .08, .42), chantMat(13219583, .85));
-		hand.position.set(harePos.x, 1.15, harePos.z);
+		hand.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		hand.rotation.z = .4;
 		hand.userData.ownGeo = true;
 		scene.add(hand);
@@ -35202,7 +35258,7 @@ function buildYard(canvas) {
 		if (!weakened) return;
 		for (let i = 0; i < 3; i++) {
 			const mark = new Mesh(new BoxGeometry(.18, .03, .03), chantMat(12868154, .9));
-			mark.position.set(harePos.x, 1.4 - i * .14, harePos.z);
+			mark.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.4 - i * .14), harePos.z);
 			mark.rotation.z = .6;
 			mark.userData.ownGeo = true;
 			scene.add(mark);
@@ -35225,7 +35281,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const bubble = new Mesh(new SphereGeometry(.07, 8, 6), chantMat(i % 2 ? 8244842 : 7031434, .85));
 			const a = i / 10 * Math.PI * 2;
-			bubble.position.set(px + Math.cos(a) * .45, .35, pz + Math.sin(a) * .45);
+			bubble.position.set(px + Math.cos(a) * .45, groundY(px + Math.cos(a) * .45, pz + Math.sin(a) * .45) + (.35), pz + Math.sin(a) * .45);
 			bubble.userData.ownGeo = true;
 			scene.add(bubble);
 			embers.push({
@@ -35240,7 +35296,7 @@ function buildYard(canvas) {
 		}
 		const shell = new Mesh(new RingGeometry(.3, .55, 24), chantMat(8244842, .7));
 		shell.rotation.x = -Math.PI / 2;
-		shell.position.set(px, .05, pz);
+		shell.position.set(px, groundY(px, pz) + (.05), pz);
 		shell.userData.ownGeo = true;
 		scene.add(shell);
 		rings.push({
@@ -35253,7 +35309,7 @@ function buildYard(canvas) {
 		if (!poisoned) return;
 		for (let i = 0; i < 5; i++) {
 			const drip = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(9293418, .9));
-			drip.position.set(harePos.x + (i - 2) * .08, 1.3, harePos.z);
+			drip.position.set(harePos.x + (i - 2) * .08, groundY(harePos.x + (i - 2) * .08, harePos.z) + (1.3), harePos.z);
 			drip.userData.ownGeo = true;
 			scene.add(drip);
 			embers.push({
@@ -35274,7 +35330,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new RingGeometry(.2, .42, 28), chantMat(i === 1 ? 16051412 : 12886122, .75));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(px, .08 + i * .04, pz);
+			ring.position.set(px, groundY(px, pz) + (.08 + i * .04), pz);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -35288,7 +35344,7 @@ function buildYard(canvas) {
 	}
 	function spawnSoundMark(x, z) {
 		const mote = new Mesh(new OctahedronGeometry(.1, 0), chantMat(16051412, .9));
-		mote.position.set(x, 1.55, z);
+		mote.position.set(x, groundY(x, z) + (1.55), z);
 		mote.userData.ownGeo = true;
 		scene.add(mote);
 		embers.push({
@@ -35313,7 +35369,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .95;
 		g.add(beam, core);
-		g.position.set(px, 1.15, pz);
+		g.position.set(px, groundY(px, pz) + (1.15), pz);
 		g.lookAt(harePos.x, 1.05, harePos.z);
 		scene.add(g);
 		sparks.push({
@@ -35333,7 +35389,7 @@ function buildYard(canvas) {
 	}
 	function spawnDeathRayImpact(x, z) {
 		const flash = new Mesh(new SphereGeometry(.32, 12, 10), chantMat(2756664, .85));
-		flash.position.set(x, 1.05, z);
+		flash.position.set(x, groundY(x, z) + (1.05), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -35349,7 +35405,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const shard = new Mesh(new BoxGeometry(.22, .02, .02), chantMat(i % 2 ? 12868863 : 2756664, .9));
 			const a = i / 6 * Math.PI * 2;
-			shard.position.set(x, 1.05, z);
+			shard.position.set(x, groundY(x, z) + (1.05), z);
 			shard.rotation.y = -a;
 			shard.userData.ownGeo = true;
 			scene.add(shard);
@@ -35369,7 +35425,7 @@ function buildYard(canvas) {
 	*/
 	function spawnSmiteOfRage() {
 		const slash = new Mesh(new BoxGeometry(.12, .05, 1.25), chantMat(12868154, .95));
-		slash.position.set(harePos.x, 1.15, harePos.z);
+		slash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		slash.rotation.y = .7;
 		slash.rotation.z = -.85;
 		slash.userData.ownGeo = true;
@@ -35384,7 +35440,7 @@ function buildYard(canvas) {
 			hold: .04
 		});
 		const flash = new Mesh(new SphereGeometry(.18, 8, 6), chantMat(16051412, .8));
-		flash.position.set(harePos.x, 1.05, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -35412,7 +35468,7 @@ function buildYard(canvas) {
 		const uz = dz / len;
 		for (let i = 0; i < 10; i++) {
 			const blob = new Mesh(new SphereGeometry(i % 2 ? .07 : .05, 8, 6), chantMat(i % 2 ? 9293418 : 7031434, .9));
-			blob.position.set(x, .7 + i % 4 * .12, z);
+			blob.position.set(x, groundY(x, z) + (.7 + i % 4 * .12), z);
 			blob.userData.ownGeo = true;
 			scene.add(blob);
 			embers.push({
@@ -35445,7 +35501,7 @@ function buildYard(canvas) {
 		const look = sambaCastColors(name);
 		const ring = new Mesh(new RingGeometry(.32, .72, 28), chantMat(look.ring, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -35457,7 +35513,7 @@ function buildYard(canvas) {
 		});
 		const hoop = new Mesh(new TorusGeometry(.38, .03, 8, 22), chantMat(look.mote, .85));
 		hoop.rotation.x = Math.PI / 2;
-		hoop.position.set(x, .85, z);
+		hoop.position.set(x, groundY(x, z) + (.85), z);
 		hoop.userData.ownGeo = true;
 		scene.add(hoop);
 		embers.push({
@@ -35509,7 +35565,7 @@ function buildYard(canvas) {
 		if (fx.kind === "haste") {
 			const ring = new Mesh(new RingGeometry(.22, .46, 22), chantMat(16773826, .9));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(actor.x, .08, actor.z);
+			ring.position.set(actor.x, groundY(actor.x, actor.z) + (.08), actor.z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -35539,7 +35595,7 @@ function buildYard(canvas) {
 		}
 		if (fx.kind === "aspir-dry") {
 			const flick = new Mesh(new SphereGeometry(.16, 8, 6), chantMat(8014548, .75));
-			flick.position.set(foe.x, 1.15, foe.z);
+			flick.position.set(foe.x, groundY(foe.x, foe.z) + (1.15), foe.z);
 			flick.userData.ownGeo = true;
 			scene.add(flick);
 			embers.push({
@@ -35559,7 +35615,7 @@ function buildYard(canvas) {
 		const secondary = aspir ? 13219583 : 4831338;
 		for (let i = 0; i < 8; i++) {
 			const mote = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? primary : secondary, .92));
-			mote.position.set(foe.x, .7 + i % 3 * .14, foe.z);
+			mote.position.set(foe.x, groundY(foe.x, foe.z) + (.7 + i % 3 * .14), foe.z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -35582,7 +35638,7 @@ function buildYard(canvas) {
 		const inner = divine ? .55 : .36;
 		const ring = new Mesh(new RingGeometry(inner, inner + (divine ? .34 : .2), 28), chantMat(color, .92));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -35594,7 +35650,7 @@ function buildYard(canvas) {
 		});
 		const hoop = new Mesh(new TorusGeometry(divine ? .62 : .42, .028, 8, 24), chantMat(healing ? 16777215 : 15984336, .9));
 		hoop.rotation.y = .4;
-		hoop.position.set(x, .95, z);
+		hoop.position.set(x, groundY(x, z) + (.95), z);
 		hoop.userData.ownGeo = true;
 		scene.add(hoop);
 		embers.push({
@@ -35634,7 +35690,7 @@ function buildYard(canvas) {
 				const ribbon = new Mesh(new TorusGeometry(.16 + i * .04, .012, 6, 16), chantMat(i % 2 ? 16773826 : 16777215, .88));
 				ribbon.rotation.x = Math.PI / 2 + i * .4;
 				ribbon.rotation.z = i * .5;
-				ribbon.position.set(at.x, .7 + i * .12, at.z);
+				ribbon.position.set(at.x, groundY(at.x, at.z) + (.7 + i * .12), at.z);
 				ribbon.userData.ownGeo = true;
 				scene.add(ribbon);
 				embers.push({
@@ -35655,7 +35711,7 @@ function buildYard(canvas) {
 		const inner = .22 + tier * .05 + (divine ? .12 : 0);
 		const ring = new Mesh(new RingGeometry(inner, inner + .14, 24), chantMat(13936214, .9));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(at.x, .08, at.z);
+		ring.position.set(at.x, groundY(at.x, at.z) + (.08), at.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -35691,7 +35747,7 @@ function buildYard(canvas) {
 		const color = box ? 12886122 : stutter ? 16051412 : 10406911;
 		const ring = new Mesh(new RingGeometry(box ? .28 : .18, box ? .55 : .4, box ? 4 : 20), chantMat(color, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -35726,7 +35782,7 @@ function buildYard(canvas) {
 		if (spectral) {
 			const ring = new Mesh(new RingGeometry(.36, .78, 28), chantMat(7031508, .9));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .06, z);
+			ring.position.set(x, groundY(x, z) + (.06), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -35737,7 +35793,7 @@ function buildYard(canvas) {
 				hold: .22
 			});
 			const veil = new Mesh(new SphereGeometry(.7, 12, 8), chantMat(2758728, .42));
-			veil.position.set(x, 1.05, z);
+			veil.position.set(x, groundY(x, z) + (1.05), z);
 			veil.userData.ownGeo = true;
 			scene.add(veil);
 			embers.push({
@@ -35754,7 +35810,7 @@ function buildYard(canvas) {
 				const ribbon = new Mesh(new TorusGeometry(.22 + i * .06, .012, 6, 18), chantMat(i % 2 ? 13219583 : 7031508, .88));
 				ribbon.rotation.x = Math.PI / 2.4;
 				ribbon.rotation.z = i * .7;
-				ribbon.position.set(x, .45 + i * .16, z);
+				ribbon.position.set(x, groundY(x, z) + (.45 + i * .16), z);
 				ribbon.userData.ownGeo = true;
 				scene.add(ribbon);
 				embers.push({
@@ -35775,7 +35831,7 @@ function buildYard(canvas) {
 		const inner = second ? .48 : .28;
 		const ring = new Mesh(new RingGeometry(inner, inner + (second ? .36 : .22), 24), chantMat(color, .88));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .05, z);
+		ring.position.set(x, groundY(x, z) + (.05), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36027,7 +36083,7 @@ function buildYard(canvas) {
 		if (name === "Animated Flourish") {
 			const ring = new Mesh(new RingGeometry(.28, .62, 24), chantMat(12859962, .9));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .06, z);
+			ring.position.set(x, groundY(x, z) + (.06), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -36039,7 +36095,7 @@ function buildYard(canvas) {
 			});
 			for (let i = 0; i < 6; i++) {
 				const mote = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(i % 2 ? 16765120 : 12859962, .92));
-				mote.position.set(x, 1.15, z);
+				mote.position.set(x, groundY(x, z) + (1.15), z);
 				mote.userData.ownGeo = true;
 				scene.add(mote);
 				embers.push({
@@ -36057,7 +36113,7 @@ function buildYard(canvas) {
 		if (name === "Desperate Flourish") {
 			const ring = new Mesh(new RingGeometry(.2, .55, 20), chantMat(9067058, .85));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .05, z);
+			ring.position.set(x, groundY(x, z) + (.05), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -36070,7 +36126,7 @@ function buildYard(canvas) {
 			for (let i = 0; i < 7; i++) {
 				const dust = new Mesh(new SphereGeometry(.045, 6, 5), chantMat(i % 2 ? 12886122 : 6963248, .8));
 				const a = i / 7 * Math.PI;
-				dust.position.set(x, .12, z);
+				dust.position.set(x, groundY(x, z) + (.12), z);
 				dust.userData.ownGeo = true;
 				scene.add(dust);
 				embers.push({
@@ -36087,7 +36143,7 @@ function buildYard(canvas) {
 		}
 		if (name === "Violent Flourish") {
 			const slash = new Mesh(new BoxGeometry(.08, .08, .85), chantMat(16774866, .92));
-			slash.position.set(x, 1.15, z);
+			slash.position.set(x, groundY(x, z) + (1.15), z);
 			slash.userData.ownGeo = true;
 			scene.add(slash);
 			embers.push({
@@ -36106,7 +36162,7 @@ function buildYard(canvas) {
 			for (let i = 0; i < 3; i++) {
 				const ring = new Mesh(new TorusGeometry(.28 + i * .08, .018, 6, 18), chantMat(14927226, .9));
 				ring.rotation.x = Math.PI / 2;
-				ring.position.set(x, .45 + i * .28, z);
+				ring.position.set(x, groundY(x, z) + (.45 + i * .28), z);
 				ring.userData.ownGeo = true;
 				scene.add(ring);
 				embers.push({
@@ -36124,7 +36180,7 @@ function buildYard(canvas) {
 		}
 		if (name === "Wild Flourish") {
 			const arc = new Mesh(new TorusGeometry(.7, .03, 8, 20, Math.PI * 1.1), chantMat(13219583, .9));
-			arc.position.set(x, 1.15, z);
+			arc.position.set(x, groundY(x, z) + (1.15), z);
 			arc.rotation.y = .4;
 			arc.userData.ownGeo = true;
 			scene.add(arc);
@@ -36168,7 +36224,7 @@ function buildYard(canvas) {
 		const at = fx.kind === "reverse" || fx.kind === "building" ? flourishActorAt(fx.who) : flourishFoeAt(fx.foe);
 		if (fx.kind === "animated") {
 			const halo = new Mesh(new TorusGeometry(.18, .03, 8, 16), chantMat(13781562, .95));
-			halo.position.set(at.x, 1.55, at.z);
+			halo.position.set(at.x, groundY(at.x, at.z) + (1.55), at.z);
 			halo.rotation.x = Math.PI / 2;
 			halo.userData.ownGeo = true;
 			scene.add(halo);
@@ -36188,7 +36244,7 @@ function buildYard(canvas) {
 			if (fx.hit) spawnGravityLand(at.x, at.z);
 			else for (let i = 0; i < 4; i++) {
 				const dust = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(9067058, .6));
-				dust.position.set(at.x, .4, at.z);
+				dust.position.set(at.x, groundY(at.x, at.z) + (.4), at.z);
 				dust.userData.ownGeo = true;
 				scene.add(dust);
 				embers.push({
@@ -36209,7 +36265,7 @@ function buildYard(canvas) {
 				if (fx.amount > 0) spawnFloater(String(fx.amount), false, at.x, 1.55, at.z, "#f4ecd4");
 			} else {
 				const spark = new Mesh(new SphereGeometry(.08, 6, 5), chantMat(16774866, .7));
-				spark.position.set(at.x, 1.1, at.z);
+				spark.position.set(at.x, groundY(at.x, at.z) + (1.1), at.z);
 				spark.userData.ownGeo = true;
 				scene.add(spark);
 				embers.push({
@@ -36232,7 +36288,7 @@ function buildYard(canvas) {
 		if (fx.kind === "building") return;
 		if (fx.fizzle) {
 			const puff = new Mesh(new SphereGeometry(.16, 8, 6), chantMat(9077880, .45));
-			puff.position.set(at.x, 1.05, at.z);
+			puff.position.set(at.x, groundY(at.x, at.z) + (1.05), at.z);
 			puff.userData.ownGeo = true;
 			scene.add(puff);
 			embers.push({
@@ -36251,7 +36307,7 @@ function buildYard(canvas) {
 			for (let i = 0; i < 5; i++) {
 				const shard = new Mesh(new BoxGeometry(.04, .04, .16), chantMat(CHAINBOUND_COLORS[i], .7));
 				const a = i / 5 * Math.PI * 2;
-				shard.position.set(at.x, 1.1, at.z);
+				shard.position.set(at.x, groundY(at.x, at.z) + (1.1), at.z);
 				shard.userData.ownGeo = true;
 				scene.add(shard);
 				embers.push({
@@ -36269,7 +36325,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const ring = new Mesh(new TorusGeometry(.34 + i * .06, .016, 6, 18), chantMat(CHAINBOUND_COLORS[i], .9));
 			ring.rotation.x = Math.PI / 2;
-			ring.position.set(at.x, .55 + i * .18, at.z);
+			ring.position.set(at.x, groundY(at.x, at.z) + (.55 + i * .18), at.z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			embers.push({
@@ -36325,7 +36381,7 @@ function buildYard(canvas) {
 				scene.add(g);
 				chainboundAura.set(body.tag, g);
 			}
-			g.position.set(body.x, .55, body.z);
+			g.position.set(body.x, groundY(body.x, body.z) + (.55), body.z);
 			g.rotation.y = t * .7;
 		}
 	}
@@ -36357,7 +36413,7 @@ function buildYard(canvas) {
 			const span = .16;
 			const along = -((n - 1) * span) / 2 + i * span;
 			const bob = Math.sin(t * 3 + i * .65) * .02;
-			mesh.position.set(px + rx * along, .14 + bob, pz + rz * along);
+			mesh.position.set(px + rx * along, groundY(px + rx * along, pz + rz * along) + (.14 + bob), pz + rz * along);
 			mesh.scale.setScalar(1 + Math.sin(t * 2.2 + i) * .06);
 		}
 	}
@@ -36371,7 +36427,7 @@ function buildYard(canvas) {
 		if (sluggish) {
 			const press = new Mesh(new TorusGeometry(.46, .05, 8, 22), chantMat(color, .85));
 			press.rotation.x = Math.PI / 2;
-			press.position.set(at.x, .08, at.z);
+			press.position.set(at.x, groundY(at.x, at.z) + (.08), at.z);
 			press.userData.ownGeo = true;
 			scene.add(press);
 			embers.push({
@@ -36386,7 +36442,7 @@ function buildYard(canvas) {
 			});
 		} else if (weakened) {
 			const crack = new Mesh(new TorusGeometry(.34, .02, 8, 16, Math.PI * 1.2), chantMat(color, .9));
-			crack.position.set(at.x, 1.05, at.z);
+			crack.position.set(at.x, groundY(at.x, at.z) + (1.05), at.z);
 			crack.userData.ownGeo = true;
 			scene.add(crack);
 			embers.push({
@@ -36402,7 +36458,7 @@ function buildYard(canvas) {
 		} else {
 			const ring = new Mesh(new RingGeometry(.22, .46, 22), chantMat(color, .85));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(at.x, .06, at.z);
+			ring.position.set(at.x, groundY(at.x, at.z) + (.06), at.z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -36451,7 +36507,7 @@ function buildYard(canvas) {
 		tip.userData.ownGeo = true;
 		tip.userData.peak = .92;
 		g.add(left, right, tip);
-		g.position.set(px, 1.25, pz);
+		g.position.set(px, groundY(px, pz) + (1.25), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -36471,7 +36527,7 @@ function buildYard(canvas) {
 	}
 	function spawnKissImpact(x, z, stolen) {
 		const flash = new Mesh(new SphereGeometry(.22, 10, 8), chantMat(7023242, .8));
-		flash.position.set(x, 1.05, z);
+		flash.position.set(x, groundY(x, z) + (1.05), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -36492,7 +36548,7 @@ function buildYard(canvas) {
 		const uz = dz / len;
 		for (let i = 0; i < 8; i++) {
 			const mote = new Mesh(new SphereGeometry(i % 2 ? .06 : .04, 8, 6), chantMat(i % 2 ? 11566335 : 16747220, .9));
-			mote.position.set(x, .85 + i % 3 * .1, z);
+			mote.position.set(x, groundY(x, z) + (.85 + i % 3 * .1), z);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -36526,7 +36582,7 @@ function buildYard(canvas) {
 			jag.userData.peak = .9;
 			g.add(jag);
 		}
-		g.position.set(px, 1.2, pz);
+		g.position.set(px, groundY(px, pz) + (1.2), pz);
 		g.lookAt(harePos.x, 1.05, harePos.z);
 		scene.add(g);
 		sparks.push({
@@ -36546,7 +36602,7 @@ function buildYard(canvas) {
 	}
 	function spawnBlitzImpact(x, z) {
 		const flash = new Mesh(new SphereGeometry(.28, 10, 8), chantMat(16054271, .9));
-		flash.position.set(x, 1.05, z);
+		flash.position.set(x, groundY(x, z) + (1.05), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -36562,7 +36618,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const spark = new Mesh(new BoxGeometry(.28, .02, .02), chantMat(i % 2 ? 16774824 : 8308991, .95));
 			const a = i / 6 * Math.PI * 2;
-			spark.position.set(x, 1.05, z);
+			spark.position.set(x, groundY(x, z) + (1.05), z);
 			spark.rotation.y = -a;
 			spark.rotation.z = i % 2 ? .4 : -.4;
 			spark.userData.ownGeo = true;
@@ -36586,7 +36642,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 12; i++) {
 			const puff = new Mesh(new SphereGeometry(.16 + i % 3 * .04, 8, 6), chantMat(i % 2 ? 9083450 : 12891226, .45));
 			const a = i / 12 * Math.PI * 2;
-			puff.position.set(px + Math.cos(a) * .35, .28 + i % 3 * .08, pz + Math.sin(a) * .35);
+			puff.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (.28 + i % 3 * .08), pz + Math.sin(a) * .35);
 			puff.userData.ownGeo = true;
 			scene.add(puff);
 			embers.push({
@@ -36601,7 +36657,7 @@ function buildYard(canvas) {
 		}
 		const ring = new Mesh(new RingGeometry(.25, .48, 24), chantMat(5917224, .55));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36619,7 +36675,7 @@ function buildYard(canvas) {
 	function spawnGeistWall() {
 		const ring = new Mesh(new RingGeometry(.3, .5, 28), chantMat(4857960, .55));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36632,7 +36688,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const a = i / 10 * Math.PI * 2;
 			const panel = new Mesh(new BoxGeometry(.08, 1.15, .04), chantMat(i % 2 ? 7023242 : 2756664, .85));
-			panel.position.set(px + Math.cos(a) * .45, .7, pz + Math.sin(a) * .45);
+			panel.position.set(px + Math.cos(a) * .45, groundY(px + Math.cos(a) * .45, pz + Math.sin(a) * .45) + (.7), pz + Math.sin(a) * .45);
 			panel.rotation.y = -a;
 			panel.userData.ownGeo = true;
 			scene.add(panel);
@@ -36663,7 +36719,7 @@ function buildYard(canvas) {
 		pupil.userData.ownGeo = true;
 		pupil.userData.peak = 1;
 		eye.add(iris, pupil);
-		eye.position.set(px, 1.45, pz);
+		eye.position.set(px, groundY(px, pz) + (1.45), pz);
 		eye.lookAt(px + face.x, 1.45, pz + face.z);
 		scene.add(eye);
 		sparks.push({
@@ -36677,7 +36733,7 @@ function buildYard(canvas) {
 			const side = (i - 3) * .22;
 			const along = .7 + i % 3 * .45;
 			const beam = new Mesh(new BoxGeometry(.04, .04, .7), chantMat(8308991, .7));
-			beam.position.set(px + face.x * along + rx * side, 1.2, pz + face.z * along + rz * side);
+			beam.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (1.2), pz + face.z * along + rz * side);
 			beam.lookAt(px + face.x * (along + 1) + rx * side, 1.15, pz + face.z * (along + 1) + rz * side);
 			beam.userData.ownGeo = true;
 			scene.add(beam);
@@ -36694,7 +36750,7 @@ function buildYard(canvas) {
 		if (!weakened) return;
 		for (let i = 0; i < 3; i++) {
 			const mark = new Mesh(new BoxGeometry(.2, .03, .03), chantMat(12868154, .9));
-			mark.position.set(harePos.x, 1.45 - i * .16, harePos.z);
+			mark.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.45 - i * .16), harePos.z);
 			mark.rotation.z = .6;
 			mark.userData.ownGeo = true;
 			scene.add(mark);
@@ -36717,7 +36773,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const a = i / 6 * Math.PI * 2;
 			const slash = new Mesh(new TorusGeometry(.42, .025, 6, 16, Math.PI * .7), chantMat(i % 2 ? 12868154 : 9255474, .9));
-			slash.position.set(px, 1.05, pz);
+			slash.position.set(px, groundY(px, pz) + (1.05), pz);
 			slash.rotation.y = a;
 			slash.rotation.z = .8;
 			slash.userData.ownGeo = true;
@@ -36734,7 +36790,7 @@ function buildYard(canvas) {
 		}
 		const ring = new Mesh(new RingGeometry(.25, .45, 24), chantMat(9255474, .6));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36750,7 +36806,7 @@ function buildYard(canvas) {
 		const dist = Math.hypot(dx, dz) || 1;
 		for (let i = 0; i < 8; i++) {
 			const orb = new Mesh(new SphereGeometry(.06, 8, 6), chantMat(i % 2 ? 12868154 : 16731479, .9));
-			orb.position.set(harePos.x, .9 + i % 3 * .12, harePos.z);
+			orb.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.9 + i % 3 * .12), harePos.z);
 			orb.userData.ownGeo = true;
 			scene.add(orb);
 			embers.push({
@@ -36783,7 +36839,7 @@ function buildYard(canvas) {
 		flash.userData.ownGeo = true;
 		flash.userData.peak = .7;
 		eye.add(iris, pupil, flash);
-		eye.position.set(px, 1.5, pz);
+		eye.position.set(px, groundY(px, pz) + (1.5), pz);
 		eye.lookAt(px + face.x, 1.5, pz + face.z);
 		scene.add(eye);
 		sparks.push({
@@ -36797,7 +36853,7 @@ function buildYard(canvas) {
 			const side = (i - 2) * .16;
 			const along = .8;
 			const beam = new Mesh(new BoxGeometry(.05, .05, .9), chantMat(i === 2 ? 16049919 : 7023242, .65));
-			beam.position.set(px + face.x * along + rx * side, 1.25, pz + face.z * along + rz * side);
+			beam.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (1.25), pz + face.z * along + rz * side);
 			beam.lookAt(px + face.x * 1.8, 1.2, pz + face.z * 1.8);
 			beam.userData.ownGeo = true;
 			scene.add(beam);
@@ -36814,7 +36870,7 @@ function buildYard(canvas) {
 		if (!feared) return;
 		const freeze = new Mesh(new TorusGeometry(.36, .03, 8, 20), chantMat(14141695, .9));
 		freeze.rotation.x = Math.PI / 2;
-		freeze.position.set(harePos.x, .7, harePos.z);
+		freeze.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.7), harePos.z);
 		freeze.userData.ownGeo = true;
 		scene.add(freeze);
 		embers.push({
@@ -36834,7 +36890,7 @@ function buildYard(canvas) {
 	function spawnIceBreak(bound) {
 		const ring = new Mesh(new RingGeometry(.28, .5, 28), chantMat(14152959, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36847,7 +36903,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const a = i / 10 * Math.PI * 2;
 			const shard = new Mesh(new BoxGeometry(.06, .42, .06), chantMat(i % 2 ? 10406911 : 16055295, .9));
-			shard.position.set(px + Math.cos(a) * .4, .15, pz + Math.sin(a) * .4);
+			shard.position.set(px + Math.cos(a) * .4, groundY(px + Math.cos(a) * .4, pz + Math.sin(a) * .4) + (.15), pz + Math.sin(a) * .4);
 			shard.rotation.z = i % 2 ? .4 : -.4;
 			shard.userData.ownGeo = true;
 			scene.add(shard);
@@ -36864,7 +36920,7 @@ function buildYard(canvas) {
 		if (!bound) return;
 		for (let i = 0; i < 4; i++) {
 			const link = new Mesh(new TorusGeometry(.16, .025, 6, 12), chantMat(10406911, .9));
-			link.position.set(harePos.x, .28 + i * .16, harePos.z);
+			link.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.28 + i * .16), harePos.z);
 			link.rotation.x = Math.PI / 2;
 			link.rotation.z = i * .4;
 			link.userData.ownGeo = true;
@@ -36887,7 +36943,7 @@ function buildYard(canvas) {
 	function spawnSelfDestruct() {
 		const ring = new Mesh(new RingGeometry(.2, .42, 28), chantMat(16742938, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36898,7 +36954,7 @@ function buildYard(canvas) {
 			hold: .04
 		});
 		const core = new Mesh(new SphereGeometry(.28, 12, 8), chantMat(16761162, .9));
-		core.position.set(px, .9, pz);
+		core.position.set(px, groundY(px, pz) + (.9), pz);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -36914,7 +36970,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 12; i++) {
 			const a = i / 12 * Math.PI * 2;
 			const shard = new Mesh(new BoxGeometry(.08, .08, .16), chantMat(i % 2 ? 16734746 : 16769162, .95));
-			shard.position.set(px + Math.cos(a) * .2, .7, pz + Math.sin(a) * .2);
+			shard.position.set(px + Math.cos(a) * .2, groundY(px + Math.cos(a) * .2, pz + Math.sin(a) * .2) + (.7), pz + Math.sin(a) * .2);
 			shard.userData.ownGeo = true;
 			scene.add(shard);
 			embers.push({
@@ -36936,7 +36992,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new TorusGeometry(.35 + i * .18, .03, 8, 24), chantMat(i % 2 ? 7031338 : 8244842, .8));
 			ring.rotation.x = Math.PI / 2;
-			ring.position.set(px, .7 + i * .15, pz);
+			ring.position.set(px, groundY(px, pz) + (.7 + i * .15), pz);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -36955,7 +37011,7 @@ function buildYard(canvas) {
 	function spawnColdWave(frosted) {
 		const ring = new Mesh(new RingGeometry(.22, .46, 28), chantMat(14152959, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -36968,7 +37024,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const a = i / 8 * Math.PI * 2;
 			const shard = new Mesh(new ConeGeometry(.05, .28, 5), chantMat(i % 2 ? 10406911 : 16055295, .9));
-			shard.position.set(px + Math.cos(a) * .45, .1, pz + Math.sin(a) * .45);
+			shard.position.set(px + Math.cos(a) * .45, groundY(px + Math.cos(a) * .45, pz + Math.sin(a) * .45) + (.1), pz + Math.sin(a) * .45);
 			shard.userData.ownGeo = true;
 			scene.add(shard);
 			embers.push({
@@ -36983,7 +37039,7 @@ function buildYard(canvas) {
 		}
 		if (!frosted) return;
 		const coat = new Mesh(new SphereGeometry(.34, 10, 8), chantMat(14152959, .45));
-		coat.position.set(harePos.x, .7, harePos.z);
+		coat.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.7), harePos.z);
 		coat.userData.ownGeo = true;
 		scene.add(coat);
 		embers.push({
@@ -37007,7 +37063,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 7; i++) {
 			const side = (i - 3) * .22;
 			const strand = new Mesh(new BoxGeometry(.02, .02, 1.5), chantMat(16054267, .85));
-			strand.position.set(px + face.x * .9 + rx * side, .85, pz + face.z * .9 + rz * side);
+			strand.position.set(px + face.x * .9 + rx * side, groundY(px + face.x * .9 + rx * side, pz + face.z * .9 + rz * side) + (.85), pz + face.z * .9 + rz * side);
 			strand.lookAt(px + face.x * 2, .85, pz + face.z * 2);
 			strand.userData.ownGeo = true;
 			scene.add(strand);
@@ -37024,7 +37080,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const cross = new Mesh(new BoxGeometry(1.3, .015, .015), chantMat(12963286, .7));
 			const along = .45 + i * .4;
-			cross.position.set(px + face.x * along, .9, pz + face.z * along);
+			cross.position.set(px + face.x * along, groundY(px + face.x * along, pz + face.z * along) + (.9), pz + face.z * along);
 			cross.lookAt(px + rx, .9, pz + rz);
 			cross.userData.ownGeo = true;
 			scene.add(cross);
@@ -37051,7 +37107,7 @@ function buildYard(canvas) {
 			const side = (i - 4.5) * .16;
 			const along = .45 + i % 4 * .4;
 			const grit = new Mesh(new BoxGeometry(.07, .04, .18), chantMat(i % 2 ? 2764344 : 4016690, .9));
-			grit.position.set(px + face.x * along + rx * side, .8 + i % 3 * .12, pz + face.z * along + rz * side);
+			grit.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.8 + i % 3 * .12), pz + face.z * along + rz * side);
 			grit.lookAt(px + face.x * (along + 1), .8, pz + face.z * (along + 1));
 			grit.userData.ownGeo = true;
 			scene.add(grit);
@@ -37078,7 +37134,7 @@ function buildYard(canvas) {
 			const side = (i - 4) * .18;
 			const along = .4 + i % 3 * .45;
 			const ray = new Mesh(new BoxGeometry(.05, .04, .55), chantMat(i % 2 ? 16774864 : 16051412, .9));
-			ray.position.set(px + face.x * along + rx * side, .95, pz + face.z * along + rz * side);
+			ray.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.95), pz + face.z * along + rz * side);
 			ray.lookAt(px + face.x * (along + 1), .95, pz + face.z * (along + 1));
 			ray.userData.ownGeo = true;
 			scene.add(ray);
@@ -37100,7 +37156,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const a = i / 8 * Math.PI * 2;
 			const feather = new Mesh(new BoxGeometry(.04, .02, .22), chantMat(i % 2 ? 16054267 : 15263455, .92));
-			feather.position.set(px + Math.cos(a) * .35, .7, pz + Math.sin(a) * .35);
+			feather.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (.7), pz + Math.sin(a) * .35);
 			feather.rotation.y = a;
 			feather.rotation.z = .4;
 			feather.userData.ownGeo = true;
@@ -37122,7 +37178,7 @@ function buildYard(canvas) {
 	function spawnFlyingHipPress() {
 		const ring = new Mesh(new RingGeometry(.25, .48, 28), chantMat(14221288, .8));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -37135,7 +37191,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const a = i / 8 * Math.PI * 2;
 			const puff = new Mesh(new SphereGeometry(.08, 8, 6), chantMat(i % 2 ? 10406911 : 16056312, .7));
-			puff.position.set(px + Math.cos(a) * .4, .35, pz + Math.sin(a) * .4);
+			puff.position.set(px + Math.cos(a) * .4, groundY(px + Math.cos(a) * .4, pz + Math.sin(a) * .4) + (.35), pz + Math.sin(a) * .4);
 			puff.userData.ownGeo = true;
 			scene.add(puff);
 			embers.push({
@@ -37155,7 +37211,7 @@ function buildYard(canvas) {
 	*/
 	function spawnLightOfPenance(bound) {
 		const lamp = new Mesh(new SphereGeometry(.16, 10, 8), chantMat(16774864, .95));
-		lamp.position.set(harePos.x, 1.35, harePos.z);
+		lamp.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.35), harePos.z);
 		lamp.userData.ownGeo = true;
 		scene.add(lamp);
 		embers.push({
@@ -37170,7 +37226,7 @@ function buildYard(canvas) {
 		});
 		const glow = new Mesh(new RingGeometry(.2, .34, 20), chantMat(14927226, .7));
 		glow.rotation.x = -Math.PI / 2;
-		glow.position.set(harePos.x, .06, harePos.z);
+		glow.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.06), harePos.z);
 		glow.userData.ownGeo = true;
 		scene.add(glow);
 		rings.push({
@@ -37183,7 +37239,7 @@ function buildYard(canvas) {
 		if (!bound) return;
 		for (let i = 0; i < 4; i++) {
 			const link = new Mesh(new TorusGeometry(.16, .025, 6, 12), chantMat(16774864, .9));
-			link.position.set(harePos.x, .28 + i * .16, harePos.z);
+			link.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.28 + i * .16), harePos.z);
 			link.rotation.x = Math.PI / 2;
 			link.rotation.z = i * .4;
 			link.userData.ownGeo = true;
@@ -37209,7 +37265,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 2; i++) {
 			const side = i === 0 ? -.38 : .38;
 			const blade = new Mesh(new BoxGeometry(.05, .08, .7), chantMat(i === 0 ? 1840658 : 12963286, .95));
-			blade.position.set(harePos.x + Math.cos(face) * side, .9, harePos.z - Math.sin(face) * side);
+			blade.position.set(harePos.x + Math.cos(face) * side, groundY(harePos.x + Math.cos(face) * side, harePos.z - Math.sin(face) * side) + (.9), harePos.z - Math.sin(face) * side);
 			blade.rotation.y = face + (i === 0 ? .7 : -.7);
 			blade.rotation.z = side * .5;
 			blade.userData.ownGeo = true;
@@ -37232,7 +37288,7 @@ function buildYard(canvas) {
 	*/
 	function spawnDimensionalDeath() {
 		const disc = new Mesh(new RingGeometry(.42, 1.05, 28), chantMat(2756664, .92));
-		disc.position.set(harePos.x, 1.05, harePos.z);
+		disc.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		disc.lookAt(camera.position);
 		disc.userData.ownGeo = true;
 		scene.add(disc);
@@ -37247,7 +37303,7 @@ function buildYard(canvas) {
 			hold: .06
 		});
 		const rim = new Mesh(new RingGeometry(.18, .42, 24), chantMat(8014548, .9));
-		rim.position.set(harePos.x, 1.05, harePos.z);
+		rim.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		rim.lookAt(camera.position);
 		rim.userData.ownGeo = true;
 		scene.add(rim);
@@ -37262,7 +37318,7 @@ function buildYard(canvas) {
 			hold: .05
 		});
 		const core = new Mesh(new SphereGeometry(.16, 10, 8), chantMat(13219583, .8));
-		core.position.set(harePos.x, 1.05, harePos.z);
+		core.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		core.userData.ownGeo = true;
 		scene.add(core);
 		embers.push({
@@ -37278,7 +37334,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const shard = new Mesh(new OctahedronGeometry(.055, 0), chantMat(i % 2 ? 13219583 : 2756664, .9));
 			const a = i / 8 * Math.PI * 2;
-			shard.position.set(harePos.x + Math.cos(a) * .7, 1.05, harePos.z + Math.sin(a) * .7);
+			shard.position.set(harePos.x + Math.cos(a) * .7, groundY(harePos.x + Math.cos(a) * .7, harePos.z + Math.sin(a) * .7) + (1.05), harePos.z + Math.sin(a) * .7);
 			shard.userData.ownGeo = true;
 			scene.add(shard);
 			embers.push({
@@ -37307,7 +37363,7 @@ function buildYard(canvas) {
 			band.userData.peak = .95;
 			g.add(band);
 		}
-		g.position.set(px, 1.15, pz);
+		g.position.set(px, groundY(px, pz) + (1.15), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -37333,7 +37389,7 @@ function buildYard(canvas) {
 			band.userData.peak = .9;
 			g.add(band);
 		}
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -37362,7 +37418,7 @@ function buildYard(canvas) {
 			band.userData.peak = .85;
 			g.add(band);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -37374,7 +37430,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 10; i++) {
 			const drop = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(14152959, .85));
 			const a = i / 10 * Math.PI * 2;
-			drop.position.set(px + Math.cos(a) * .28, .15, pz + Math.sin(a) * .28);
+			drop.position.set(px + Math.cos(a) * .28, groundY(px + Math.cos(a) * .28, pz + Math.sin(a) * .28) + (.15), pz + Math.sin(a) * .28);
 			drop.userData.ownGeo = true;
 			scene.add(drop);
 			embers.push({
@@ -37391,7 +37447,7 @@ function buildYard(canvas) {
 	function spawnStrMarks() {
 		for (let i = 0; i < 3; i++) {
 			const mark = new Mesh(new BoxGeometry(.2, .03, .03), chantMat(12868154, .9));
-			mark.position.set(harePos.x, 1.45 - i * .16, harePos.z);
+			mark.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.45 - i * .16), harePos.z);
 			mark.userData.ownGeo = true;
 			scene.add(mark);
 			embers.push({
@@ -37423,7 +37479,7 @@ function buildYard(canvas) {
 		pupil.position.z = .32;
 		pupil.userData.ownGeo = true;
 		eye.add(white, iris, pupil);
-		eye.position.set(px + face.x * .55, 1.62, pz + face.z * .55);
+		eye.position.set(px + face.x * .55, groundY(px + face.x * .55, pz + face.z * .55) + (1.62), pz + face.z * .55);
 		eye.lookAt(harePos.x, 1.15, harePos.z);
 		scene.add(eye);
 		sparks.push({
@@ -37465,7 +37521,7 @@ function buildYard(canvas) {
 			hold: .06
 		});
 		const hit = new Mesh(new SphereGeometry(.22, 10, 8), chantMat(12868863, .85));
-		hit.position.set(harePos.x, 1.15, harePos.z);
+		hit.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		hit.userData.ownGeo = true;
 		scene.add(hit);
 		embers.push({
@@ -37495,7 +37551,7 @@ function buildYard(canvas) {
 			seed.userData.peak = 1;
 			g.add(seed);
 			const side = (i - 1) * .28;
-			g.position.set(px, 1.2, pz);
+			g.position.set(px, groundY(px, pz) + (1.2), pz);
 			scene.add(g);
 			sparks.push({
 				g,
@@ -37515,7 +37571,7 @@ function buildYard(canvas) {
 	}
 	function spawnSeedPop(x, z) {
 		const puff = new Mesh(new SphereGeometry(.1, 6, 5), chantMat(8244842, .75));
-		puff.position.set(x, .95, z);
+		puff.position.set(x, groundY(x, z) + (.95), z);
 		puff.userData.ownGeo = true;
 		scene.add(puff);
 		embers.push({
@@ -37542,7 +37598,7 @@ function buildYard(canvas) {
 			const side = (i - 5.5) * .16;
 			const along = .4 + i % 4 * .38;
 			const puff = new Mesh(new SphereGeometry(.1 + i % 3 * .03, 7, 6), chantMat(i % 2 ? 6982194 : 4016674, .55));
-			puff.position.set(px + face.x * along + rx * side, .7 + i % 3 * .16, pz + face.z * along + rz * side);
+			puff.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.7 + i % 3 * .16), pz + face.z * along + rz * side);
 			puff.userData.ownGeo = true;
 			scene.add(puff);
 			embers.push({
@@ -37560,7 +37616,7 @@ function buildYard(canvas) {
 	function spawnBreathBind() {
 		for (let i = 0; i < 4; i++) {
 			const link = new Mesh(new TorusGeometry(.16, .025, 6, 12), chantMat(6982194, .9));
-			link.position.set(harePos.x, .28 + i * .16, harePos.z);
+			link.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.28 + i * .16), harePos.z);
 			link.rotation.x = Math.PI / 2;
 			link.rotation.z = i * .4;
 			link.userData.ownGeo = true;
@@ -37583,7 +37639,7 @@ function buildYard(canvas) {
 	function spawnBodySlam() {
 		const ring = new Mesh(new RingGeometry(.35, .58, 28), chantMat(9067058, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -37596,7 +37652,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const a = i / 8 * Math.PI * 2;
 			const chip = new Mesh(new BoxGeometry(.12, .04, .08), chantMat(i % 2 ? 12886122 : 5913122, .9));
-			chip.position.set(px + Math.cos(a) * .4, .08, pz + Math.sin(a) * .4);
+			chip.position.set(px + Math.cos(a) * .4, groundY(px + Math.cos(a) * .4, pz + Math.sin(a) * .4) + (.08), pz + Math.sin(a) * .4);
 			chip.rotation.y = -a;
 			chip.userData.ownGeo = true;
 			scene.add(chip);
@@ -37619,7 +37675,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 16; i++) {
 			const a = i / 16 * Math.PI * 2;
 			const needle = new Mesh(new BoxGeometry(.02, .02, .28), chantMat(i % 2 ? 16051412 : 12891226, .95));
-			needle.position.set(px + Math.cos(a) * .2, 1.05, pz + Math.sin(a) * .2);
+			needle.position.set(px + Math.cos(a) * .2, groundY(px + Math.cos(a) * .2, pz + Math.sin(a) * .2) + (1.05), pz + Math.sin(a) * .2);
 			needle.lookAt(px + Math.cos(a), 1.05, pz + Math.sin(a));
 			needle.userData.ownGeo = true;
 			scene.add(needle);
@@ -37634,7 +37690,7 @@ function buildYard(canvas) {
 			});
 		}
 		const puff = new Mesh(new SphereGeometry(.18, 8, 6), chantMat(16051412, .45));
-		puff.position.set(px, 1.05, pz);
+		puff.position.set(px, groundY(px, pz) + (1.05), pz);
 		puff.userData.ownGeo = true;
 		scene.add(puff);
 		embers.push({
@@ -37657,7 +37713,7 @@ function buildYard(canvas) {
 		const dz = harePos.z - pz;
 		const face = Math.atan2(dx, dz);
 		const blade = new Mesh(new BoxGeometry(.06, .04, .85), chantMat(12963286, .95));
-		blade.position.set(harePos.x, 1.05, harePos.z);
+		blade.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		blade.rotation.y = face + .8;
 		blade.rotation.z = .6;
 		blade.userData.ownGeo = true;
@@ -37672,7 +37728,7 @@ function buildYard(canvas) {
 			hold: .04
 		});
 		const cut = new Mesh(new RingGeometry(.15, .42, 16, 1, 0, Math.PI), chantMat(9255474, .8));
-		cut.position.set(harePos.x, 1.05, harePos.z);
+		cut.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		cut.rotation.y = face;
 		cut.userData.ownGeo = true;
 		scene.add(cut);
@@ -37693,7 +37749,7 @@ function buildYard(canvas) {
 	function spawnFrypan() {
 		const face = fwd(yaw);
 		const pan = new Mesh(new CylinderGeometry(.28, .28, .06, 14), chantMat(12876602, .95));
-		pan.position.set(px + face.x * .55, 1.05, pz + face.z * .55);
+		pan.position.set(px + face.x * .55, groundY(px + face.x * .55, pz + face.z * .55) + (1.05), pz + face.z * .55);
 		pan.rotation.x = Math.PI / 2.4;
 		pan.rotation.z = .4;
 		pan.userData.ownGeo = true;
@@ -37709,7 +37765,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.2, .36, 20), chantMat(16051412, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -37729,7 +37785,7 @@ function buildYard(canvas) {
 		const dz = harePos.z - pz;
 		const dist = Math.max(.4, Math.hypot(dx, dz));
 		const jet = new Mesh(new BoxGeometry(.08, .08, .55), chantMat(8304383, .92));
-		jet.position.set(px + dx * .35, 1.05, pz + dz * .35);
+		jet.position.set(px + dx * .35, groundY(px + dx * .35, pz + dz * .35) + (1.05), pz + dz * .35);
 		jet.lookAt(harePos.x, 1.05, harePos.z);
 		jet.userData.ownGeo = true;
 		scene.add(jet);
@@ -37745,7 +37801,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const drop = new Mesh(new SphereGeometry(.055, 7, 6), chantMat(i % 2 ? 14087935 : 10406911, .9));
 			const t = .18 + i * .1;
-			drop.position.set(px + dx * t, 1.08, pz + dz * t);
+			drop.position.set(px + dx * t, groundY(px + dx * t, pz + dz * t) + (1.08), pz + dz * t);
 			drop.userData.ownGeo = true;
 			scene.add(drop);
 			embers.push({
@@ -37771,7 +37827,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 7; i++) {
 			const feather = new Mesh(new BoxGeometry(.035, .012, .22), chantMat(i % 2 ? 16051412 : 12886122, .95));
 			const side = (i - 3) * .07;
-			feather.position.set(harePos.x + Math.cos(face) * side, 1.15 + i % 3 * .06, harePos.z - Math.sin(face) * side);
+			feather.position.set(harePos.x + Math.cos(face) * side, groundY(harePos.x + Math.cos(face) * side, harePos.z - Math.sin(face) * side) + (1.15 + i % 3 * .06), harePos.z - Math.sin(face) * side);
 			feather.lookAt(harePos.x + dx * .2, 1.05, harePos.z + dz * .2);
 			feather.rotation.z = (i - 3) * .28;
 			feather.userData.ownGeo = true;
@@ -37794,7 +37850,7 @@ function buildYard(canvas) {
 	function spawnYawn() {
 		const ring = new Mesh(new RingGeometry(.4, .68, 28), chantMat(14927226, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -37807,7 +37863,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 4; i++) {
 			const zee = new Mesh(new BoxGeometry(.16, .03, .03), chantMat(16774864, .9));
 			const a = i / 4 * Math.PI * 2;
-			zee.position.set(px + Math.cos(a) * .35, 1.2, pz + Math.sin(a) * .35);
+			zee.position.set(px + Math.cos(a) * .35, groundY(px + Math.cos(a) * .35, pz + Math.sin(a) * .35) + (1.2), pz + Math.sin(a) * .35);
 			zee.rotation.z = i % 2 ? .5 : -.5;
 			zee.userData.ownGeo = true;
 			scene.add(zee);
@@ -37831,7 +37887,7 @@ function buildYard(canvas) {
 		const dz = harePos.z - pz;
 		const dist = Math.max(.4, Math.hypot(dx, dz));
 		const trunk = new Mesh(new BoxGeometry(.16, .12, .85), chantMat(9067058, .95));
-		trunk.position.set(px + dx * .42, .82, pz + dz * .42);
+		trunk.position.set(px + dx * .42, groundY(px + dx * .42, pz + dz * .42) + (.82), pz + dz * .42);
 		trunk.lookAt(harePos.x, .82, harePos.z);
 		trunk.userData.ownGeo = true;
 		scene.add(trunk);
@@ -37847,7 +37903,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const wisp = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 12886122 : 16051412, .75));
 			const t = .3 + i * .12;
-			wisp.position.set(px + dx * t, .9, pz + dz * t);
+			wisp.position.set(px + dx * t, groundY(px + dx * t, pz + dz * t) + (.9), pz + dz * t);
 			wisp.userData.ownGeo = true;
 			scene.add(wisp);
 			embers.push({
@@ -37873,7 +37929,7 @@ function buildYard(canvas) {
 			const side = (i - 4) * .18;
 			const along = .35 + i % 3 * .42;
 			const pulse = new Mesh(new SphereGeometry(.07, 7, 5), chantMat(i % 2 ? 10406911 : 14152959, .7));
-			pulse.position.set(px + face.x * along + rx * side, .22, pz + face.z * along + rz * side);
+			pulse.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.22), pz + face.z * along + rz * side);
 			pulse.userData.ownGeo = true;
 			scene.add(pulse);
 			embers.push({
@@ -37890,7 +37946,7 @@ function buildYard(canvas) {
 		const arc = new Mesh(new RingGeometry(.35, .55, 18, 1, -.7, 1.4), chantMat(10406911, .65));
 		arc.rotation.x = -Math.PI / 2;
 		arc.rotation.z = -Math.atan2(face.x, face.z);
-		arc.position.set(px, .05, pz);
+		arc.position.set(px, groundY(px, pz) + (.05), pz);
 		arc.userData.ownGeo = true;
 		scene.add(arc);
 		embers.push({
@@ -37915,7 +37971,7 @@ function buildYard(canvas) {
 			const side = (i - 4) * .2;
 			const along = .4 + i % 3 * .45;
 			const crystal = new Mesh(new OctahedronGeometry(.1), chantMat(i % 2 ? 14152959 : 10406911, .85));
-			crystal.position.set(px + face.x * along + rx * side, .85 + i % 3 * .12, pz + face.z * along + rz * side);
+			crystal.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.85 + i % 3 * .12), pz + face.z * along + rz * side);
 			crystal.rotation.z = side;
 			crystal.userData.ownGeo = true;
 			scene.add(crystal);
@@ -37942,7 +37998,7 @@ function buildYard(canvas) {
 			const side = (i - 6) * .12;
 			const along = .25 + i % 4 * .28;
 			const grit = new Mesh(new BoxGeometry(.06, .04, .06), chantMat(i % 2 ? 12886122 : 9067058, .9));
-			grit.position.set(px + face.x * along + rx * side, .35 + i % 3 * .08, pz + face.z * along + rz * side);
+			grit.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.35 + i % 3 * .08), pz + face.z * along + rz * side);
 			grit.userData.ownGeo = true;
 			scene.add(grit);
 			embers.push({
@@ -37963,7 +38019,7 @@ function buildYard(canvas) {
 	function spawnCorrosiveOoze(weakened, cracked) {
 		const glob = new Mesh(new SphereGeometry(.22, 10, 8), chantMat(6982194, .75));
 		glob.scale.set(1.1, .7, 1.1);
-		glob.position.set(harePos.x, 1.05, harePos.z);
+		glob.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		glob.userData.ownGeo = true;
 		scene.add(glob);
 		embers.push({
@@ -37979,7 +38035,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const drip = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 4016674 : 9083450, .85));
 			const a = i / 5 * Math.PI * 2;
-			drip.position.set(harePos.x + Math.cos(a) * .16, .9, harePos.z + Math.sin(a) * .16);
+			drip.position.set(harePos.x + Math.cos(a) * .16, groundY(harePos.x + Math.cos(a) * .16, harePos.z + Math.sin(a) * .16) + (.9), harePos.z + Math.sin(a) * .16);
 			drip.userData.ownGeo = true;
 			scene.add(drip);
 			embers.push({
@@ -37994,7 +38050,7 @@ function buildYard(canvas) {
 		}
 		if (weakened) for (let i = 0; i < 3; i++) {
 			const mark = new Mesh(new BoxGeometry(.18, .03, .03), chantMat(12868154, .9));
-			mark.position.set(harePos.x, 1.4 - i * .14, harePos.z);
+			mark.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.4 - i * .14), harePos.z);
 			mark.rotation.z = .6;
 			mark.userData.ownGeo = true;
 			scene.add(mark);
@@ -38030,7 +38086,7 @@ function buildYard(canvas) {
 			band.userData.peak = .9;
 			g.add(band);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -38047,7 +38103,7 @@ function buildYard(canvas) {
 	function spawnEnervation() {
 		const ring = new Mesh(new TorusGeometry(.55, .035, 8, 28), chantMat(2756664, .9));
 		ring.rotation.x = Math.PI / 2;
-		ring.position.set(px, .7, pz);
+		ring.position.set(px, groundY(px, pz) + (.7), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38064,7 +38120,7 @@ function buildYard(canvas) {
 	function spawnWarmUp() {
 		const ring = new Mesh(new RingGeometry(.28, .5, 28), chantMat(12886122, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38077,7 +38133,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const mote = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 16769162 : 9067058, .9));
 			const a = i / 8 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .4, .7, pz + Math.sin(a) * .4);
+			mote.position.set(px + Math.cos(a) * .4, groundY(px + Math.cos(a) * .4, pz + Math.sin(a) * .4) + (.7), pz + Math.sin(a) * .4);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -38103,7 +38159,7 @@ function buildYard(canvas) {
 		halo.userData.ownGeo = true;
 		halo.userData.peak = .45;
 		g.add(core, halo);
-		g.position.set(px, 1.25, pz);
+		g.position.set(px, groundY(px, pz) + (1.25), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -38122,7 +38178,7 @@ function buildYard(canvas) {
 	}
 	function spawnFirespitImpact(x, z) {
 		const flash = new Mesh(new SphereGeometry(.42, 12, 10), chantMat(16742938, .85));
-		flash.position.set(x, .95, z);
+		flash.position.set(x, groundY(x, z) + (.95), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -38163,7 +38219,7 @@ function buildYard(canvas) {
 			const side = (i - 2) * .28;
 			const along = .45 + i % 2 * .25;
 			const slap = new Mesh(new BoxGeometry(.1, .05, .7), chantMat(i % 2 ? 12886122 : 9067058, .92));
-			slap.position.set(px + face.x * along + rx * side, .85, pz + face.z * along + rz * side);
+			slap.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.85), pz + face.z * along + rz * side);
 			slap.rotation.y = Math.atan2(face.x, face.z) + side * .35;
 			slap.userData.ownGeo = true;
 			scene.add(slap);
@@ -38190,7 +38246,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const side = (i - 2) * .08;
 			const fist = new Mesh(new BoxGeometry(.16, .12, .16), chantMat(i % 2 ? 16051412 : 12963286, .92));
-			fist.position.set(harePos.x - nz * side, 1.15 + i % 3 * .08, harePos.z + nx * side);
+			fist.position.set(harePos.x - nz * side, groundY(harePos.x - nz * side, harePos.z + nx * side) + (1.15 + i % 3 * .08), harePos.z + nx * side);
 			fist.userData.ownGeo = true;
 			scene.add(fist);
 			embers.push({
@@ -38217,7 +38273,7 @@ function buildYard(canvas) {
 		shine.userData.ownGeo = true;
 		shine.userData.peak = .85;
 		g.add(blob, shine);
-		g.position.set(px, 1.2, pz);
+		g.position.set(px, groundY(px, pz) + (1.2), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -38237,7 +38293,7 @@ function buildYard(canvas) {
 	}
 	function spawnRegurgitationImpact(x, z, bound) {
 		const splash = new Mesh(new SphereGeometry(.36, 12, 10), chantMat(8304383, .7));
-		splash.position.set(x, .7, z);
+		splash.position.set(x, groundY(x, z) + (.7), z);
 		splash.userData.ownGeo = true;
 		scene.add(splash);
 		embers.push({
@@ -38270,7 +38326,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new RingGeometry(.18 + i * .08, .26 + i * .08, 20), chantMat(8304383, .75));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .05 + i * .02, z);
+			ring.position.set(x, groundY(x, z) + (.05 + i * .02), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -38288,7 +38344,7 @@ function buildYard(canvas) {
 	function spawnAmplification() {
 		const ring = new Mesh(new RingGeometry(.32, .5, 28), chantMat(1723018, .85));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .08, pz);
+		ring.position.set(px, groundY(px, pz) + (.08), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38299,7 +38355,7 @@ function buildYard(canvas) {
 			hold: .1
 		});
 		const shield = new Mesh(new RingGeometry(.42, .5, 24), chantMat(14087935, .7));
-		shield.position.set(px, 1.05, pz);
+		shield.position.set(px, groundY(px, pz) + (1.05), pz);
 		shield.userData.ownGeo = true;
 		scene.add(shield);
 		embers.push({
@@ -38324,7 +38380,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const side = (i - 2.5) * .1;
 			const slash = new Mesh(new BoxGeometry(.04, .28, .08), chantMat(i % 2 ? 16051412 : 12963286, .92));
-			slash.position.set(harePos.x - nz * side, .85 + i % 3 * .16, harePos.z + nx * side);
+			slash.position.set(harePos.x - nz * side, groundY(harePos.x - nz * side, harePos.z + nx * side) + (.85 + i % 3 * .16), harePos.z + nx * side);
 			slash.rotation.z = (i - 2.5) * .35;
 			slash.userData.ownGeo = true;
 			scene.add(slash);
@@ -38345,7 +38401,7 @@ function buildYard(canvas) {
 	function spawnLowing() {
 		const ring = new Mesh(new TorusGeometry(.7, .04, 8, 28), chantMat(6982194, .85));
 		ring.rotation.x = Math.PI / 2;
-		ring.position.set(px, .45, pz);
+		ring.position.set(px, groundY(px, pz) + (.45), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38358,7 +38414,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const mote = new Mesh(new SphereGeometry(.05, 6, 5), chantMat(i % 2 ? 16742938 : 10272618, .85));
 			const a = i / 6 * Math.PI * 2;
-			mote.position.set(px + Math.cos(a) * .5, .6, pz + Math.sin(a) * .5);
+			mote.position.set(px + Math.cos(a) * .5, groundY(px + Math.cos(a) * .5, pz + Math.sin(a) * .5) + (.6), pz + Math.sin(a) * .5);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -38401,7 +38457,7 @@ function buildYard(canvas) {
 			const side = (i - 4) * .22;
 			const along = .4 + i % 3 * .5;
 			const flame = new Mesh(new ConeGeometry(.08, .28, 6), chantMat(i % 2 ? 16734746 : 16769162, .9));
-			flame.position.set(px + face.x * along + rx * side, .9 + i % 3 * .1, pz + face.z * along + rz * side);
+			flame.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.9 + i % 3 * .1), pz + face.z * along + rz * side);
 			flame.rotation.x = Math.PI / 2;
 			flame.rotation.z = side * .2;
 			flame.userData.ownGeo = true;
@@ -38424,7 +38480,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 3; i++) {
 			const ring = new Mesh(new RingGeometry(.2 + i * .08, .28 + i * .08, 24), chantMat(i % 2 ? 14927226 : 16742938, .8));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(px, .06 + i * .04, pz);
+			ring.position.set(px, groundY(px, pz) + (.06 + i * .04), pz);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -38444,7 +38500,7 @@ function buildYard(canvas) {
 		const dz = harePos.z - pz;
 		const face = Math.atan2(dx, dz);
 		const arc = new Mesh(new TorusGeometry(.42, .03, 6, 18, Math.PI * .9), chantMat(15263455, .94));
-		arc.position.set(harePos.x, 1.05, harePos.z);
+		arc.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		arc.rotation.y = face;
 		arc.rotation.z = .55;
 		arc.userData.ownGeo = true;
@@ -38460,7 +38516,7 @@ function buildYard(canvas) {
 		});
 		if (!crit) return;
 		const flash = new Mesh(new SphereGeometry(.28, 10, 8), chantMat(16774864, .85));
-		flash.position.set(harePos.x, 1.05, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -38484,7 +38540,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 2; i++) {
 			const side = i === 0 ? -.38 : .38;
 			const burst = new Mesh(new SphereGeometry(.18, 8, 6), chantMat(i ? 14152959 : 10406911, .9));
-			burst.position.set(px + face.x * .85 + rx * side, .85, pz + face.z * .85 + rz * side);
+			burst.position.set(px + face.x * .85 + rx * side, groundY(px + face.x * .85 + rx * side, pz + face.z * .85 + rz * side) + (.85), pz + face.z * .85 + rz * side);
 			burst.userData.ownGeo = true;
 			scene.add(burst);
 			embers.push({
@@ -38498,7 +38554,7 @@ function buildYard(canvas) {
 				hold: .04
 			});
 			const shard = new Mesh(new ConeGeometry(.06, .22, 5), chantMat(16055295, .9));
-			shard.position.set(px + face.x * .7 + rx * side, 1.05, pz + face.z * .7 + rz * side);
+			shard.position.set(px + face.x * .7 + rx * side, groundY(px + face.x * .7 + rx * side, pz + face.z * .7 + rz * side) + (1.05), pz + face.z * .7 + rz * side);
 			shard.rotation.z = side;
 			shard.userData.ownGeo = true;
 			scene.add(shard);
@@ -38518,7 +38574,7 @@ function buildYard(canvas) {
 	*/
 	function spawnSalineCoat() {
 		const coat = new Mesh(new SphereGeometry(.48, 12, 10), chantMat(16774864, .28));
-		coat.position.set(px, 1, pz);
+		coat.position.set(px, groundY(px, pz) + (1), pz);
 		coat.userData.ownGeo = true;
 		scene.add(coat);
 		embers.push({
@@ -38534,7 +38590,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const grain = new Mesh(new BoxGeometry(.05, .05, .05), chantMat(i % 2 ? 16051412 : 16774864, .92));
 			const a = i / 8 * Math.PI * 2;
-			grain.position.set(px + Math.cos(a) * .42, .7 + i % 3 * .25, pz + Math.sin(a) * .42);
+			grain.position.set(px + Math.cos(a) * .42, groundY(px + Math.cos(a) * .42, pz + Math.sin(a) * .42) + (.7 + i % 3 * .25), pz + Math.sin(a) * .42);
 			grain.userData.ownGeo = true;
 			scene.add(grain);
 			embers.push({
@@ -38560,7 +38616,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const puff = new Mesh(new SphereGeometry(.08 + i % 2 * .03, 6, 5), chantMat(i % 2 ? 12886122 : 9067058, .75));
 			const along = .3 + i * (len / 7);
-			puff.position.set(px + nx * along, .45 + i % 3 * .08, pz + nz * along);
+			puff.position.set(px + nx * along, groundY(px + nx * along, pz + nz * along) + (.45 + i % 3 * .08), pz + nz * along);
 			puff.userData.ownGeo = true;
 			scene.add(puff);
 			embers.push({
@@ -38576,7 +38632,7 @@ function buildYard(canvas) {
 		if (!knock) return;
 		const ring = new Mesh(new RingGeometry(.16, .4, 18), chantMat(12886122, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .08, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.08), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38589,7 +38645,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const chip = new Mesh(new BoxGeometry(.08, .04, .08), chantMat(9067058, .9));
 			const a = i / 5 * Math.PI * 2;
-			chip.position.set(harePos.x + Math.cos(a) * .2, .4, harePos.z + Math.sin(a) * .2);
+			chip.position.set(harePos.x + Math.cos(a) * .2, groundY(harePos.x + Math.cos(a) * .2, harePos.z + Math.sin(a) * .2) + (.4), harePos.z + Math.sin(a) * .2);
 			chip.userData.ownGeo = true;
 			scene.add(chip);
 			embers.push({
@@ -38609,7 +38665,7 @@ function buildYard(canvas) {
 	function spawnTemporalShift() {
 		const ring = new Mesh(new TorusGeometry(.85, .035, 8, 28), chantMat(10406911, .9));
 		ring.rotation.x = Math.PI / 2;
-		ring.position.set(px, .95, pz);
+		ring.position.set(px, groundY(px, pz) + (.95), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38622,7 +38678,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const bolt = new Mesh(new BoxGeometry(.03, .42, .03), chantMat(i % 2 ? 16054267 : 8304383, .92));
 			const a = i / 6 * Math.PI * 2;
-			bolt.position.set(px + Math.cos(a) * .7, .85, pz + Math.sin(a) * .7);
+			bolt.position.set(px + Math.cos(a) * .7, groundY(px + Math.cos(a) * .7, pz + Math.sin(a) * .7) + (.85), pz + Math.sin(a) * .7);
 			bolt.rotation.z = a;
 			bolt.userData.ownGeo = true;
 			scene.add(bolt);
@@ -38643,7 +38699,7 @@ function buildYard(canvas) {
 	*/
 	function spawnMagicHammer() {
 		const head = new Mesh(new BoxGeometry(.58, .2, .22), chantMat(14927226, .62));
-		head.position.set(harePos.x, 2.55, harePos.z);
+		head.position.set(harePos.x, groundY(harePos.x, harePos.z) + (2.55), harePos.z);
 		head.userData.ownGeo = true;
 		scene.add(head);
 		embers.push({
@@ -38656,7 +38712,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const handle = new Mesh(new CylinderGeometry(.045, .045, .62, 6), chantMat(16774864, .78));
-		handle.position.set(harePos.x, 2.95, harePos.z);
+		handle.position.set(harePos.x, groundY(harePos.x, harePos.z) + (2.95), harePos.z);
 		handle.userData.ownGeo = true;
 		scene.add(handle);
 		embers.push({
@@ -38669,7 +38725,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const flash = new Mesh(new SphereGeometry(.34, 10, 8), chantMat(16774864, .82));
-		flash.position.set(harePos.x, 1.05, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.05), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -38685,7 +38741,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const mote = new Mesh(new SphereGeometry(.045, 6, 5), chantMat(i % 2 ? 14927226 : 16777215, .9));
 			const a = i / 6 * Math.PI * 2;
-			mote.position.set(harePos.x + Math.cos(a) * .18, 1.05, harePos.z + Math.sin(a) * .18);
+			mote.position.set(harePos.x + Math.cos(a) * .18, groundY(harePos.x + Math.cos(a) * .18, harePos.z + Math.sin(a) * .18) + (1.05), harePos.z + Math.sin(a) * .18);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -38705,7 +38761,7 @@ function buildYard(canvas) {
 	*/
 	function spawnReactorCool() {
 		const shell = new Mesh(new SphereGeometry(.7, 12, 10), chantMat(14152959, .26));
-		shell.position.set(px, 1.05, pz);
+		shell.position.set(px, groundY(px, pz) + (1.05), pz);
 		shell.userData.ownGeo = true;
 		scene.add(shell);
 		embers.push({
@@ -38721,7 +38777,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 8; i++) {
 			const a = i / 8 * Math.PI * 2;
 			const crystal = new Mesh(new ConeGeometry(.07, .28, 5), chantMat(i % 2 ? 16055295 : 10406911, .92));
-			crystal.position.set(px + Math.cos(a) * .55, .7 + i % 3 * .35, pz + Math.sin(a) * .55);
+			crystal.position.set(px + Math.cos(a) * .55, groundY(px + Math.cos(a) * .55, pz + Math.sin(a) * .55) + (.7 + i % 3 * .35), pz + Math.sin(a) * .55);
 			crystal.rotation.z = a;
 			crystal.userData.ownGeo = true;
 			scene.add(crystal);
@@ -38737,7 +38793,7 @@ function buildYard(canvas) {
 		}
 		const ring = new Mesh(new RingGeometry(.32, .7, 24), chantMat(10406911, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .06, pz);
+		ring.position.set(px, groundY(px, pz) + (.06), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -38755,7 +38811,7 @@ function buildYard(canvas) {
 	*/
 	function spawnExuviation() {
 		const glow = new Mesh(new SphereGeometry(.46, 12, 10), chantMat(16757850, .32));
-		glow.position.set(px, 1.05, pz);
+		glow.position.set(px, groundY(px, pz) + (1.05), pz);
 		glow.userData.ownGeo = true;
 		scene.add(glow);
 		embers.push({
@@ -38771,7 +38827,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 7; i++) {
 			const chip = new Mesh(new BoxGeometry(.16, .05, .1), chantMat(i % 2 ? 16051412 : 16769162, .88));
 			const a = i / 7 * Math.PI * 2;
-			chip.position.set(px + Math.cos(a) * .38, .85, pz + Math.sin(a) * .38);
+			chip.position.set(px + Math.cos(a) * .38, groundY(px + Math.cos(a) * .38, pz + Math.sin(a) * .38) + (.85), pz + Math.sin(a) * .38);
 			chip.rotation.y = -a;
 			chip.rotation.z = .4;
 			chip.userData.ownGeo = true;
@@ -38793,7 +38849,7 @@ function buildYard(canvas) {
 	*/
 	function spawnVerticalCleave() {
 		const blade = new Mesh(new BoxGeometry(.07, 1.45, .02), chantMat(12890328, .94));
-		blade.position.set(harePos.x, 1.85, harePos.z);
+		blade.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.85), harePos.z);
 		blade.userData.ownGeo = true;
 		scene.add(blade);
 		embers.push({
@@ -38806,7 +38862,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const cut = new Mesh(new BoxGeometry(.04, 1.1, .16), chantMat(2756664, .55));
-		cut.position.set(harePos.x, 1.15, harePos.z);
+		cut.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 		cut.userData.ownGeo = true;
 		scene.add(cut);
 		embers.push({
@@ -38820,7 +38876,7 @@ function buildYard(canvas) {
 			hold: .04
 		});
 		const flash = new Mesh(new SphereGeometry(.18, 8, 6), chantMat(12890328, .75));
-		flash.position.set(harePos.x, .55, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.55), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -38901,7 +38957,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 2; i++) {
 			const side = i === 0 ? -.42 : .42;
 			const jaw = new Mesh(new BoxGeometry(.08, .1, .72), chantMat(i === 0 ? 12886122 : 9067058, .95));
-			jaw.position.set(harePos.x + Math.cos(yaw) * side, .85, harePos.z - Math.sin(yaw) * side);
+			jaw.position.set(harePos.x + Math.cos(yaw) * side, groundY(harePos.x + Math.cos(yaw) * side, harePos.z - Math.sin(yaw) * side) + (.85), harePos.z - Math.sin(yaw) * side);
 			jaw.rotation.y = yaw + (i === 0 ? .55 : -.55);
 			jaw.rotation.z = side * .4;
 			jaw.userData.ownGeo = true;
@@ -38917,7 +38973,7 @@ function buildYard(canvas) {
 			});
 		}
 		const flash = new Mesh(new SphereGeometry(.16, 8, 6), chantMat(15123306, .8));
-		flash.position.set(harePos.x, .9, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.9), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -38943,7 +38999,7 @@ function buildYard(canvas) {
 			const side = (i - 4.5) * .16;
 			const along = .5 + i % 4 * .38;
 			const grit = new Mesh(new BoxGeometry(.08, .05, .08), chantMat(i % 2 ? 3811864 : 9067058, .9));
-			grit.position.set(px + face.x * along + rx * side, .85 + i % 3 * .1, pz + face.z * along + rz * side);
+			grit.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (.85 + i % 3 * .1), pz + face.z * along + rz * side);
 			grit.rotation.y = i;
 			grit.userData.ownGeo = true;
 			scene.add(grit);
@@ -38957,7 +39013,7 @@ function buildYard(canvas) {
 				hold: .16
 			});
 			const flake = new Mesh(new OctahedronGeometry(.05, 0), chantMat(15123306, .85));
-			flake.position.set(px + face.x * along + rx * side, 1.05, pz + face.z * along + rz * side);
+			flake.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (1.05), pz + face.z * along + rz * side);
 			flake.userData.ownGeo = true;
 			scene.add(flake);
 			embers.push({
@@ -38985,7 +39041,7 @@ function buildYard(canvas) {
 		cap.userData.ownGeo = true;
 		cap.userData.peak = .9;
 		g.add(nut, cap);
-		g.position.set(px, 1.3, pz);
+		g.position.set(px, groundY(px, pz) + (1.3), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39007,7 +39063,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const needle = new Mesh(new BoxGeometry(.02, .02, .16), chantMat(i % 2 ? 4025138 : 12886122, .9));
 			const a = i / 6 * Math.PI * 2;
-			needle.position.set(x, .85, z);
+			needle.position.set(x, groundY(x, z) + (.85), z);
 			needle.rotation.y = -a;
 			needle.rotation.x = .6;
 			needle.userData.ownGeo = true;
@@ -39029,7 +39085,7 @@ function buildYard(canvas) {
 	function spawnBludgeon() {
 		for (let i = 0; i < 3; i++) {
 			const club = new Mesh(new BoxGeometry(.1, .1, .62), chantMat(i === 1 ? 15123818 : 9067058, .95));
-			club.position.set(harePos.x + (i - 1) * .18, 1.7, harePos.z);
+			club.position.set(harePos.x + (i - 1) * .18, groundY(harePos.x + (i - 1) * .18, harePos.z) + (1.7), harePos.z);
 			club.rotation.x = 1.15;
 			club.rotation.z = (i - 1) * .45;
 			club.userData.ownGeo = true;
@@ -39044,7 +39100,7 @@ function buildYard(canvas) {
 				hold: .04 + i * .08
 			});
 			const flash = new Mesh(new SphereGeometry(.1, 8, 6), chantMat(16051412, .85));
-			flash.position.set(harePos.x + (i - 1) * .12, .95, harePos.z);
+			flash.position.set(harePos.x + (i - 1) * .12, groundY(harePos.x + (i - 1) * .12, harePos.z) + (.95), harePos.z);
 			flash.userData.ownGeo = true;
 			scene.add(flash);
 			embers.push({
@@ -39071,7 +39127,7 @@ function buildYard(canvas) {
 			const nx = face.x * .95 + rx * side;
 			const nz = face.z * .95 + rz * side;
 			const claw = new Mesh(new BoxGeometry(.08, .035, 1.05), chantMat(i === 0 ? 16051412 : 12963286, .92));
-			claw.position.set(px + nx, 1.05 + i * .08, pz + nz);
+			claw.position.set(px + nx, groundY(px + nx, pz + nz) + (1.05 + i * .08), pz + nz);
 			claw.rotation.y = Math.atan2(nx, nz);
 			claw.rotation.z = side * .35;
 			claw.userData.ownGeo = true;
@@ -39099,7 +39155,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .95;
 		g.add(shell, core);
-		g.position.set(px, 1.25, pz);
+		g.position.set(px, groundY(px, pz) + (1.25), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39118,7 +39174,7 @@ function buildYard(canvas) {
 	}
 	function spawnCursedImpact(x, z) {
 		const flash = new Mesh(new SphereGeometry(.36, 12, 10), chantMat(1454684, .8));
-		flash.position.set(x, 1.05, z);
+		flash.position.set(x, groundY(x, z) + (1.05), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -39133,7 +39189,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.18, .55, 24), chantMat(3829413, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -39172,7 +39228,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .95;
 		g.add(ball, core);
-		g.position.set(px, 1.3, pz);
+		g.position.set(px, groundY(px, pz) + (1.3), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39192,7 +39248,7 @@ function buildYard(canvas) {
 	}
 	function spawnBlastImpact(x, z, bound) {
 		const flash = new Mesh(new SphereGeometry(.4, 12, 10), chantMat(16757850, .85));
-		flash.position.set(x, .9, z);
+		flash.position.set(x, groundY(x, z) + (.9), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -39224,7 +39280,7 @@ function buildYard(canvas) {
 		if (!bound) return;
 		for (let i = 0; i < 4; i++) {
 			const link = new Mesh(new TorusGeometry(.16, .025, 6, 12), chantMat(10406911, .9));
-			link.position.set(x, .28 + i * .16, z);
+			link.position.set(x, groundY(x, z) + (.28 + i * .16), z);
 			link.rotation.x = Math.PI / 2;
 			link.rotation.z = i * .4;
 			link.userData.ownGeo = true;
@@ -39252,7 +39308,7 @@ function buildYard(canvas) {
 			const side = (i - 4) * .18;
 			const along = .55 + i % 3 * .45;
 			const mote = new Mesh(new SphereGeometry(.14 + i % 2 * .05, 8, 6), chantMat(i % 2 ? 7031434 : 8244842, .5));
-			mote.position.set(px + face.x * along + rx * side, 1 + i % 3 * .12, pz + face.z * along + rz * side);
+			mote.position.set(px + face.x * along + rx * side, groundY(px + face.x * along + rx * side, pz + face.z * along + rz * side) + (1 + i % 3 * .12), pz + face.z * along + rz * side);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -39269,7 +39325,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const bubble = new Mesh(new SphereGeometry(.045, 6, 5), chantMat(i % 2 ? 9293418 : 7031434, .85));
 			const a = i / 6 * Math.PI * 2;
-			bubble.position.set(harePos.x + Math.cos(a) * .14, .9, harePos.z + Math.sin(a) * .14);
+			bubble.position.set(harePos.x + Math.cos(a) * .14, groundY(harePos.x + Math.cos(a) * .14, harePos.z + Math.sin(a) * .14) + (.9), harePos.z + Math.sin(a) * .14);
 			bubble.userData.ownGeo = true;
 			scene.add(bubble);
 			embers.push({
@@ -39289,7 +39345,7 @@ function buildYard(canvas) {
 	*/
 	function spawnHelldive(knock) {
 		const bird = new Mesh(new BoxGeometry(.72, .06, .28), chantMat(2764344, .95));
-		bird.position.set(harePos.x, 2.4, harePos.z);
+		bird.position.set(harePos.x, groundY(harePos.x, harePos.z) + (2.4), harePos.z);
 		bird.userData.ownGeo = true;
 		scene.add(bird);
 		embers.push({
@@ -39302,7 +39358,7 @@ function buildYard(canvas) {
 			hold: .02
 		});
 		const flash = new Mesh(new SphereGeometry(.32, 10, 8), chantMat(9357551, .75));
-		flash.position.set(harePos.x, .9, harePos.z);
+		flash.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.9), harePos.z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -39319,7 +39375,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 6; i++) {
 			const chip = new Mesh(new BoxGeometry(.06, .04, .06), chantMat(i % 2 ? 14206116 : 9074016, .9));
 			const a = i / 6 * Math.PI * 2;
-			chip.position.set(harePos.x, .4, harePos.z);
+			chip.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.4), harePos.z);
 			chip.userData.ownGeo = true;
 			scene.add(chip);
 			embers.push({
@@ -39349,7 +39405,7 @@ function buildYard(canvas) {
 			const side = (i - 1) * .16;
 			const along = .32 + i * .2;
 			const claw = new Mesh(new BoxGeometry(.62, .035, .05), chantMat(i === 1 ? 14087423 : 10400511, .9));
-			claw.position.set(px + nx * along - nz * side, .95 + (i === 2 ? .22 : i === 0 ? -.08 : .06), pz + nz * along + nx * side);
+			claw.position.set(px + nx * along - nz * side, groundY(px + nx * along - nz * side, pz + nz * along + nx * side) + (.95 + (i === 2 ? .22 : i === 0 ? -.08 : .06)), pz + nz * along + nx * side);
 			claw.rotation.y = yaw + (i - 1) * .4;
 			claw.rotation.z = (i - 1) * .45;
 			claw.userData.ownGeo = true;
@@ -39364,7 +39420,7 @@ function buildYard(canvas) {
 				hold: .02
 			});
 			const flash = new Mesh(new SphereGeometry(.11, 8, 6), chantMat(15395583, .92));
-			flash.position.set(harePos.x - nz * side, 1.02 + i * .1, harePos.z + nx * side);
+			flash.position.set(harePos.x - nz * side, groundY(harePos.x - nz * side, harePos.z + nx * side) + (1.02 + i * .1), harePos.z + nx * side);
 			flash.userData.ownGeo = true;
 			scene.add(flash);
 			embers.push({
@@ -39394,7 +39450,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 5; i++) {
 			const side = (i - 2) * .07;
 			const needle = new Mesh(new BoxGeometry(.035, .035, .55), chantMat(i % 2 ? 12963286 : 16777215, .9));
-			needle.position.set(px + nx * (.4 + i * .08) - nz * side, 1.05 + (i % 2 ? .06 : -.04), pz + nz * (.4 + i * .08) + nx * side);
+			needle.position.set(px + nx * (.4 + i * .08) - nz * side, groundY(px + nx * (.4 + i * .08) - nz * side, pz + nz * (.4 + i * .08) + nx * side) + (1.05 + (i % 2 ? .06 : -.04)), pz + nz * (.4 + i * .08) + nx * side);
 			needle.rotation.y = yaw;
 			needle.rotation.z = (i - 2) * .08;
 			needle.userData.ownGeo = true;
@@ -39413,7 +39469,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < 7; i++) {
 			const mote = new Mesh(new SphereGeometry(.04, 6, 5), chantMat(i % 2 ? 11566335 : 7196266, .85));
 			const a = i / 7 * Math.PI * 2;
-			mote.position.set(harePos.x + Math.cos(a) * .16, 1.05, harePos.z + Math.sin(a) * .16);
+			mote.position.set(harePos.x + Math.cos(a) * .16, groundY(harePos.x + Math.cos(a) * .16, harePos.z + Math.sin(a) * .16) + (1.05), harePos.z + Math.sin(a) * .16);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -39445,7 +39501,7 @@ function buildYard(canvas) {
 		seam.userData.ownGeo = true;
 		seam.userData.peak = .8;
 		g.add(ball, seam);
-		g.position.set(px, 1.15, pz);
+		g.position.set(px, groundY(px, pz) + (1.15), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39464,7 +39520,7 @@ function buildYard(canvas) {
 	}
 	function spawnCannonballImpact(x, z) {
 		const flash = new Mesh(new SphereGeometry(.28, 10, 8), chantMat(15254138, .85));
-		flash.position.set(x, .7, z);
+		flash.position.set(x, groundY(x, z) + (.7), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -39479,7 +39535,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.2, .46, 20), chantMat(9255474, .75));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .06, z);
+		ring.position.set(x, groundY(x, z) + (.06), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -39522,7 +39578,7 @@ function buildYard(canvas) {
 		leaf.userData.ownGeo = true;
 		leaf.userData.peak = .95;
 		g.add(fruit, leaf);
-		g.position.set(px, 1.3, pz);
+		g.position.set(px, groundY(px, pz) + (1.3), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39541,7 +39597,7 @@ function buildYard(canvas) {
 	}
 	function spawnMagicFruitPop(x, z) {
 		const glow = new Mesh(new SphereGeometry(.22, 10, 8), chantMat(14286816, .7));
-		glow.position.set(x, 1.45, z);
+		glow.position.set(x, groundY(x, z) + (1.45), z);
 		glow.userData.ownGeo = true;
 		scene.add(glow);
 		embers.push({
@@ -39597,7 +39653,7 @@ function buildYard(canvas) {
 			wisp.userData.peak = .85;
 			g.add(wisp);
 		}
-		g.position.set(px, 0, pz);
+		g.position.set(px, groundY(px, pz), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39608,7 +39664,7 @@ function buildYard(canvas) {
 		});
 		const ring = new Mesh(new RingGeometry(.25, .62, 28), chantMat(14152959, .7));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(px, .05, pz);
+		ring.position.set(px, groundY(px, pz) + (.05), pz);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -39633,7 +39689,7 @@ function buildYard(canvas) {
 		core.userData.ownGeo = true;
 		core.userData.peak = .9;
 		g.add(bolt, core);
-		g.position.set(px, 1.2, pz);
+		g.position.set(px, groundY(px, pz) + (1.2), pz);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39652,7 +39708,7 @@ function buildYard(canvas) {
 	}
 	function spawnMindBlastImpact(x, z) {
 		const flash = new Mesh(new OctahedronGeometry(.28, 0), chantMat(16052479, .9));
-		flash.position.set(x, 1.1, z);
+		flash.position.set(x, groundY(x, z) + (1.1), z);
 		flash.userData.ownGeo = true;
 		scene.add(flash);
 		embers.push({
@@ -39689,7 +39745,7 @@ function buildYard(canvas) {
 		const z = harePos.z;
 		const ring = new Mesh(new RingGeometry(.16, .4, 28), divineMat(14925946, .42));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(x, .95, z);
+		ring.position.set(x, groundY(x, z) + (.95), z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -39799,7 +39855,7 @@ function buildYard(canvas) {
 			cross.position.y = h * .72;
 			g.add(cross);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39869,7 +39925,7 @@ function buildYard(canvas) {
 			halo.position.y = 1.82;
 			g.add(halo);
 		}
-		g.position.set(x, 0, z);
+		g.position.set(x, groundY(x, z), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39905,7 +39961,7 @@ function buildYard(canvas) {
 		if (name === "Esuna") {
 			const ring = new Mesh(new RingGeometry(.05, .14, 28), plainMat(16777215, .85));
 			ring.rotation.x = -Math.PI / 2;
-			ring.position.set(x, .05, z);
+			ring.position.set(x, groundY(x, z) + (.05), z);
 			ring.userData.ownGeo = true;
 			scene.add(ring);
 			rings.push({
@@ -39937,7 +39993,7 @@ function buildYard(canvas) {
 		}
 		if (name === "Sacrifice") {
 			const back = new Mesh(new SphereGeometry(.045, 6, 5), plainMat(14925946, .8));
-			back.position.set(x, 1.35, z);
+			back.position.set(x, groundY(x, z) + (1.35), z);
 			back.userData.ownGeo = true;
 			scene.add(back);
 			embers.push({
@@ -39962,7 +40018,7 @@ function buildYard(canvas) {
 		const g = new Group();
 		g.add(new Mesh(new BoxGeometry(.03, .28, .03), mat));
 		g.add(new Mesh(new BoxGeometry(.28, .03, .03), mat));
-		g.position.set(x, y, z);
+		g.position.set(x, groundY(x, z) + (y), z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -39981,7 +40037,7 @@ function buildYard(canvas) {
 			});
 			const rock = new Mesh(new BoxGeometry(.08 * scale, .05 * scale, .1 * scale), mat);
 			const a = i / 5 * Math.PI * 2;
-			rock.position.set(harePos.x + Math.cos(a) * .12, .05, harePos.z + Math.sin(a) * .12);
+			rock.position.set(harePos.x + Math.cos(a) * .12, groundY(harePos.x + Math.cos(a) * .12, harePos.z + Math.sin(a) * .12) + (.05), harePos.z + Math.sin(a) * .12);
 			scene.add(rock);
 			embers.push({
 				mesh: rock,
@@ -40018,7 +40074,7 @@ function buildYard(canvas) {
 			rope.rotation.y = i * Math.PI / 4;
 			g.add(rope);
 		}
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -40038,7 +40094,7 @@ function buildYard(canvas) {
 		const shaft = new Mesh(new BoxGeometry(.035, .035, 1.15), wood);
 		shaft.userData.ownGeo = true;
 		g.add(shaft);
-		g.position.set(harePos.x, 1.7, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.7), harePos.z);
 		g.lookAt(px, 4.8, pz);
 		scene.add(g);
 		sparks.push({
@@ -40051,7 +40107,7 @@ function buildYard(canvas) {
 	}
 	function spawnEmpyrealBurst() {
 		const g = new Group();
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		const coreMat = new MeshBasicMaterial({
 			color: 16775920,
 			transparent: true,
@@ -40126,7 +40182,7 @@ function buildYard(canvas) {
 			const shaft = new Mesh(new BoxGeometry(.05, .05, 1.7), mat);
 			shaft.userData.ownGeo = true;
 			g.add(shaft);
-			g.position.set(harePos.x, 1.15, harePos.z);
+			g.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.15), harePos.z);
 			g.lookAt(px, 1.15, pz);
 			scene.add(g);
 			sparks.push({
@@ -40354,7 +40410,7 @@ function buildYard(canvas) {
 			depthWrite: false,
 			toneMapped: false
 		}));
-		ghost.position.set(x, y, z);
+		ghost.position.set(x, groundY(x, z) + (y), z);
 		if (quat) ghost.quaternion.copy(quat);
 		scene.add(ghost);
 		trails.push({
@@ -40438,7 +40494,7 @@ function buildYard(canvas) {
 	function hareRing(color, inner, outer, life, grow) {
 		const ring = new Mesh(new RingGeometry(inner, outer, 22), shotFxMat(color, .82));
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(harePos.x, .06, harePos.z);
+		ring.position.set(harePos.x, groundY(harePos.x, harePos.z) + (.06), harePos.z);
 		ring.userData.ownGeo = true;
 		scene.add(ring);
 		rings.push({
@@ -40453,7 +40509,7 @@ function buildYard(canvas) {
 		for (let i = 0; i < n; i++) {
 			const a = i / n * Math.PI * 2;
 			const mote = new Mesh(new SphereGeometry(.045, 6, 5), shotFxMat(color, .92));
-			mote.position.set(harePos.x + Math.cos(a) * .16, .8 + i % 3 * .14, harePos.z + Math.sin(a) * .16);
+			mote.position.set(harePos.x + Math.cos(a) * .16, groundY(harePos.x + Math.cos(a) * .16, harePos.z + Math.sin(a) * .16) + (.8 + i % 3 * .14), harePos.z + Math.sin(a) * .16);
 			mote.userData.ownGeo = true;
 			scene.add(mote);
 			embers.push({
@@ -40472,7 +40528,7 @@ function buildYard(canvas) {
 		core.position.y = y;
 		core.userData.ownGeo = true;
 		g.add(core);
-		g.position.set(harePos.x, 0, harePos.z);
+		g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -40521,7 +40577,7 @@ function buildYard(canvas) {
 			spawnImpact(0, 1.52);
 			for (let i = 0; i < 3; i++) {
 				const mark = new Mesh(new BoxGeometry(.16, .025, .025), shotFxMat(9611957, .9));
-				mark.position.set(harePos.x, 1.58 - i * .14, harePos.z);
+				mark.position.set(harePos.x, groundY(harePos.x, harePos.z) + (1.58 - i * .14), harePos.z);
 				mark.rotation.z = -.55;
 				mark.userData.ownGeo = true;
 				scene.add(mark);
@@ -40583,7 +40639,7 @@ function buildYard(canvas) {
 			spawnImpact(0, 1.05);
 			hareRing(8317183, .35, .5, .7, -.55);
 			const g = new Group();
-			g.position.set(harePos.x, 0, harePos.z);
+			g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 			for (let i = 0; i < 6; i++) {
 				const line = new Mesh(new BoxGeometry(.02, .38, .02), shotFxMat(i % 2 ? 8317183 : 14083583, .9));
 				const a = i / 6 * Math.PI * 2;
@@ -40610,7 +40666,7 @@ function buildYard(canvas) {
 			laterStrike(.12, () => {
 				spawnImpact(.4, .95);
 				const g = new Group();
-				g.position.set(harePos.x, 0, harePos.z);
+				g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 				const core = new Mesh(new BoxGeometry(.08, 2.4, .08), shotFxMat(16774850, .9));
 				core.position.y = 1.3;
 				core.userData.ownGeo = true;
@@ -40645,7 +40701,7 @@ function buildYard(canvas) {
 			heatTint = 16729344;
 			heatFlash = .85;
 			const g = new Group();
-			g.position.set(harePos.x, 0, harePos.z);
+			g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 			for (let i = 0; i < 7; i++) {
 				const tongue = new Mesh(new BoxGeometry(.16, 1.35 + i % 3 * .5, .16), shotFxMat(i % 2 ? 16729344 : 16711680, .75));
 				const a = i / 7 * Math.PI * 2;
@@ -40672,7 +40728,7 @@ function buildYard(canvas) {
 			heatTint = 16774850;
 			heatFlash = .5;
 			const g = new Group();
-			g.position.set(harePos.x, 0, harePos.z);
+			g.position.set(harePos.x, groundY(harePos.x, harePos.z), harePos.z);
 			const core = new Mesh(new BoxGeometry(.1, 3.2, .1), shotFxMat(16775920, .92));
 			core.position.y = 1.6;
 			core.userData.ownGeo = true;
@@ -40823,7 +40879,7 @@ function buildYard(canvas) {
 		across.userData.ownGeo = true;
 		g.add(up, across);
 		const right = new Vector3(1, 0, 0).applyQuaternion(hero.root.quaternion);
-		g.position.set(fightX + right.x * side * .18, y, fightZ + right.z * side * .18);
+		g.position.set(fightX + right.x * side * .18, groundY(fightX + right.x * side * .18, fightZ + right.z * side * .18) + (y), fightZ + right.z * side * .18);
 		g.lookAt(fightX + right.x * side * .18, y, fightZ + right.z * side * .18 + 1);
 		scene.add(g);
 		sparks.push({
@@ -40846,7 +40902,7 @@ function buildYard(canvas) {
 		g.add(streak);
 		const nose = fwd(yaw);
 		const right = new Vector3(nose.z, 0, -nose.x);
-		g.position.set(fightX + right.x * side * .2 + nose.x * .55, y, fightZ + right.z * side * .2 + nose.z * .55);
+		g.position.set(fightX + right.x * side * .2 + nose.x * .55, groundY(fightX + right.x * side * .2 + nose.x * .55, fightZ + right.z * side * .2 + nose.z * .55) + (y), fightZ + right.z * side * .2 + nose.z * .55);
 		g.lookAt(fightX + nose.x * 2, y, fightZ + nose.z * 2);
 		scene.add(g);
 		sparks.push({
@@ -40868,7 +40924,7 @@ function buildYard(canvas) {
 		g.add(new Mesh(new BoxGeometry(.36, .03, .03), mat));
 		g.add(new Mesh(new BoxGeometry(.03, .03, .36), mat));
 		const right = new Vector3(1, 0, 0).applyQuaternion(hero.root.quaternion);
-		g.position.set(fightX + right.x * side * .2, y, fightZ + right.z * side * .2);
+		g.position.set(fightX + right.x * side * .2, groundY(fightX + right.x * side * .2, fightZ + right.z * side * .2) + (y), fightZ + right.z * side * .2);
 		scene.add(g);
 		sparks.push({
 			g,
@@ -41028,7 +41084,7 @@ function buildYard(canvas) {
 					e.vx = 0;
 					e.vy = 0;
 					e.vz = 0;
-					e.mesh.position.set(hx + e.rollCard.ox * ease, head + e.rollCard.oy * ease, hz);
+					e.mesh.position.set(hx + e.rollCard.ox * ease, groundY(hx + e.rollCard.ox * ease, hz) + (head + e.rollCard.oy * ease), hz);
 					e.mesh.scale.setScalar(.35 + ease * .65);
 					e.mesh.lookAt(camera.position);
 					e.mesh.material.opacity = form <= 0 ? 0 : .98;
@@ -41037,7 +41093,7 @@ function buildYard(canvas) {
 						e.rollCard.ripped = true;
 						e.rollCard.homeX = hx;
 						e.rollCard.homeZ = hz;
-						e.mesh.position.set(hx + e.rollCard.ox, head + e.rollCard.oy, hz);
+						e.mesh.position.set(hx + e.rollCard.ox, groundY(hx + e.rollCard.ox, hz) + (head + e.rollCard.oy), hz);
 						e.vx = e.rollCard.ripVx;
 						e.vz = e.rollCard.ripVz;
 						e.vy = e.rollCard.ripVy;
@@ -41072,7 +41128,8 @@ function buildYard(canvas) {
 					const fromX = e.rollCard.fromX ?? hx;
 					const fromY = e.rollCard.fromY ?? 1.2;
 					const fromZ = e.rollCard.fromZ ?? hz;
-					e.mesh.position.set(fromX + (hx - fromX) * ease, fromY + (head - fromY) * ease, fromZ + (hz - fromZ) * ease);
+					const seat = groundY(fromX + (hx - fromX) * ease, fromZ + (hz - fromZ) * ease);
+					e.mesh.position.set(fromX + (hx - fromX) * ease, fromY + (seat + head - fromY) * ease, fromZ + (hz - fromZ) * ease);
 					const bounce = ease > .8 && ease < 1 ? Math.sin((ease - .8) / .2 * Math.PI) * .06 : 0;
 					e.mesh.scale.setScalar((.4 + ease * .6 + bounce) * (e.rollCard.eleven ? 1.08 : 1));
 					e.mesh.lookAt(camera.position);
@@ -41243,7 +41300,7 @@ function buildYard(canvas) {
 		const ring = (color, inner, outer, life, grow, spin) => {
 			const mesh = new Mesh(new RingGeometry(inner, outer, lv >= 3 ? 48 : 32), chantMat(color, .9));
 			mesh.rotation.x = -Math.PI / 2;
-			mesh.position.set(x, .08, z);
+			mesh.position.set(x, groundY(x, z) + (.08), z);
 			mesh.userData.ownGeo = true;
 			scene.add(mesh);
 			rings.push({
@@ -41276,7 +41333,7 @@ function buildYard(canvas) {
 		};
 		const pillar = (color, h, radius) => {
 			const mesh = new Mesh(new CylinderGeometry(radius * .45, radius, h, 12), chantMat(color, lv >= 3 ? .72 : .55));
-			mesh.position.set(x, h / 2, z);
+			mesh.position.set(x, groundY(x, z) + (h / 2), z);
 			mesh.userData.ownGeo = true;
 			scene.add(mesh);
 			rings.push({
@@ -41295,7 +41352,7 @@ function buildYard(canvas) {
 		mote(hex, 4 + lv * 2, pull ? 1.05 * scale : .35, pull ? -.65 : .7 + lv * .06, .16 + lv * .04);
 		if (name === "Impaction" || name === "Fragmentation" || name === "Light" || name === "Radiance") for (let i = 0; i < (lv >= 3 ? 5 : 3); i++) {
 			const bolt = new Mesh(new BoxGeometry(.035 * scale, (lv >= 3 ? 1 : .65) * scale, .035 * scale), chantMat(16772842, .95));
-			bolt.position.set(x + (i - 2) * .14 * scale, .65 * scale, z);
+			bolt.position.set(x + (i - 2) * .14 * scale, groundY(x + (i - 2) * .14 * scale, z) + (.65 * scale), z);
 			bolt.rotation.z = (i - 3) * .28;
 			bolt.userData.ownGeo = true;
 			const g = new Group();
@@ -41325,7 +41382,7 @@ function buildYard(canvas) {
 		}
 		if (pull || lv >= 3) {
 			const orb = new Mesh(new SphereGeometry((pull ? .36 : .24) * scale, 16, 12), chantMat(pull ? hex : 16777215, lv >= 3 ? .7 : .55));
-			orb.position.set(x, 1.15, z);
+			orb.position.set(x, groundY(x, z) + (1.15), z);
 			orb.userData.ownGeo = true;
 			const g = new Group();
 			g.add(orb);
@@ -41631,6 +41688,8 @@ function buildYard(canvas) {
 			if (window.__passHit === passHit) delete window.__passHit;
 			if (window.__passNear === passNear) delete window.__passNear;
 			if (window.__passClick === passClickLog) delete window.__passClick;
+			if (window.__skillHop === skillHop) delete window.__skillHop;
+			if (window.__seatAudit && window.__seatAudit.token === seatToken) delete window.__seatAudit;
 		}
 	};
 	window.__controlsTest = {
@@ -41638,6 +41697,86 @@ function buildYard(canvas) {
 		getSpeed: api.getSpeed,
 		setKeys: api.setKeys
 	};
+	const seatToken = {};
+	let heroFloorMin = Infinity;
+	function publishSeatAudit() {
+		const monsters = [];
+		for (const slot of fieldSlots) {
+			const root = slot.root;
+			if (!root || !root.visible) continue;
+			const x = root.position.x;
+			const z = root.position.z;
+			monsters.push({
+				kind: "field",
+				x,
+				y: root.position.y,
+				z,
+				ground: groundY(x, z),
+				hover: root.userData.seatLift || 0
+			});
+		}
+		const pets = [];
+		for (const [id, root] of petMeshes) {
+			if (!root || !root.visible) continue;
+			const x = root.position.x;
+			const z = root.position.z;
+			pets.push({
+				kind: "pet",
+				id,
+				x,
+				y: root.position.y,
+				z,
+				ground: groundY(x, z),
+				hover: root.userData.seatLift || 0
+			});
+		}
+		const trusts = [];
+		for (const pup of puppets) {
+			const root = pup.body.root;
+			if (!root.visible) continue;
+			const x = root.position.x;
+			const z = root.position.z;
+			trusts.push({
+				kind: "trust",
+				id: pup.def.id,
+				x,
+				y: root.position.y,
+				z,
+				ground: groundY(x, z),
+				hover: 0
+			});
+		}
+		const rings = [];
+		for (const ring of [selfRing, trustRing, fieldRing, rangeRing]) {
+			if (!ring.visible) continue;
+			const x = ring.position.x;
+			const z = ring.position.z;
+			rings.push({
+				x,
+				y: ring.position.y,
+				z,
+				ground: groundY(x, z)
+			});
+		}
+		const hy = hero.root.position.y;
+		const hg = groundY(px, pz);
+		if (hy - hg < heroFloorMin) heroFloorMin = hy - hg;
+		window.__seatAudit = {
+			token: seatToken,
+			fieldLive,
+			hero: {
+				x: px,
+				y: hy,
+				z: pz,
+				ground: hg
+			},
+			heroFloorMin,
+			monsters,
+			pets,
+			trusts,
+			rings
+		};
+	}
 	const passAudit = () => {
 		const rows = [];
 		scene.updateMatrixWorld(true);
@@ -41726,6 +41865,7 @@ function buildYard(canvas) {
 		});
 	};
 	window.__passAudit = passAudit;
+	window.__skillHop = skillHop;
 	window.__passHit = passHit;
 	window.__passNear = passNear;
 	window.__passClick = passClickLog;
@@ -42885,7 +43025,7 @@ function makeCrossbow(toonMat) {
 }
 function gearPart(toonMat, w, h, d, color, x, y, z, outline = false) {
 	const mesh = part(new BoxGeometry(w, h, d), color, toonMat, outline);
-	mesh.position.set(x, y, z);
+	mesh.position.set(x, groundY(x, z) + (y), z);
 	return mesh;
 }
 function buildGear(id, toonMat) {
@@ -43609,7 +43749,7 @@ function addEvokersAttire(hips, spine, headBone, armR, armL, toonMat) {
 }
 function summonBit(parent, geo, color, toonMat, x, y, z, outline) {
 	const mesh = part(geo, color, toonMat, outline !== false);
-	mesh.position.set(x, y, z);
+	mesh.position.set(x, groundY(x, z) + (y), z);
 	parent.add(mesh);
 	return mesh;
 }
@@ -46228,7 +46368,7 @@ function buildHare(toonMat) {
 }
 function hareLimb(parent, x, z, slot, toonMat, bind) {
 	const upper = bone(`upper${slot}`);
-	upper.position.set(x, -.02, z);
+	upper.position.set(x, groundY(x, z) + (-.02), z);
 	parent.add(upper);
 	const upperMesh = bind(part(new BoxGeometry(.12, .12, .14), FUR, toonMat, true), FUR);
 	upperMesh.position.y = -.06;
@@ -46385,17 +46525,17 @@ function cityHouse(add, colliders, x, z, w, d) {
 }
 function cityTower(scene, toon, colliders, x, z, tall) {
 	const body = new Mesh(new CylinderGeometry(.78, .92, tall, 8), toon(14272417));
-	body.position.set(x, tall / 2, z);
+	body.position.set(x, groundY(x, z) + (tall / 2), z);
 	body.castShadow = true;
 	body.receiveShadow = true;
 	const lip = new Mesh(new CylinderGeometry(1.02, 1.02, .16, 8), toon(14927226));
-	lip.position.set(x, tall - .02, z);
+	lip.position.set(x, groundY(x, z) + (tall - .02), z);
 	lip.castShadow = true;
 	const cap = new Mesh(new ConeGeometry(1.18, 1.4, 8), toon(2772614));
-	cap.position.set(x, tall + .58, z);
+	cap.position.set(x, groundY(x, z) + (tall + .58), z);
 	cap.castShadow = true;
 	const fin = new Mesh(new BoxGeometry(.08, .4, .08), toon(14927226));
-	fin.position.set(x, tall + 1.38, z);
+	fin.position.set(x, groundY(x, z) + (tall + 1.38), z);
 	scene.add(body, lip, cap, fin);
 	colliders.push({
 		minX: x - .86,
@@ -46406,11 +46546,11 @@ function cityTower(scene, toon, colliders, x, z, tall) {
 }
 function moat(scene, toon, w, d, x, z) {
 	const bed = new Mesh(new BoxGeometry(w, .24, d), toon(1726072));
-	bed.position.set(x, -.34, z);
+	bed.position.set(x, groundY(x, z) + (-.34), z);
 	bed.receiveShadow = true;
 	bed.castShadow = false;
 	const sheen = new Mesh(new BoxGeometry(w * .92, .05, Math.min(d * .28, 1.6)), toon(4097712));
-	sheen.position.set(x, -.18, z);
+	sheen.position.set(x, groundY(x, z) + (-.18), z);
 	sheen.receiveShadow = true;
 	sheen.castShadow = false;
 	scene.add(bed, sheen);
@@ -46420,7 +46560,7 @@ function buildGoblin(toon) {
 	root.name = "goblin";
 	const put = (geo, color, x, y, z) => {
 		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 		root.add(mesh);
@@ -46445,7 +46585,7 @@ function buildSanGuard(toon) {
 	root.name = "san-guard";
 	const put = (geo, color, x, y, z) => {
 		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 		root.add(mesh);
@@ -46514,7 +46654,7 @@ function buildAngler(toon, tunic = 1841186) {
 	const root = new Group();
 	const put = (geo, color, x, y, z) => {
 		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 		root.add(mesh);
@@ -46850,7 +46990,7 @@ function buildRoom(scene, toonMat, colliders) {
 		const geo = new BoxGeometry(w, h, d);
 		stoneWallUvs(geo, w, h, d);
 		const mesh = new Mesh(geo, (color !== 0 && h < 2 ? lipBase : wallBase).clone());
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.rotation.y = yaw;
 		mesh.castShadow = h >= 2;
 		mesh.receiveShadow = true;
@@ -46956,11 +47096,11 @@ function buildRoom(scene, toonMat, colliders) {
 	const hangTorch = (x, z, y) => {
 		const fy = y == null ? 1.6 : y;
 		const flame = new Mesh(new BoxGeometry(0.22, 0.28, 0.22), passFlame);
-		flame.position.set(x, fy, z);
+		flame.position.set(x, groundY(x, z) + (fy), z);
 		flame.castShadow = false;
 		flame.receiveShadow = false;
 		const halo = new Sprite(haloMat);
-		halo.position.set(x, fy + 0.04, z);
+		halo.position.set(x, groundY(x, z) + (fy + 0.04), z);
 		halo.scale.set(0.8, 0.8, 1);
 		scene.add(flame, halo);
 		passTorches.push({ x, z });
@@ -47056,7 +47196,7 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.name = "sealed-gate-stone";
 		mesh.userData.sealedGate = "stone";
 		mesh.userData.made = "addStone";
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.rotation.y = yaw;
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
@@ -47089,7 +47229,7 @@ function buildRoom(scene, toonMat, colliders) {
 			const qTilt = new Quaternion().setFromAxisAngle(new Vector3(ax / al, ay / al, az / al), lean);
 			mesh.quaternion.copy(qTilt).multiply(qYaw);
 		} else mesh.quaternion.copy(qYaw);
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.castShadow = false;
 		mesh.receiveShadow = false;
 		passWalls.push(mesh);
@@ -47106,7 +47246,7 @@ function buildRoom(scene, toonMat, colliders) {
 				side: DoubleSide
 			}))
 			: new Mesh(new BoxGeometry(w, h, d), redMat.clone());
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.castShadow = false;
 		mesh.receiveShadow = false;
 		mesh.userData.made = "addCue";
@@ -47259,12 +47399,12 @@ function buildRoom(scene, toonMat, colliders) {
 		[6.4, -8.15]
 	]) {
 		const base = new Mesh(new BoxGeometry(.42, .46, .42), toonMat(4871520));
-		base.position.set(x, .23, z);
+		base.position.set(x, groundY(x, z) + (.23), z);
 		base.castShadow = true;
 		const bowl = new Mesh(new BoxGeometry(.28, .12, .28), toonMat(mortar));
-		bowl.position.set(x, .5, z);
+		bowl.position.set(x, groundY(x, z) + (.5), z);
 		const flame = new Mesh(new BoxGeometry(.12, .28, .12), flameMat);
-		flame.position.set(x, .7, z);
+		flame.position.set(x, groundY(x, z) + (.7), z);
 		scene.add(base, bowl, flame);
 		colliders.push({
 			minX: x - .28,
@@ -47343,16 +47483,16 @@ function buildRoom(scene, toonMat, colliders) {
 			scene.add(water);
 		} else if (mark.kind === "shaft") {
 			const shaft = new Mesh(new PlaneGeometry(0.55, 9), orcShaftMat);
-			shaft.position.set(mark.x, traceFloorY(mark.x, mark.z) + 4.6, mark.z);
+			shaft.position.set(mark.x, groundY(mark.x, mark.z) + 4.6, mark.z);
 			scene.add(shaft);
 		} else if (mark.kind === "glow") {
 			const glow = new Mesh(new CircleGeometry(mark.r ?? 7, 10), orcGlowMat);
 			glow.rotation.x = -Math.PI / 2;
-			glow.position.set(mark.x, traceFloorY(mark.x, mark.z) + 7.2, mark.z);
+			glow.position.set(mark.x, groundY(mark.x, mark.z) + 7.2, mark.z);
 			scene.add(glow);
 		} else if (mark.kind === "fall") {
 			const fall = new Mesh(new PlaneGeometry(1.35, 15), orcFallMat);
-			const y = traceFloorY(mark.x, mark.z);
+			const y = groundY(mark.x, mark.z);
 			fall.position.set(mark.x, y - 4, mark.z);
 			fall.rotation.y = mark.yaw ?? 0;
 			scene.add(fall);
@@ -47553,7 +47693,7 @@ function buildRoom(scene, toonMat, colliders) {
 		const geo = new PlaneGeometry(w, d);
 		geo.rotateX(-Math.PI / 2);
 		const mesh = new Mesh(geo, mossPad);
-		mesh.position.set(x, 6, z);
+		mesh.position.set(x, groundY(x, z) + (6), z);
 		mesh.receiveShadow = true;
 		scene.add(mesh);
 	};
@@ -48106,7 +48246,7 @@ function buildDistricts(add, colliders, scene, toon) {
 	const glass = 9357551;
 	const dress = (geo, color, x, y, z) => {
 		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, y, z);
+		mesh.position.set(x, groundY(x, z) + (y), z);
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 		scene.add(mesh);
