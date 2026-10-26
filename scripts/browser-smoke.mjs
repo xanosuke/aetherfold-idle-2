@@ -189,6 +189,49 @@ function percentile(values, q) {
   return values[Math.min(values.length - 1, Math.floor(values.length * q))];
 }
 
+function floorLum(png) {
+  const { width, height, data } = decodePng(png);
+  const at = (x, y) => {
+    const i = (y * width + x) * 4;
+    return [data[i], data[i + 1], data[i + 2]];
+  };
+  const vals = [];
+  const y0 = Math.floor(height * 0.42);
+  const y1 = Math.floor(height * 0.62);
+  const x0 = Math.floor(width * 0.38);
+  const x1 = Math.floor(width * 0.62);
+  for (let y = y0; y < y1; y += 3) {
+    for (let x = x0; x < x1; x += 3) {
+      const [r, g, b] = at(x, y);
+      if (r < 20 && g < 20 && b < 20) continue;
+      if (r > 210 && g > 180) continue;
+      vals.push((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255);
+    }
+  }
+  vals.sort((a, b) => a - b);
+  if (!vals.length) return 0;
+  return vals[Math.floor(vals.length * 0.35)];
+}
+
+function grottoLum(png) {
+  const { width, height, data } = decodePng(png);
+  const vals = [];
+  const y0 = Math.floor(height * 0.4);
+  const y1 = Math.floor(height * 0.58);
+  const x0 = Math.floor(width * 0.25);
+  const x1 = Math.floor(width * 0.75);
+  for (let y = y0; y < y1; y += 2) {
+    for (let x = x0; x < x1; x += 2) {
+      const i = (y * width + x) * 4;
+      const L = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+      if (L < 0.08 || L > 0.7) continue;
+      vals.push(L);
+    }
+  }
+  vals.sort((a, b) => a - b);
+  return vals.length ? vals[Math.floor(vals.length * 0.7)] : 0;
+}
+
 function canvasStats(png) {
   const { width, height, data } = decodePng(png);
   let black = 0;
@@ -692,7 +735,7 @@ function seatPlaces() {
         import { traceFloorY } from "./src/game/orc-height.ts";
         import { fortSquare, yughottSquare, inFort, inYughott } from "./src/game/ghelsba.ts";
         import { FORT_GRAPH, gridToWorld as fortWorld } from "./src/game/fort-graph.ts";
-        import { YUGHOTT_MAP1_GRAPH, gridToWorld as yugWorld } from "./src/game/yughott-graph.ts";
+        import { YUGHOTT_MAP1_GRAPH, YUGHOTT_MAP2_GRAPH, gridToWorld as yugWorld } from "./src/game/yughott-graph.ts";
         const fort = (id, square) => {
           const row = FORT_GRAPH.nodes.find((node) => node.id === id);
           if (!row) throw new Error("missing " + id);
@@ -702,21 +745,23 @@ function seatPlaces() {
           if (!inFort(at.x, at.z, 0)) throw new Error(id + " left the fort");
           return { name: id, x: at.x, z: at.z, square, region: "Fort Ghelsba", floor: traceFloorY(at.x, at.z) };
         };
-        const yug = (id, square) => {
-          const row = YUGHOTT_MAP1_GRAPH.nodes.find((node) => node.id === id);
+        const yug = (id, square, map, view) => {
+          const graph = map === 2 ? YUGHOTT_MAP2_GRAPH : YUGHOTT_MAP1_GRAPH;
+          const row = graph.nodes.find((node) => node.id === id);
           if (!row) throw new Error("missing " + id);
-          const at = yugWorld(row.gx, row.gy, 1);
+          const at = yugWorld(row.gx, row.gy, map || 1);
           const hit = yughottSquare(at.x, at.z);
           if (hit !== square) throw new Error(id + " square " + hit);
           if (!inYughott(at.x, at.z, 0)) throw new Error(id + " left the grotto");
-          return { name: id, x: at.x, z: at.z, square, region: "Yughott Grotto", floor: traceFloorY(at.x, at.z) };
+          return { name: id, x: at.x, z: at.z, square, region: "Yughott Grotto", floor: traceFloorY(at.x, at.z), view: view === true };
         };
         const stands = [
           fort("j_n50", "I-6"),
           fort("room_hundredscar", "G-9"),
           fort("area_48", "H-8"),
-          yug("area_room_b", "F-9"),
-          yug("area_geo", "J-7"),
+          yug("area_room_b", "F-9", 1, true),
+          yug("area_geo", "J-7", 1, true),
+          yug("area_c85", "H-8", 1, true),
         ];
         console.log("SEATJSON " + JSON.stringify({ stands }));
       `,
@@ -792,6 +837,33 @@ async function assertSeat(browser, url, seated) {
       }
       return { audit, bad };
     });
+    let view = null;
+    if (stand.view) {
+      try {
+        await page.waitForFunction(
+          () => window.__grottoView && window.__grottoView.n >= 4 && window.__grottoView.heroFirst,
+          null,
+          { timeout: 8000 },
+        );
+      } catch (err) {
+        const snap = await page.evaluate(() => window.__grottoView || null);
+        await page.close();
+        return { ok: false, error: `${stand.square} view ${err.message} ${JSON.stringify(snap)}`, errors, shots };
+      }
+      const png = await page.screenshot({ timeout: 15000, animations: "disabled" });
+      const lum = grottoLum(png);
+      view = await page.evaluate(() => window.__grottoView);
+      const badHit = (view.floors || []).find((name) => name !== "yug1-trace" && name !== "yug2-trace" && name !== "prop");
+      if (badHit) {
+        await page.close();
+        return { ok: false, error: `${stand.square} floor hit ${badHit}`, shots };
+      }
+      if (!(lum >= 0.10 && lum <= 0.32)) {
+        await page.close();
+        return { ok: false, error: `${stand.square} floor lum ${lum.toFixed(3)}`, shots };
+      }
+      console.log(`GROTTO ${stand.square} lum ${lum.toFixed(3)} floors ${view.n} heroFirst`);
+    }
     await page.close();
     if (errors.length) return { ok: false, error: `${stand.square} ${errors[0]}`, shots };
     const audit = sample.audit;
@@ -836,7 +908,7 @@ async function assertSeat(browser, url, seated) {
     console.log("SEAT " + JSON.stringify(shot));
     shots.push(shot);
   }
-  if (monsters < 1) return { ok: false, error: "no visible field monsters on the five stands", shots };
+  if (monsters < 1) return { ok: false, error: "no visible field monsters on the seat stands", shots };
   if (raised < 1) return { ok: false, error: "no raised terrace in the seat sample", shots };
   return { ok: true, shots, monsters, raised };
 }

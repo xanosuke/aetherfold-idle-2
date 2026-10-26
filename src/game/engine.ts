@@ -26,8 +26,8 @@ import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustF
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
-import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes } from "./ghelsba";
-import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh } from "./orc-height";
+import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes, grottoMap } from "./ghelsba";
+import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottFloorQuad, yughottFloorY, yughottTerrainSample } from "./orc-height";
 function groundY(x, z) {
 	return traceFloorY(x, z);
 }
@@ -2204,7 +2204,8 @@ function buildYard(canvas) {
 	const renderer = new WebGLRenderer({
 		canvas,
 		antialias: Math.min(window.innerWidth || 0, window.innerHeight || 0) >= 700,
-		alpha: false
+		alpha: false,
+		preserveDrawingBuffer: true
 	});
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Math.min(window.innerWidth || 0, window.innerHeight || 0) < 700 ? 1.25 : 1.6));
 	renderer.setClearColor(9357551, 1);
@@ -13566,7 +13567,7 @@ function buildYard(canvas) {
 		const orcLights = scene.userData.orcLights;
 		if (orcLights && orcLights.length) {
 			const orcHere = orcZoneAt(px, pz);
-			const orcCamp = !!(orcHere && (orcHere.id === "ghelsba" || orcHere.id === "fort-ghelsba" || orcHere.id === "yughott"));
+			const orcCamp = !!(orcHere && (orcHere.id === "ghelsba" || orcHere.id === "fort-ghelsba"));
 			const orcLit = orcLights[0].parent === scene;
 			if (orcCamp !== orcLit) {
 				for (let i = 0; i < orcLights.length; i++) {
@@ -13577,15 +13578,7 @@ function buildYard(canvas) {
 			if (orcCamp) {
 				const fires = [];
 				const yugHere = orcHere.id === "yughott";
-				if (yugHere) {
-					const drums = yughottDrums();
-					for (let i = 0; i < drums.length; i++) {
-						const fire = drums[i];
-						const dx = fire.x - px;
-						const dz = fire.z - pz;
-						fires.push({ fire, d: dx * dx + dz * dz });
-					}
-				} else {
+				if (!yugHere) {
 					for (let i = 0; i < ORC_FIRES.length; i++) {
 						const fire = ORC_FIRES[i];
 						if (fire.zone !== orcHere.id) continue;
@@ -13604,20 +13597,32 @@ function buildYard(canvas) {
 					}
 				}
 				fires.sort((a, b) => a.d - b.d);
-				const cap = yugHere ? 6 : orcLights.length;
 				for (let i = 0; i < orcLights.length; i++) {
-					const spot = i < cap ? fires[i] : null;
+					const spot = yugHere ? null : fires[i];
 					const light = orcLights[i];
 					if (!spot) {
 						light.intensity = 0;
 						continue;
 					}
-					light.color.setHex(yugHere ? 0xffa050 : 0xff6a2a);
-					light.distance = yugHere ? 12 : 14;
+					light.color.setHex(0xff6a2a);
+					light.distance = 14;
 					light.position.set(spot.fire.x, groundY(spot.fire.x, spot.fire.z) + 1.6, spot.fire.z);
 					const flicker = 1 + 0.12 * Math.sin(elapsed * 6.5 + i * 1.7);
-					light.intensity = (yugHere ? 1.6 : 28) * flicker;
+					light.intensity = 28 * flicker;
 				}
+			}
+		}
+		const drumLights = scene.userData.drumLights;
+		if (drumLights && drumLights.length) {
+			const yugLit = inYughott(px, pz);
+			for (let i = 0; i < drumLights.length; i++) {
+				const light = drumLights[i];
+				const on = light.parent === scene;
+				if (yugLit !== on) {
+					if (yugLit) scene.add(light);
+					else scene.remove(light);
+				}
+				if (yugLit) light.intensity = 1.2 * (1 + 0.08 * Math.sin(elapsed * 6.5 + i));
 			}
 		}
 		const orcFall = scene.userData.orcFall;
@@ -13641,6 +13646,7 @@ function buildYard(canvas) {
 		sun.target.position.set(px, foot, pz);
 		sun.target.updateMatrixWorld();
 		camera.lookAt(px + look.x * bias, .9 + foot, pz + look.z * bias);
+		if (inYughott(px, pz)) publishGrottoView(px, pz, foot);
 		drawFish(dt);
 		placeRuneRow();
 		tickEffusion(dt);
@@ -41699,6 +41705,77 @@ function buildYard(canvas) {
 	};
 	const seatToken = {};
 	let heroFloorMin = Infinity;
+	const grottoRay = new Raycaster();
+	const grottoDown = new Vector3(0, -1, 0);
+	const grottoFrom = new Vector3();
+	const grottoTo = new Vector3();
+	let grottoViewAt = 0;
+	function grottoCast(list, origin, dir, far) {
+		grottoRay.camera = camera;
+		grottoRay.set(origin, dir);
+		grottoRay.far = far;
+		const hits = [];
+		for (let i = 0; i < list.length; i++) {
+			const obj = list[i];
+			if (!obj.matrixWorld) continue;
+			try {
+				obj.raycast(grottoRay, hits);
+			} catch {
+				/* a dressing mesh mid-build is not a floor */
+			}
+		}
+		hits.sort((a, b) => a.distance - b.distance);
+		return hits;
+	}
+	function publishGrottoView(px, pz, foot) {
+		if (!fieldLive) return;
+		const prev = window.__grottoView;
+		if (prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2) return;
+		const now = performance.now();
+		if (now - grottoViewAt < 400) return;
+		grottoViewAt = now;
+		const traces = [];
+		const outdoor = [];
+		const marks = [heroHit];
+		scene.traverse((obj) => {
+			if (!obj.isMesh || !obj.matrixWorld) return;
+			const name = obj.name || "";
+			if (name.includes("trace")) traces.push(obj);
+			else if (name === "outpost-terrain") outdoor.push(obj);
+			else if (obj === heroHit || name === "shaft" || name === "shaft-pool" || name === "pool" || name === "drum-glow" || name === "fall") marks.push(obj);
+		});
+		const floors = [];
+		for (let dz = -16; dz <= 16; dz += 4) {
+			for (let dx = -16; dx <= 16; dx += 4) {
+				const x = px + dx;
+				const z = pz + dz;
+				const map = grottoMap(x, z);
+				if (!map) continue;
+				const sample = yughottTerrainSample(x, z, map);
+				if (!sample || !sample.draw || !yughottFloorQuad(x, z, map)) continue;
+				const floor = yughottFloorY(x, z, map);
+				if (floor == null || sample.y > floor + 0.35) continue;
+				grottoFrom.set(x, floor + 12, z);
+				const tHit = grottoCast(traces, grottoFrom, grottoDown, 14)[0];
+				const oHit = grottoCast(outdoor, grottoFrom, grottoDown, 14)[0];
+				let name = "miss";
+				if (oHit && (!tHit || oHit.distance + 0.05 < tHit.distance)) name = "outpost-terrain";
+				else if (tHit) name = tHit.object.name;
+				else name = "miss";
+				floors.push(name);
+			}
+		}
+		grottoFrom.copy(camera.position);
+		grottoTo.set(px, foot + 0.95, pz);
+		grottoTo.sub(grottoFrom);
+		const dist = grottoTo.length() || 1;
+		grottoTo.multiplyScalar(1 / dist);
+		if (floors.some((name) => name === "miss") || floors.length < 4) return;
+		const rayHits = grottoCast(traces.concat(marks), grottoFrom, grottoTo, dist);
+		const first = rayHits[0];
+		const heroFirst = !!(first && first.object === heroHit);
+		window.__grottoView = { floors, heroFirst, first: first ? (first.object.name || "unnamed") : "none", n: floors.length, x: px, z: pz, ms: Math.round(performance.now() - now) };
+	}
 	function publishSeatAudit() {
 		const monsters = [];
 		for (const slot of fieldSlots) {
@@ -47472,32 +47549,51 @@ function buildRoom(scene, toonMat, colliders) {
 	scene.add(fortLiftDeck);
 	const orcPoolMat = new MeshPhongMaterial({ color: 0x434340, transparent: true, opacity: 0.85, shininess: 30, specular: 0x889988, depthWrite: false });
 	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.28, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
-	const orcGlowMat = new MeshBasicMaterial({ color: 0xc45a28, transparent: true, opacity: 0.34, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const orcShaftPoolMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const orcDrumGlowMat = new MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.18, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcFallMat = new MeshBasicMaterial({ color: 0xd5e7ff, transparent: true, opacity: 0.42, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const drumLights = [];
 	for (const mark of orcDressMarks()) {
 		if (mark.kind === "pool") {
 			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 7), orcPoolMat);
+			water.name = "pool";
 			water.rotation.x = -Math.PI / 2;
 			water.position.set(mark.x, mark.y + 0.06, mark.z);
 			water.receiveShadow = false;
 			scene.add(water);
 		} else if (mark.kind === "shaft") {
-			const shaft = new Mesh(new PlaneGeometry(0.55, 9), orcShaftMat);
-			shaft.position.set(mark.x, groundY(mark.x, mark.z) + 4.6, mark.z);
+			const floor = groundY(mark.x, mark.z);
+			const shaft = new Mesh(new PlaneGeometry(0.18, 3), orcShaftMat);
+			shaft.name = "shaft";
+			shaft.position.set(mark.x, floor + 1.5, mark.z);
 			scene.add(shaft);
-		} else if (mark.kind === "glow") {
-			const glow = new Mesh(new CircleGeometry(mark.r ?? 7, 10), orcGlowMat);
-			glow.rotation.x = -Math.PI / 2;
-			glow.position.set(mark.x, groundY(mark.x, mark.z) + 7.2, mark.z);
-			scene.add(glow);
+			const pool = new Mesh(new CircleGeometry(1.4, 8), orcShaftPoolMat);
+			pool.name = "shaft-pool";
+			pool.rotation.x = -Math.PI / 2;
+			pool.position.set(mark.x, floor + 0.05, mark.z);
+			scene.add(pool);
 		} else if (mark.kind === "fall") {
 			const fall = new Mesh(new PlaneGeometry(1.35, 15), orcFallMat);
+			fall.name = "fall";
 			const y = groundY(mark.x, mark.z);
 			fall.position.set(mark.x, y - 4, mark.z);
 			fall.rotation.y = mark.yaw ?? 0;
 			scene.add(fall);
 		}
 	}
+	for (const drum of yughottDrums()) {
+		const floor = groundY(drum.x, drum.z);
+		const glow = new Mesh(new CircleGeometry(2.5, 8), orcDrumGlowMat);
+		glow.name = "drum-glow";
+		glow.rotation.x = -Math.PI / 2;
+		glow.position.set(drum.x, floor + 0.05, drum.z);
+		scene.add(glow);
+		const light = new PointLight(0xff8a3a, 1.2, 10, 2);
+		light.position.set(drum.x, floor + 2.7, drum.z);
+		scene.add(light);
+		drumLights.push(light);
+	}
+	scene.userData.drumLights = drumLights;
 	scene.userData.orcFall = orcFallMat;
 	const terrainMat = toonMat(0xffffff);
 	terrainMat.vertexColors = true;
@@ -47521,7 +47617,7 @@ function buildRoom(scene, toonMat, colliders) {
 	yughottMat.customProgramCacheKey = () => "yughott-terrain-slope";
 	yughottMat.onBeforeCompile = (shader) => {
 		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.55 + 0.45 * clamp(ny, 0.0, 1.0);\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.09);\n#include <opaque_fragment>");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny));\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.05);\n#include <opaque_fragment>");
 		if (!shader.fragmentShader.includes("0.55 + 0.45")) throw new Error("yughott terrain shader");
 	};
 	const fortMat = toonMat(0xffffff);
@@ -47589,6 +47685,7 @@ function buildRoom(scene, toonMat, colliders) {
 			geo.setIndex(index);
 			geo.computeVertexNormals();
 			const mesh = new Mesh(geo, terrainMat);
+			mesh.name = "outpost-terrain";
 			mesh.receiveShadow = true;
 			mesh.castShadow = false;
 			scene.add(mesh);
@@ -47630,23 +47727,87 @@ function buildRoom(scene, toonMat, colliders) {
 			}
 		}
 		const index = [];
+		const extraPos = [];
+		const extraIndex = [];
+		const span = cols + 1;
+		const srcOf = (vi) => {
+			const ii = vi % span;
+			const jj = (vi / span) | 0;
+			return (chunk.j0 + jj) * stride + chunk.i0 + ii;
+		};
+		const riseOf = (vi) => pos[vi * 3 + 1] - field.floorY[srcOf(vi)];
+		let extraN = vcount;
+		const pushExtra = (x, y, z, r, g, b) => {
+			const id = extraN++;
+			extraPos.push(x, y, z, r, g, b);
+			return id;
+		};
+		const pushTri = (i0, i1, i2) => {
+			if (i0 >= vcount || i1 >= vcount || i2 >= vcount) extraIndex.push(i0, i1, i2);
+			else index.push(i0, i1, i2);
+		};
 		for (let j = 0; j < rows; j++) {
 			for (let i = 0; i < cols; i++) {
-				const a = j * (cols + 1) + i;
+				const a = j * span + i;
 				const b = a + 1;
-				const c = a + cols + 1;
+				const c = a + span;
 				const d = c + 1;
-				if (!live[a] && !live[b] && !live[c] && !live[d]) continue;
+				if (!live[a] || !live[b] || !live[c] || !live[d]) continue;
+				if (field.id !== "fort") {
+					const ra = riseOf(a), rb = riseOf(b), rc = riseOf(c), rd = riseOf(d);
+					const maxR = Math.max(ra, rb, rc, rd);
+					const minR = Math.min(ra, rb, rc, rd);
+					if (minR > 3.5) continue;
+					if (maxR > 0.55) {
+						const base = (vi) => {
+							if (riseOf(vi) <= 0.55) return vi;
+							const k = vi * 3;
+							return pushExtra(pos[k], field.floorY[srcOf(vi)], pos[k + 2], colr[k], colr[k + 1], colr[k + 2]);
+						};
+						pushTri(base(a), base(c), base(b));
+						pushTri(base(b), base(c), base(d));
+						const edges = [a, b, a, c, b, d, c, d];
+						for (let e = 0; e < edges.length; e += 2) {
+							const p = edges[e], q = edges[e + 1];
+							if (riseOf(p) <= 0.7 || riseOf(q) <= 0.7) continue;
+							const pk = p * 3, qk = q * 3;
+							const bp = pushExtra(pos[pk], field.floorY[srcOf(p)], pos[pk + 2], colr[pk], colr[pk + 1], colr[pk + 2]);
+							const bq = pushExtra(pos[qk], field.floorY[srcOf(q)], pos[qk + 2], colr[qk], colr[qk + 1], colr[qk + 2]);
+							pushTri(bp, p, bq);
+							pushTri(bq, p, q);
+						}
+						continue;
+					}
+				}
 				index.push(a, c, b, b, c, d);
 			}
 		}
-		if (!index.length) return;
+		if (!index.length && !extraIndex.length) return;
 		const geo = new BufferGeometry();
-		geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
-		geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
-		geo.setIndex(index);
+		if (!extraPos.length) {
+			geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+			geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
+			geo.setIndex(index);
+		} else {
+			const allPos = new Float32Array(vcount * 3 + extraPos.length / 2);
+			const allCol = new Float32Array(vcount * 3 + extraPos.length / 2);
+			allPos.set(pos);
+			allCol.set(colr);
+			for (let n = 0, w = vcount * 3; n < extraPos.length; n += 6, w += 3) {
+				allPos[w] = extraPos[n];
+				allPos[w + 1] = extraPos[n + 1];
+				allPos[w + 2] = extraPos[n + 2];
+				allCol[w] = extraPos[n + 3];
+				allCol[w + 1] = extraPos[n + 4];
+				allCol[w + 2] = extraPos[n + 5];
+			}
+			geo.setAttribute("position", new Float32BufferAttribute(allPos, 3));
+			geo.setAttribute("color", new Float32BufferAttribute(allCol, 3));
+			geo.setIndex(index.concat(extraIndex));
+		}
 		geo.computeVertexNormals();
 		const mesh = new Mesh(geo, field.id === "fort" ? fortMat : yughottMat);
+		mesh.name = field.id === "fort" ? "fort-trace" : `${field.id}-trace`;
 		mesh.receiveShadow = true;
 		mesh.castShadow = false;
 		scene.add(mesh);

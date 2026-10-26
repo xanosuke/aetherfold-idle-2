@@ -22,7 +22,7 @@ import {
   type YughottMap,
 } from "./yughott-graph";
 import { FORT_FIELD, YUG1_FIELD, YUG2_FIELD } from "./orc-fields.generated.ts";
-import { claimsDraw, decodeField, mixFloorY, sampleTrace, type OrcField, type TraceSample } from "./orc-field-read";
+import { claimsDraw, decodeField, fullyDrawn, mixFloorY, readFloorY, sampleTrace, type OrcField, type TraceSample } from "./orc-field-read";
 
 const fortField = decodeField("fort", FORT_FIELD);
 const yug1Field = decodeField("yug1", YUG1_FIELD);
@@ -32,6 +32,15 @@ export type { TraceSample };
 
 export function fortTerrainSample(x: number, z: number): TraceSample | null {
   return sampleTrace(fortField, x, z);
+}
+
+export function yughottFloorQuad(x: number, z: number, map: YughottMap): boolean {
+  return fullyDrawn(map === 1 ? yug1Field : yug2Field, x, z);
+}
+
+/** Walkable terrace. Null on the rim, where the heightfield rises into a wall. */
+export function yughottFloorY(x: number, z: number, map: YughottMap): number | null {
+  return readFloorY(map === 1 ? yug1Field : yug2Field, x, z);
 }
 
 export function yughottTerrainSample(x: number, z: number, map: YughottMap): TraceSample | null {

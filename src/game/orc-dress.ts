@@ -41,7 +41,7 @@ export type CampProp = {
   localBase: number;
 };
 
-export type OrcMark = { kind: "pool" | "shaft" | "glow" | "fall"; x: number; z: number; y: number; r?: number; yaw?: number };
+export type OrcMark = { kind: "pool" | "shaft" | "fall"; x: number; z: number; y: number; r?: number; yaw?: number };
 
 const WOOD = 0x463e37;
 const RED = 0x8a2a20;
@@ -1092,7 +1092,6 @@ function caveDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: numbe
       marks.push({ kind: "shaft", x, z, y: traceFloorY(x, z) });
     }
   }
-  marks.push({ kind: "glow", x: f9.x, z: f9.z, y: traceFloorY(f9.x, f9.z), r: 7.5 });
   for (const square of ["G-9", "I-7", "L-6"]) {
     const spot = must(upper, { id: `rubble-${square}`, square, hx: 1.6, hz: 1.3, h: 1.2 }, avoid);
     const s = 3 + hash(spot.x, spot.z) * 2;
@@ -1192,7 +1191,6 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
   if (drums.length < 10) throw new Error(`drums ${drums.length}`);
   if (marks.filter((m) => m.kind === "shaft").length < 4 || marks.filter((m) => m.kind === "shaft").length > 6) throw new Error("shafts");
   if (marks.filter((m) => m.kind === "pool").length < 2) throw new Error("pools");
-  if (marks.filter((m) => m.kind === "glow").length < 1) throw new Error("glow");
   if (marks.filter((m) => m.kind === "fall").length < 1) throw new Error("waterfall");
   if (count((p) => p.id === "crystal") < 1) throw new Error("crystal");
   for (const prop of props) {

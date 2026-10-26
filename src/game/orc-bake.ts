@@ -233,10 +233,11 @@ function graphPoints(graph: FortGraph | YughottGraph, world: (gx: number, gy: nu
 
 function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake: Bake, id: BakedArrays["id"], map?: YughottMap): BakedArrays {
   const step = 2;
-  const x0 = minX - 8;
-  const z0 = minZ - 8;
-  const nX = Math.ceil((maxX - minX + 16) / step);
-  const nZ = Math.ceil((maxZ - minZ + 16) / step);
+  const pad = 8;
+  const x0 = minX - pad;
+  const z0 = minZ - pad;
+  const nX = Math.ceil((maxX - minX + pad * 2) / step);
+  const nZ = Math.ceil((maxZ - minZ + pad * 2) / step);
   const w = nX + 1;
   const h = nZ + 1;
   const ys = new Float32Array(w * h);
@@ -250,6 +251,14 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
     if (x < x0 - 2 || z < z0 - 2 || x > spanX + 2 || z > spanZ + 2) return -1000;
     return bake.clearance(x, z);
   };
+  const rimRise = (x: number, z: number, c: number) => {
+    let south = false;
+    for (let d = 1; d <= 4; d++) if (clearance(x, z - d) > c + 0.35) south = true;
+    const drop = -c;
+    const cap = south ? 1.45 : 6.4;
+    const t = Math.max(0, Math.min(1, (drop - 0.5) / 0.7));
+    return cap * (t * t * (3 - 2 * t));
+  };
   for (let j = 0; j < h; j++) {
     const z = z0 + j * step;
     for (let i = 0; i < w; i++) {
@@ -258,6 +267,19 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
       const terraceN = nearestTerrace(x, z, bake.spans, bake.bands);
       floorY[idx] = terraceN;
       const c = clearance(x, z);
+      if (bake.cave) {
+        if (c < -3.35) continue;
+        draw[idx] = 1;
+        if (c >= -0.5) {
+          if (c >= -0.05 && bake.onFloor(x, z)) {
+            floor[idx] = 1;
+            ys[idx] = terraceAt(x, z, bake.spans, bake.bands);
+          } else ys[idx] = terraceN;
+          continue;
+        }
+        ys[idx] = terraceN + rimRise(x, z, c);
+        continue;
+      }
       if (c < -6) continue;
       draw[idx] = 1;
       if (c >= -0.05 && bake.onFloor(x, z)) {
@@ -266,7 +288,7 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
         continue;
       }
       const drop = Math.max(0, -c);
-      let rise = (bake.cave ? 7.5 : 6) * smoothstep(0, 4, drop);
+      let rise = 6 * smoothstep(0, 4, drop);
       if (drop > 2) rise += (hash(x * 0.37 + 3, z * 0.37 - 1) * 2 - 1) * 0.35;
       const gx = clearance(x + 1, z) - clearance(x - 1, z);
       const gz = clearance(x, z + 1) - clearance(x, z - 1);
@@ -278,29 +300,31 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
       ys[idx] = nearestTerrace(x, z, bake.spans, bake.bands) + rise;
     }
   }
-  const blurred = new Float32Array(ys);
-  for (let j = 0; j < h; j++) {
-    for (let i = 0; i < w; i++) {
-      const idx = j * w + i;
-      if (!draw[idx] || floor[idx]) continue;
-      let sum = 0;
-      let count = 0;
-      for (let dj = -1; dj <= 1; dj++) {
-        const nj = j + dj;
-        if (nj < 0 || nj >= h) continue;
-        for (let di = -1; di <= 1; di++) {
-          const ni = i + di;
-          if (ni < 0 || ni >= w) continue;
-          const nidx = nj * w + ni;
-          if (!draw[nidx]) continue;
-          sum += ys[nidx];
-          count++;
+  if (!bake.cave) {
+    const blurred = new Float32Array(ys);
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const idx = j * w + i;
+        if (!draw[idx] || floor[idx]) continue;
+        let sum = 0;
+        let count = 0;
+        for (let dj = -1; dj <= 1; dj++) {
+          const nj = j + dj;
+          if (nj < 0 || nj >= h) continue;
+          for (let di = -1; di <= 1; di++) {
+            const ni = i + di;
+            if (ni < 0 || ni >= w) continue;
+            const nidx = nj * w + ni;
+            if (!draw[nidx]) continue;
+            sum += ys[nidx];
+            count++;
+          }
         }
+        if (count) blurred[idx] = sum / count;
       }
-      if (count) blurred[idx] = sum / count;
     }
+    ys.set(blurred);
   }
-  ys.set(blurred);
   const drawnCell = (i: number, j: number) => {
     if (i < 0 || j < 0 || i >= nX || j >= nZ) return false;
     const a = j * w + i;
@@ -329,8 +353,12 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
           if (draw[idx]) continue;
           const cx = x0 + (idx % w) * step;
           const cz = z0 + ((idx / w) | 0) * step;
+          const cc = clearance(cx, cz);
+          if (bake.cave && cc < -3.35) continue;
           draw[idx] = 1;
-          ys[idx] = wallY(cx, cz);
+          if (bake.cave && cc >= -0.5) ys[idx] = nearestTerrace(cx, cz, bake.spans, bake.bands);
+          else if (bake.cave) ys[idx] = nearestTerrace(cx, cz, bake.spans, bake.bands) + rimRise(cx, cz, cc);
+          else ys[idx] = wallY(cx, cz);
           grew = true;
         }
       }
@@ -430,8 +458,7 @@ function yugPaint(pack: ReturnType<typeof yugPack>, x: number, z: number, y: num
   const wall = pack.map === 2 ? Y2_WALL : Y1_WALL;
   const top = pack.map === 2 ? Y2_TOP : Y1_TOP;
   if (on) return vary(floor, x, z, 0.04);
-  const rise = y - nearestTerrace(x, z, pack.spans, pack.bands);
-  return mix(vary(wall, x, z, 0.03), vary(top, x, z, 0.03), smoothstep(0, 7.5, rise));
+  return mix(vary(wall, x, z, 0.03), vary(top, x, z, 0.02), 0.18);
 }
 
 export function bakeAllFields(): BakedArrays[] {

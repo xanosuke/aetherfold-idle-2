@@ -97,6 +97,12 @@ function mix4(a: number, b: number, c: number, d: number, tx: number, tz: number
   return a + (b - a) * tx + (c - a) * tz + (a - b - c + d) * tx * tz;
 }
 
+export function fullyDrawn(field: OrcField, x: number, z: number): boolean {
+  const cell = locate(field, x, z);
+  if (!cell) return false;
+  return field.draw[cell.i00] === 1 && field.draw[cell.i10] === 1 && field.draw[cell.i01] === 1 && field.draw[cell.i11] === 1;
+}
+
 export function sampleTrace(field: OrcField, x: number, z: number): TraceSample | null {
   const cell = locate(field, x, z);
   if (!cell) return null;
