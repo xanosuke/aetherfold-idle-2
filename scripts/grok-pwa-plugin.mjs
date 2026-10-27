@@ -115,7 +115,10 @@ function wrapHtmlResponses(middlewares, cwd) {
       mode = isHtml && !encoded ? "inject" : "passthrough";
       // Streaming SSR flushes headers before the first body chunk, so the
       // header may no longer be removable — chunked responses don't carry one.
-      if (mode === "inject" && !res.headersSent) res.removeHeader("content-length");
+      if (mode === "inject" && !res.headersSent) {
+        res.removeHeader("content-length");
+        res.setHeader("cache-control", "no-store");
+      }
       return mode;
     };
 

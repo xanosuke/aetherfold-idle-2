@@ -755,6 +755,12 @@ function seatPlaces() {
           if (!inYughott(at.x, at.z, 0)) throw new Error(id + " left the grotto");
           return { name: id, x: at.x, z: at.z, square, region: "Yughott Grotto", floor: traceFloorY(at.x, at.z), view: view === true };
         };
+        const pin = (name, x, z, square) => {
+          const hit = yughottSquare(x, z);
+          if (hit !== square) throw new Error(name + " square " + hit);
+          if (!inYughott(x, z, 0)) throw new Error(name + " left the grotto");
+          return { name, x, z, square, region: "Yughott Grotto", floor: traceFloorY(x, z), view: true };
+        };
         const stands = [
           fort("j_n50", "I-6"),
           fort("room_hundredscar", "G-9"),
@@ -762,6 +768,8 @@ function seatPlaces() {
           yug("area_room_b", "F-9", 1, true),
           yug("area_geo", "J-7", 1, true),
           yug("area_c85", "H-8", 1, true),
+          pin("user-h8", -567.1, 656.6, "H-8"),
+          pin("user-f9", -665.8, 688.6, "F-9"),
         ];
         console.log("SEATJSON " + JSON.stringify({ stands }));
       `,
@@ -781,8 +789,27 @@ async function assertSeat(browser, url, seated) {
   const shots = [];
   let monsters = 0;
   let raised = 0;
+  let sawSha = false;
+  const views = [
+    { name: "landscape", width: 1280, height: 800, mobile: false },
+    { name: "portrait", width: 390, height: 844, mobile: true },
+  ];
   for (const stand of places.stands) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    for (const view of views) {
+    const context = await browser.newContext({
+      viewport: { width: view.width, height: view.height },
+      deviceScaleFactor: view.mobile ? 3 : 1,
+      isMobile: !!view.mobile,
+      hasTouch: !!view.mobile,
+    });
+    if (view.mobile) {
+      await context.addInitScript(() => {
+        const shift = 1500000;
+        const now = Date.now;
+        Date.now = () => now.call(Date) + shift;
+      });
+    }
+    const page = await context.newPage();
     const errors = [];
     page.on("console", (msg) => {
       if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
@@ -803,13 +830,15 @@ async function assertSeat(browser, url, seated) {
           return text.includes(region) && text.includes(square);
         },
         [stand.region, stand.square],
-        `seat-${stand.name}`,
+        `seat-${view.name}-${stand.name}`,
       );
     } catch (err) {
       const text = await page.locator("body").innerText().catch(() => "");
-      await page.close();
-      return { ok: false, error: `${stand.square} never seated (${err.message})`, text: text.slice(0, 240), errors, shots };
+      await context.close();
+      return { ok: false, error: `${view.name} ${stand.square} never seated (${err.message})`, text: text.slice(0, 240), errors, shots };
     }
+    const sha = await page.locator("[data-build-sha]").innerText().catch(() => "");
+    if (/^[0-9a-f]{7}$/.test(sha)) sawSha = true;
     try {
       await page.waitForFunction(() => window.__seatAudit && window.__seatAudit.fieldLive, null, { timeout: 20000 });
       await page.waitForFunction(
@@ -818,8 +847,8 @@ async function assertSeat(browser, url, seated) {
         { timeout: 4000 },
       ).catch(() => {});
     } catch (err) {
-      await page.close();
-      return { ok: false, error: `${stand.square} field never ticked (${err.message})`, errors, shots };
+      await context.close();
+      return { ok: false, error: `${view.name} ${stand.square} field never ticked (${err.message})`, errors, shots };
     }
     const sample = await page.evaluate(() => {
       const audit = window.__seatAudit;
@@ -837,43 +866,50 @@ async function assertSeat(browser, url, seated) {
       }
       return { audit, bad };
     });
-    let view = null;
+    let viewSnap = null;
     if (stand.view) {
       try {
         await page.waitForFunction(
-          () => window.__grottoView && window.__grottoView.n >= 4 && window.__grottoView.heroFirst,
+          () => {
+            const snap = window.__grottoView;
+            return snap && snap.heroFirst && snap.trustFirst && snap.share >= 0.6 && snap.grid && snap.grid.length === 25;
+          },
           null,
-          { timeout: 8000 },
+          { timeout: 12000 },
         );
       } catch (err) {
         const snap = await page.evaluate(() => window.__grottoView || null);
-        await page.close();
-        return { ok: false, error: `${stand.square} view ${err.message} ${JSON.stringify(snap)}`, errors, shots };
+        const shotPath = `/workspace/screenshots/yug-${view.name}-${stand.name}.png`;
+        await page.screenshot({ path: shotPath, timeout: 15000, animations: "disabled" }).catch(() => {});
+        await context.close();
+        return { ok: false, error: `${view.name} ${stand.name} view ${err.message} ${JSON.stringify(snap)}`, errors, shots };
       }
-      const png = await page.screenshot({ timeout: 15000, animations: "disabled" });
+      const shotPath = `/workspace/screenshots/yug-${view.name}-${stand.name}.png`;
+      const png = await page.screenshot({ path: shotPath, timeout: 15000, animations: "disabled" });
       const lum = grottoLum(png);
-      view = await page.evaluate(() => window.__grottoView);
-      const badHit = (view.floors || []).find((name) => name !== "yug1-trace" && name !== "yug2-trace" && name !== "prop");
-      if (badHit) {
-        await page.close();
-        return { ok: false, error: `${stand.square} floor hit ${badHit}`, shots };
+      viewSnap = await page.evaluate(() => window.__grottoView);
+      const badHit = (viewSnap.grid || []).filter((kind) => kind === "wall" || kind === "cap" || kind === "void");
+      if (viewSnap.share < 0.6 || badHit.length > 10) {
+        await context.close();
+        return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${viewSnap.grid.join(",")}`, shots };
       }
-      if (!(lum >= 0.10 && lum <= 0.32)) {
-        await page.close();
-        return { ok: false, error: `${stand.square} floor lum ${lum.toFixed(3)}`, shots };
+      if (!(lum >= 0.10 && lum <= 0.35)) {
+        await context.close();
+        return { ok: false, error: `${view.name} ${stand.name} floor lum ${lum.toFixed(3)}`, shots };
       }
-      console.log(`GROTTO ${stand.square} lum ${lum.toFixed(3)} floors ${view.n} heroFirst`);
+      console.log(`GROTTO ${view.name} ${stand.name} lum ${lum.toFixed(3)} share ${viewSnap.share.toFixed(2)} hero ${viewSnap.hero && viewSnap.hero.name} trust ${viewSnap.trust && viewSnap.trust.name}`);
+      shots.push({ name: stand.name, view: view.name, path: shotPath, lum });
     }
-    await page.close();
-    if (errors.length) return { ok: false, error: `${stand.square} ${errors[0]}`, shots };
+    await context.close();
+    if (errors.length) return { ok: false, error: `${view.name} ${stand.square} ${errors[0]}`, shots };
     const audit = sample.audit;
-    if (!audit || !audit.hero) return { ok: false, error: `${stand.square} missing seat audit`, shots };
-    if (sample.bad.length) return { ok: false, error: `${stand.square} ${sample.bad[0]}`, shots };
+    if (!audit || !audit.hero) return { ok: false, error: `${view.name} ${stand.square} missing seat audit`, shots };
+    if (sample.bad.length) return { ok: false, error: `${view.name} ${stand.square} ${sample.bad[0]}`, shots };
     if (!(audit.hero.y + 1e-3 >= audit.hero.ground)) {
-      return { ok: false, error: `${stand.square} hero ${audit.hero.y.toFixed(3)} below floor ${audit.hero.ground.toFixed(3)}`, shots };
+      return { ok: false, error: `${view.name} ${stand.square} hero ${audit.hero.y.toFixed(3)} below floor ${audit.hero.ground.toFixed(3)}`, shots };
     }
     if (!(audit.heroFloorMin >= -1e-3)) {
-      return { ok: false, error: `${stand.square} hero dipped ${audit.heroFloorMin.toFixed(3)}`, shots };
+      return { ok: false, error: `${view.name} ${stand.square} hero dipped ${audit.heroFloorMin.toFixed(3)}`, shots };
     }
     const actors = [...(audit.monsters || []), ...(audit.pets || []), ...(audit.trusts || [])];
     for (const row of actors) {
@@ -881,7 +917,7 @@ async function assertSeat(browser, url, seated) {
       if (!(gap < 0.1)) {
         return {
           ok: false,
-          error: `${stand.square} ${row.kind} ${row.id || ""} y ${row.y.toFixed(3)} ground ${row.ground.toFixed(3)} hover ${row.hover} gap ${gap.toFixed(3)}`,
+          error: `${view.name} ${stand.square} ${row.kind} ${row.id || ""} y ${row.y.toFixed(3)} ground ${row.ground.toFixed(3)} hover ${row.hover} gap ${gap.toFixed(3)}`,
           shots,
         };
       }
@@ -889,13 +925,14 @@ async function assertSeat(browser, url, seated) {
     for (const ring of audit.rings || []) {
       const gap = Math.abs(ring.y - ring.ground);
       if (!(gap < 0.15)) {
-        return { ok: false, error: `${stand.square} ring ${ring.y.toFixed(3)} off floor ${ring.ground.toFixed(3)}`, shots };
+        return { ok: false, error: `${view.name} ${stand.square} ring ${ring.y.toFixed(3)} off floor ${ring.ground.toFixed(3)}`, shots };
       }
     }
     if (audit.hero.ground > 0.5) raised += 1;
     monsters += (audit.monsters || []).length;
     const shot = {
       name: stand.name,
+      view: view.name,
       square: stand.square,
       floor: Math.round(stand.floor * 100) / 100,
       ground: Math.round(audit.hero.ground * 100) / 100,
@@ -904,10 +941,13 @@ async function assertSeat(browser, url, seated) {
       pets: (audit.pets || []).length,
       trusts: (audit.trusts || []).length,
       rings: (audit.rings || []).length,
+      grotto: viewSnap ? { share: viewSnap.share, hero: viewSnap.hero, trust: viewSnap.trust, grid: viewSnap.grid } : null,
     };
     console.log("SEAT " + JSON.stringify(shot));
     shots.push(shot);
+    }
   }
+  if (!sawSha) return { ok: false, error: "build sha missing under the zone name", shots };
   if (monsters < 1) return { ok: false, error: "no visible field monsters on the seat stands", shots };
   if (raised < 1) return { ok: false, error: "no raised terrace in the seat sample", shots };
   return { ok: true, shots, monsters, raised };

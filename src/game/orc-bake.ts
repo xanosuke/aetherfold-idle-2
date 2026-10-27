@@ -252,10 +252,16 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
     return bake.clearance(x, z);
   };
   const rimRise = (x: number, z: number, c: number) => {
-    let south = false;
-    for (let d = 1; d <= 4; d++) if (clearance(x, z - d) > c + 0.35) south = true;
+    // Both cameras sit to the south (+Z) and look north. A lip whose floor is
+    // to the north, including the diagonal, is the camera-side wall.
+    let facing = false;
+    for (let d = 1; d <= 6; d++) {
+      if (clearance(x, z - d) > c + 0.25) facing = true;
+      if (clearance(x - d * 0.6, z - d) > c + 0.35) facing = true;
+      if (clearance(x + d * 0.6, z - d) > c + 0.35) facing = true;
+    }
     const drop = -c;
-    const cap = south ? 1.45 : 6.4;
+    const cap = facing ? 1.45 : 3.35;
     const t = Math.max(0, Math.min(1, (drop - 0.5) / 0.7));
     return cap * (t * t * (3 - 2 * t));
   };

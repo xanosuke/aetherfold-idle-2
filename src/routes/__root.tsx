@@ -1,9 +1,27 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Aetherfold Idle 2";
+
+function dropStaleWorkers() {
+  const sw = navigator.serviceWorker;
+  if (!sw?.getRegistrations) return;
+  sw.getRegistrations()
+    .then((regs) => {
+      for (const reg of regs) void reg.unregister();
+    })
+    .catch(() => {});
+}
+
+function DropStaleWorkers() {
+  useEffect(() => {
+    dropStaleWorkers();
+  }, []);
+  return null;
+}
 
 export const Route = createRootRoute({
   head: () => ({
@@ -32,6 +50,7 @@ export const Route = createRootRoute({
       </head>
       <body>
         <PreviewHostBridge />
+        <DropStaleWorkers />
         <AuthProvider>
           <Outlet />
         </AuthProvider>

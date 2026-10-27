@@ -27,7 +27,7 @@ import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes, grottoMap } from "./ghelsba";
-import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottFloorQuad, yughottFloorY, yughottTerrainSample } from "./orc-height";
+import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottFloorY } from "./orc-height";
 function groundY(x, z) {
 	return traceFloorY(x, z);
 }
@@ -2289,6 +2289,7 @@ function buildYard(canvas) {
 	let harePop = 0;
 	let hareLoose = 0;
 	const hero = buildHero(toon);
+	hero.root.name = "hero";
 	const hare = buildHare(toon);
 	const heroHit = new Mesh(new BoxGeometry(1, 1.9, 1), new MeshBasicMaterial());
 	heroHit.position.y = .95;
@@ -2433,6 +2434,11 @@ function buildYard(canvas) {
 		const body = buildHero(toon);
 		body.root.name = def.id;
 		body.root.scale.setScalar(def.scale);
+		const trustHit = new Mesh(new BoxGeometry(.8, 1.6, .8), new MeshBasicMaterial());
+		trustHit.name = "trust-hit";
+		trustHit.position.y = .8;
+		trustHit.visible = false;
+		body.root.add(trustHit);
 		applyJobModel(body, def.job);
 		body.armL.shield.visible = false;
 		body.bow.visible = false;
@@ -5019,6 +5025,7 @@ function buildYard(canvas) {
 			if (!slot.root || slot.key !== key) {
 				if (slot.root) scene.remove(slot.root);
 				slot.root = fieldProto(body.look, body.variant).clone(true);
+				slot.root.name = "field-mob";
 				ownFieldMaterials(slot.root);
 				claimRig(slot.root);
 				slot.root.userData.look = body.look;
@@ -10959,6 +10966,16 @@ function buildYard(canvas) {
 	const onMenu = (e) => e.preventDefault();
 	canvas.addEventListener("contextmenu", onMenu);
 	let portrait = false;
+	let viewAspect = 1;
+	function applyFrustum() {
+		const grotto = portrait && inYughott(px, pz);
+		const frustum = grotto ? 16 : portrait ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE;
+		camera.top = frustum / 2;
+		camera.bottom = -frustum / 2;
+		camera.left = -frustum * viewAspect / 2;
+		camera.right = frustum * viewAspect / 2;
+		camera.updateProjectionMatrix();
+	}
 	function resize() {
 		const w = canvas.clientWidth || 1;
 		const h = canvas.clientHeight || 1;
@@ -10966,13 +10983,8 @@ function buildYard(canvas) {
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, narrow ? 1.25 : 1.6));
 		portrait = h > w;
 		renderer.setSize(w, h, false);
-		const aspect = w / Math.max(1, h);
-		const frustum = h > w ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE;
-		camera.top = frustum / 2;
-		camera.bottom = -frustum / 2;
-		camera.left = -frustum * aspect / 2;
-		camera.right = frustum * aspect / 2;
-		camera.updateProjectionMatrix();
+		viewAspect = w / Math.max(1, h);
+		applyFrustum();
 	}
 	resize();
 	const ro = new ResizeObserver(resize);
@@ -13631,7 +13643,9 @@ function buildYard(canvas) {
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
-		const bias = portrait ? 2.32 : -2.2;
+		// Portrait used to look north of the hero (+2.32). In the grotto that
+		// puts the north rim and the void in the middle of the phone.
+		const bias = portrait ? (inYughott(px, pz) ? -1.8 : 2.32) : -2.2;
 		let foot = groundY(px, pz);
 		if (fortLiftDeck) {
 			const span = fortLift();
@@ -13641,6 +13655,7 @@ function buildYard(canvas) {
 			if (Math.abs(px - span.x) < 1.55 && Math.abs(pz - span.z) < 1.15) foot = deck + 0.28;
 		}
 		camera.up.set(0, 1, 0);
+		applyFrustum();
 		camera.position.set(px + camPos.x + swayX, camPos.y + foot, pz + camPos.z + swayZ);
 		sun.position.set(px + 9, 16 + foot, pz + 7);
 		sun.target.position.set(px, foot, pz);
@@ -41706,14 +41721,18 @@ function buildYard(canvas) {
 	const seatToken = {};
 	let heroFloorMin = Infinity;
 	const grottoRay = new Raycaster();
-	const grottoDown = new Vector3(0, -1, 0);
 	const grottoFrom = new Vector3();
 	const grottoTo = new Vector3();
+	const grottoNdc = new Vector2();
+	const trustIds = new Set(puppets.map((pup) => pup.def.id));
 	let grottoViewAt = 0;
 	function grottoCast(list, origin, dir, far) {
 		grottoRay.camera = camera;
 		grottoRay.set(origin, dir);
 		grottoRay.far = far;
+		return grottoHits(list);
+	}
+	function grottoHits(list) {
 		const hits = [];
 		for (let i = 0; i < list.length; i++) {
 			const obj = list[i];
@@ -41727,54 +41746,131 @@ function buildYard(canvas) {
 		hits.sort((a, b) => a.distance - b.distance);
 		return hits;
 	}
+	function grottoMob(obj) {
+		let node = obj;
+		while (node) {
+			if (node.name === "field-mob") return true;
+			node = node.parent;
+		}
+		return false;
+	}
+	function grottoOwner(obj) {
+		let node = obj;
+		while (node) {
+			if (node === hero.root) return "hero";
+			if (node.name && trustIds.has(node.name)) return "trust";
+			node = node.parent;
+		}
+		return "";
+	}
+	function grottoOpaque(obj) {
+		if (obj === heroHit || obj.name === "trust-hit") return !!obj.matrixWorld;
+		if (!obj.isMesh || !obj.visible || !obj.matrixWorld) return false;
+		const mat = obj.material;
+		if (mat && (mat.transparent || mat.opacity < 0.9 || mat.depthWrite === false)) return false;
+		return true;
+	}
+	function grottoDescribe(hit) {
+		if (!hit) return { kind: "void", name: "void", y: null, ground: null, rise: null };
+		const name = hit.object.name || "unnamed";
+		const y = hit.point.y;
+		const ground = groundY(hit.point.x, hit.point.z);
+		const owner = grottoOwner(hit.object);
+		if (owner === "hero") return { kind: "hero", name, y, ground, rise: y - ground };
+		if (owner === "trust") return { kind: "trust", name, y, ground, rise: y - ground };
+		const ny = hit.face ? Math.abs(hit.face.normal.y) : 1;
+		if (name.includes("trace")) {
+			const map = grottoMap(hit.point.x, hit.point.z);
+			const terrace = map ? yughottFloorY(hit.point.x, hit.point.z, map) : null;
+			const above = (terrace == null ? y : y - terrace);
+			if (above > 3.5 && ny > 0.65) return { kind: "cap", name, y, ground, rise: above };
+			if (ny < 0.5) return { kind: "wall", name, y, ground, rise: above };
+			return { kind: "floor", name, y, ground, rise: above };
+		}
+		if (name.includes("moss") || name === "outpost-terrain" || name === "fort-trace") return { kind: "wall", name, y, ground, rise: y - ground };
+		return { kind: "prop", name, y, ground, rise: y - ground };
+	}
 	function publishGrottoView(px, pz, foot) {
 		if (!fieldLive) return;
-		const prev = window.__grottoView;
-		if (prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2) return;
 		const now = performance.now();
 		if (now - grottoViewAt < 400) return;
 		grottoViewAt = now;
-		const traces = [];
-		const outdoor = [];
-		const marks = [heroHit];
+		camera.updateMatrixWorld();
+		scene.updateMatrixWorld(true);
+		const meshes = [];
 		scene.traverse((obj) => {
-			if (!obj.isMesh || !obj.matrixWorld) return;
+			if (!grottoOpaque(obj)) return;
 			const name = obj.name || "";
-			if (name.includes("trace")) traces.push(obj);
-			else if (name === "outpost-terrain") outdoor.push(obj);
-			else if (obj === heroHit || name === "shaft" || name === "shaft-pool" || name === "pool" || name === "drum-glow" || name === "fall") marks.push(obj);
+			if (name.includes("yug") || name === "moss-skirt" || obj === heroHit || name === "trust-hit" || grottoOwner(obj)) {
+				meshes.push(obj);
+				return;
+			}
+			obj.getWorldPosition(grottoTo);
+			const dx = grottoTo.x - px;
+			const dz = grottoTo.z - pz;
+			if (dx * dx + dz * dz < 1600) meshes.push(obj);
 		});
-		const floors = [];
-		for (let dz = -16; dz <= 16; dz += 4) {
-			for (let dx = -16; dx <= 16; dx += 4) {
-				const x = px + dx;
-				const z = pz + dz;
-				const map = grottoMap(x, z);
-				if (!map) continue;
-				const sample = yughottTerrainSample(x, z, map);
-				if (!sample || !sample.draw || !yughottFloorQuad(x, z, map)) continue;
-				const floor = yughottFloorY(x, z, map);
-				if (floor == null || sample.y > floor + 0.35) continue;
-				grottoFrom.set(x, floor + 12, z);
-				const tHit = grottoCast(traces, grottoFrom, grottoDown, 14)[0];
-				const oHit = grottoCast(outdoor, grottoFrom, grottoDown, 14)[0];
-				let name = "miss";
-				if (oHit && (!tHit || oHit.distance + 0.05 < tHit.distance)) name = "outpost-terrain";
-				else if (tHit) name = tHit.object.name;
-				else name = "miss";
-				floors.push(name);
+		const castAt = (x, y, z) => {
+			grottoFrom.copy(camera.position);
+			grottoTo.set(x, y, z).sub(grottoFrom);
+			const dist = grottoTo.length() || 1;
+			grottoTo.multiplyScalar(1 / dist);
+			const hits = grottoCast(meshes, grottoFrom, grottoTo, dist + 0.05);
+			let hit = null;
+			for (let i = 0; i < hits.length; i++) {
+				if (grottoMob(hits[i].object)) continue;
+				hit = hits[i];
+				break;
+			}
+			const row = grottoDescribe(hit);
+			if (hit && hit.distance > dist - 0.15 && row.kind !== "hero" && row.kind !== "trust") {
+				return { kind: "clear", name: "clear", y, ground: groundY(x, z), rise: 0 };
+			}
+			return row;
+		};
+		const heroRow = castAt(px, foot + 0.95, pz);
+		let trust = null;
+		let trustD = Infinity;
+		for (const pup of puppets) {
+			if (!pup.body.root.visible) continue;
+			const d = Math.hypot(pup.x - px, pup.z - pz);
+			if (d < trustD) {
+				trustD = d;
+				trust = pup;
 			}
 		}
-		grottoFrom.copy(camera.position);
-		grottoTo.set(px, foot + 0.95, pz);
-		grottoTo.sub(grottoFrom);
-		const dist = grottoTo.length() || 1;
-		grottoTo.multiplyScalar(1 / dist);
-		if (floors.some((name) => name === "miss") || floors.length < 4) return;
-		const rayHits = grottoCast(traces.concat(marks), grottoFrom, grottoTo, dist);
-		const first = rayHits[0];
-		const heroFirst = !!(first && first.object === heroHit);
-		window.__grottoView = { floors, heroFirst, first: first ? (first.object.name || "unnamed") : "none", n: floors.length, x: px, z: pz, ms: Math.round(performance.now() - now) };
+		const trustRow = trust ? castAt(trust.x, groundY(trust.x, trust.z) + 0.9 * (trust.def.scale || 1), trust.z) : { kind: "miss", name: "none", y: null, ground: null, rise: null };
+		const grid = [];
+		const ns = [-0.8, -0.4, 0, 0.4, 0.8];
+		grottoRay.camera = camera;
+		for (let iy = 0; iy < ns.length; iy++) {
+			for (let ix = 0; ix < ns.length; ix++) {
+				grottoNdc.set(ns[ix], ns[iy]);
+				grottoRay.setFromCamera(grottoNdc, camera);
+				grottoRay.far = 90;
+				const row = grottoDescribe(grottoHits(meshes)[0]);
+				grid.push(row.kind);
+			}
+		}
+		const good = grid.filter((kind) => kind === "floor" || kind === "prop" || kind === "hero" || kind === "trust").length;
+		const share = good / grid.length;
+		const prev = window.__grottoView;
+		if (prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2 && prev.portrait === portrait && prev.heroFirst && prev.trustFirst && prev.share >= share) return;
+		if (good < 4 && heroRow.kind !== "hero") return;
+		window.__grottoView = {
+			portrait,
+			heroFirst: heroRow.kind === "hero",
+			trustFirst: trustRow.kind === "trust",
+			hero: heroRow,
+			trust: trustRow,
+			grid,
+			share,
+			n: good,
+			first: heroRow.name,
+			x: px,
+			z: pz,
+			ms: Math.round(performance.now() - now)
+		};
 	}
 	function publishSeatAudit() {
 		const monsters = [];
@@ -47614,10 +47710,10 @@ function buildRoom(scene, toonMat, colliders) {
 	yughottMat.transparent = false;
 	yughottMat.side = DoubleSide;
 	yughottMat.depthWrite = true;
-	yughottMat.customProgramCacheKey = () => "yughott-terrain-slope";
+	yughottMat.customProgramCacheKey = () => "yughott-terrain-slope-view";
 	yughottMat.onBeforeCompile = (shader) => {
 		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny));\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.05);\n#include <opaque_fragment>");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny));\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.02);\n#include <opaque_fragment>");
 		if (!shader.fragmentShader.includes("0.55 + 0.45")) throw new Error("yughott terrain shader");
 	};
 	const fortMat = toonMat(0xffffff);
@@ -47850,10 +47946,38 @@ function buildRoom(scene, toonMat, colliders) {
 		}
 	};
 	const mossPad = toonMat(0x1c221a);
+	// The east skirt used to hang over Yughott at y=6, so the portrait camera
+	// (south of the hero, looking down) hit cloth instead of the grotto floor.
+	const mossBlocks = (x, z) => {
+		if (inYughott(x, z, 0)) return true;
+		for (let s = 2; s <= 16; s += 2) {
+			if (inYughott(x, z - s, 0) || inYughott(x - 6, z - s, 0) || inYughott(x + 6, z - s, 0)) return true;
+		}
+		return false;
+	};
 	const mossSheet = (x, z, w, d) => {
-		const geo = new PlaneGeometry(w, d);
+		const geo = new PlaneGeometry(w, d, Math.max(1, Math.ceil(w / 8)), Math.max(1, Math.ceil(d / 8)));
 		geo.rotateX(-Math.PI / 2);
+		const pos = geo.attributes.position;
+		const src = geo.getIndex().array;
+		const keep = [];
+		for (let i = 0; i < src.length; i += 3) {
+			let cx = 0;
+			let cz = 0;
+			for (let k = 0; k < 3; k++) {
+				cx += pos.getX(src[i + k]);
+				cz += pos.getZ(src[i + k]);
+			}
+			if (mossBlocks(cx / 3 + x, cz / 3 + z)) continue;
+			keep.push(src[i], src[i + 1], src[i + 2]);
+		}
+		if (!keep.length) {
+			geo.dispose();
+			return;
+		}
+		geo.setIndex(keep);
 		const mesh = new Mesh(geo, mossPad);
+		mesh.name = "moss-skirt";
 		mesh.position.set(x, groundY(x, z) + (6), z);
 		mesh.receiveShadow = true;
 		scene.add(mesh);

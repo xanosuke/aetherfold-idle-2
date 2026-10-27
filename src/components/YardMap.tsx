@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+
+declare const __BUILD_SHA__: string;
 import { readRadar, type RadarFrame, type RadarKind } from "@/game/radar";
 import { orcLayout, type OrcChart } from "@/game/ghelsba";
 import { MANUAL_EAST_ROAD_X, MANUAL_EAST_ROAD_Z, MANUAL_EAST_X, MANUAL_EAST_Z, MANUAL_OUTPOST_X, MANUAL_OUTPOST_Z, MANUAL_X, MANUAL_Z } from "@/game/fov";
@@ -1194,6 +1196,9 @@ export function YardMap() {
         <p ref={squareRef} className="mt-0.5 bg-navy/80 px-1.5 py-0.5 text-xs tabular-nums leading-none text-gold" />
         <p ref={nameRef} className="mt-1 max-w-40 border border-gold bg-panel px-2 py-1 text-right font-display text-sm leading-tight text-gold">
           San d'Oria
+        </p>
+        <p data-build-sha className="mt-0.5 text-[10px] leading-none text-muted/70">
+          {__BUILD_SHA__}
         </p>
       </button>
       {open && (

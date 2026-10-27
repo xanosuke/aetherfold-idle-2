@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
@@ -142,10 +143,21 @@ function authPopupPlugin(): Plugin {
   };
 }
 
+function buildSha(): string {
+  try {
+    return execSync("git rev-parse --short=7 HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    return "dev";
+  }
+}
+
 // `0.0.0.0:8080` is the live-preview contract — don't change host/port.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
 export default defineConfig(({ command, isPreview }) => ({
+  define: {
+    __BUILD_SHA__: JSON.stringify(buildSha()),
+  },
   server: {
     host: "0.0.0.0",
     port: 8080,
