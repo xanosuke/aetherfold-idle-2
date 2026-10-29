@@ -670,34 +670,50 @@ async function orcTrace(browser, url, seated) {
     }
     const dx = hop.mouthX - hop.x;
     const dz = hop.mouthZ - hop.z;
+    const span = Math.max(Math.abs(dx), Math.abs(dz), 1);
+    const cross = Math.min(Math.abs(dx), Math.abs(dz)) / span;
+    // A small cross-track key walks the J-7 mouth into a corner and sticks.
+    const slide = cross >= 0.24;
     const keys = [];
-    if (dx > 0.45) keys.push("KeyD");
-    if (dx < -0.45) keys.push("KeyA");
-    if (dz < -0.45) keys.push("KeyW");
-    if (dz > 0.45) keys.push("KeyS");
+    if (dx > 0.45 && (Math.abs(dx) >= Math.abs(dz) || slide)) keys.push("KeyD");
+    if (dx < -0.45 && (Math.abs(dx) >= Math.abs(dz) || slide)) keys.push("KeyA");
+    if (dz < -0.45 && (Math.abs(dz) >= Math.abs(dx) || slide)) keys.push("KeyW");
+    if (dz > 0.45 && (Math.abs(dz) >= Math.abs(dx) || slide)) keys.push("KeyS");
     if (!keys.length) keys.push(Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? "KeyD" : "KeyA") : dz > 0 ? "KeyS" : "KeyW");
-    await page.locator("canvas").first().click({ position: { x: 200, y: 120 } });
-    for (const key of keys) await page.keyboard.down(key);
-    const landX = hop.landX;
-    const landZ = hop.landZ;
-    let crossed = false;
-    try {
-      await page.waitForFunction(
-        (region) => (document.body?.innerText || "").includes(region),
-        hop.dest,
-        { timeout: 12000 },
-      );
-      crossed = true;
-    } catch {
-      crossed = false;
-    }
-    for (const key of keys) await page.keyboard.up(key);
-    if (!crossed) {
+    const walked = await page.evaluate(({ codes, dest, budget }) => {
+      const ctl = window.__controlsTest;
+      if (!ctl || typeof ctl.setKeys !== "function" || typeof window.__yardStep !== "function") return { ok: false, error: "missing yard step" };
+      ctl.setKeys(codes);
+      let last = null;
+      for (let used = 0; used < budget; used += 15) {
+        last = window.__yardStep(15);
+        if (last && last.region === dest) {
+          ctl.setKeys([]);
+          return { ok: true, ticks: used + 15, ...last };
+        }
+      }
+      ctl.setKeys([]);
+      return { ok: false, error: "sim", last };
+    }, { codes: keys, dest: hop.dest, budget: 420 });
+    if (!walked.ok) {
       const text = await page.locator("body").innerText().catch(() => "");
       await page.close();
-      return { ok: false, error: `${hop.name} did not arrive in ${hop.dest}`, text: text.slice(0, 280), errors, shots };
+      return { ok: false, error: `${hop.name} did not arrive in ${hop.dest} (${walked.error || "sim"} ${JSON.stringify(walked.last || null)})`, text: text.slice(0, 280), errors, shots };
     }
-    await page.waitForTimeout(700);
+    try {
+      await page.waitForFunction(
+        ([region]) => (document.body?.innerText || "").includes(region),
+        [hop.dest],
+        { timeout: 8000 },
+      );
+    } catch (err) {
+      const text = await page.locator("body").innerText().catch(() => "");
+      await page.close();
+      return { ok: false, error: `${hop.name} sim crossed but the label stayed (${err.message})`, text: text.slice(0, 280), errors, shots };
+    }
+    await page.waitForTimeout(1200);
+    const landX = hop.landX;
+    const landZ = hop.landZ;
     const spot = await page.evaluate(() => {
       const text = document.body?.innerText || "";
       const match = text.match(/\((-?\d+\.\d+),\s*(-?\d+\.\d+)\)/);
@@ -1102,6 +1118,182 @@ async function assertCamParity(browser, url, seated) {
   return { ok: true, cams: bags };
 }
 
+function medianOf(values) {
+  const rows = values.filter((n) => n > 0).sort((a, b) => a - b);
+  if (!rows.length) return 0;
+  return rows[Math.floor(rows.length * 0.5)];
+}
+
+function walkPlaces() {
+  const probe = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `
+        import { traceFloorY } from "./src/game/orc-height.ts";
+        import { yughottSquare, inYughott, fortSquare, inFort } from "./src/game/ghelsba.ts";
+        import { FORT_GRAPH, gridToWorld as fortWorld } from "./src/game/fort-graph.ts";
+        const pin = (name, x, z, square) => {
+          const hit = yughottSquare(x, z);
+          if (hit !== square) throw new Error(name + " " + hit);
+          if (!inYughott(x, z, 0)) throw new Error(name + " left the grotto");
+          return { name, x, z, square, region: "Yughott Grotto" };
+        };
+        const fort = FORT_GRAPH.nodes.find((node) => node.id === "area_48");
+        const at = fortWorld(fort.gx, fort.gy);
+        if (fortSquare(at.x, at.z) !== "H-8" || !inFort(at.x, at.z, 0)) throw new Error("fort stand");
+        const stands = [
+          pin("user-h8", -567.1, 656.6, "H-8"),
+          pin("user-f9", -665.8, 688.6, "F-9"),
+          pin("user-g8", -597.0, 658.6, "G-8"),
+        ];
+        console.log("WALKJSON " + JSON.stringify({ stands, fort: { name: "area_48", x: at.x, z: at.z, square: "H-8", region: "Fort Ghelsba", floor: traceFloorY(at.x, at.z) } }));
+      `,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const text = `${probe.stdout || ""}\n${probe.stderr || ""}`;
+  if (probe.status !== 0) return { ok: false, error: text.slice(-800) };
+  const line = (probe.stdout || "").split("\n").find((row) => row.startsWith("WALKJSON "));
+  if (!line) return { ok: false, error: text.slice(-800) };
+  return { ok: true, ...JSON.parse(line.slice("WALKJSON ".length)) };
+}
+
+async function bootStand(browser, url, seated, stand, view) {
+  const context = await browser.newContext({
+    viewport: { width: view.width, height: view.height },
+    deviceScaleFactor: view.mobile ? 3 : 1,
+    isMobile: !!view.mobile,
+    hasTouch: !!view.mobile,
+  });
+  if (view.mobile) {
+    await context.addInitScript(() => {
+      const shift = 1500000;
+      const now = Date.now;
+      Date.now = () => now.call(Date) + shift;
+    });
+  }
+  const page = await context.newPage();
+  const errors = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+  });
+  page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+  await page.route("**/*", (route) => {
+    if (route.request().url().includes("/_serverFn/")) return route.abort();
+    return route.continue();
+  });
+  await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: stand.x, z: stand.z, yaw: 0 }));
+  page.__bootAt = Date.now();
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await waitBootLabel(
+    page,
+    ([region, square]) => {
+      const text = document.body?.innerText || "";
+      return text.includes(region) && (!square || text.includes(square));
+    },
+    [stand.region, stand.square || ""],
+    `pace-${stand.name}`,
+  );
+  return { context, page, errors };
+}
+
+async function assertFramePace(browser, url, seated) {
+  const places = walkPlaces();
+  if (!places.ok) return places;
+  const view = { width: 1280, height: 800, mobile: false };
+  const sample = async (stand) => {
+    const boot = await bootStand(browser, url, seated, stand, view);
+    try {
+      await boot.page.evaluate(() => {
+        for (let i = 0; i < 120 && window.__yardStep(1).built; i++) {}
+      });
+      await boot.page.waitForTimeout(1200);
+      await boot.page.evaluate(() => {
+        if (window.__yardGfxReset) window.__yardGfxReset();
+      });
+      await boot.page.waitForFunction(() => window.__yardGfx && window.__yardGfx.renders && window.__yardGfx.renders.length >= 8, null, { timeout: 20000 });
+      await boot.page.waitForTimeout(700);
+      const gfx = await boot.page.evaluate(() => window.__yardGfx);
+      if (boot.errors.length) return { ok: false, error: `${stand.name} ${boot.errors[0]}` };
+      const ms = medianOf(gfx.renders || []);
+      console.log(`FRAME ${stand.name} median ${ms.toFixed(2)} calls ${gfx.calls} tris ${gfx.triangles}`);
+      return { ok: true, ms, gfx };
+    } finally {
+      await boot.context.close();
+    }
+  };
+  const fort = await sample(places.fort);
+  if (!fort.ok) return fort;
+  const grotto = await sample(places.stands[0]);
+  if (!grotto.ok) return grotto;
+  if (!(fort.ms > 0) || !(grotto.ms <= fort.ms * 1.5)) {
+    return { ok: false, error: `grotto frame ${grotto.ms.toFixed(2)}ms > 1.5x fort ${fort.ms.toFixed(2)}ms` };
+  }
+  return { ok: true, fort: fort.ms, grotto: grotto.ms };
+}
+
+async function assertGrottoWalk(browser, url, seated) {
+  const places = walkPlaces();
+  if (!places.ok) return places;
+  const view = { name: "portrait", width: 390, height: 844, mobile: true };
+  for (const stand of places.stands) {
+    const boot = await bootStand(browser, url, seated, stand, view);
+    const { page, context, errors } = boot;
+    try {
+      await page.waitForFunction(() => window.__seatAudit && window.__seatAudit.fieldLive, null, { timeout: 20000 });
+      await page.waitForFunction(() => {
+        const snap = window.__grottoView;
+        return snap && snap.heroFirst && snap.trustFirst && snap.share >= 0.6 && snap.grid && !snap.grid.includes("void");
+      }, null, { timeout: 12000 });
+      const still = await page.evaluate(() => window.__yardGfx);
+      const walked = await page.evaluate(() => new Promise((resolve) => {
+        window.__controlsTest.setKeys(["KeyW"]);
+        const step = window.__yardStep(4);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const snap = window.__grottoView;
+            const gfx = window.__yardGfx;
+            window.__controlsTest.setKeys([]);
+            resolve({ step, snap, gfx });
+          });
+        });
+      }));
+      if (errors.length) return { ok: false, error: `${stand.name} ${errors[0]}` };
+      const snap = walked.snap;
+      if (!snap || snap.share < 0.6 || (snap.grid || []).includes("void") || !(walked.step.speed >= 0.4)) {
+        return { ok: false, error: `${stand.name} mid-walk share ${snap && snap.share} speed ${walked.step && walked.step.speed} ${(snap && snap.grid || []).join(",")}` };
+      }
+      const gfx = walked.gfx;
+      if (!still || !gfx || still.pixelRatio !== gfx.pixelRatio || still.castShadow !== gfx.castShadow || still.shadowAuto !== gfx.shadowAuto) {
+        return { ok: false, error: `${stand.name} gfx changed ${JSON.stringify(still)} -> ${JSON.stringify(gfx)}` };
+      }
+      console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-share ${snap.share.toFixed(2)}`);
+      const path = `/workspace/screenshots/grotto-walk-${stand.name}.png`;
+      const png = await page.locator("canvas").first().screenshot({ path });
+      const { width, height, data } = decodePng(png);
+      let clear = 0;
+      for (let i = 0; i < width * height; i++) {
+        const r = data[i * 4];
+        const g = data[i * 4 + 1];
+        const b = data[i * 4 + 2];
+        if (r === 21 && g === 20 && b === 28) clear++;
+      }
+      if (clear > 0) return { ok: false, error: `${stand.name} clear-colour pixels ${clear}` };
+    } catch (err) {
+      const snap = await page.evaluate(() => window.__grottoView || null).catch(() => null);
+      return { ok: false, error: `${stand.name} walk ${err.message} ${JSON.stringify(snap)}` };
+    } finally {
+      await context.close();
+    }
+  }
+  return { ok: true };
+}
+
 async function checkGhelsba(browser, url) {
   const places = ghelsbaPlaces();
   if (!places.ok) return places;
@@ -1220,6 +1412,10 @@ async function checkGhelsba(browser, url) {
   if (!seat.ok) return { ...seat, nodes: places.nodes, shots: [...shots, ...(seat.shots || [])] };
   const cams = await assertCamParity(browser, url, seated);
   if (!cams.ok) return { ...cams, nodes: places.nodes, shots };
+  const pace = await assertFramePace(browser, url, seated);
+  if (!pace.ok) return { ...pace, nodes: places.nodes, shots };
+  const walking = await assertGrottoWalk(browser, url, seated);
+  if (!walking.ok) return { ...walking, nodes: places.nodes, shots };
   const trace = await orcTrace(browser, url, seated);
   if (!trace.ok) return { ...trace, nodes: places.nodes, shots: [...shots, ...(trace.shots || [])] };
   return { ok: true, nodes: places.nodes, shots: [...shots, ...(seat.shots || []), ...trace.shots] };

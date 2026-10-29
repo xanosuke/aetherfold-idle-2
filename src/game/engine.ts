@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
+import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, Object3D, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -32,7 +32,7 @@ function groundY(x, z) {
 	return traceFloorY(x, z);
 }
 
-import { fortFlames, orcDressMarks, yughottDrums } from "./orc-dress";
+import { fortFlames, orcDressMarks, takeCaveBits, yughottDrums } from "./orc-dress";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -41,6 +41,12 @@ import { assertExp, noteDefeat, takeExpMarks } from "./exp";
 
 let fortLiftDeck = null;
 let stepTraceMeshes = () => {};
+const zoneChunks = [];
+function tagChunk(mesh, minX, maxX, minZ, maxZ) {
+	if (mesh.isInstancedMesh) mesh.computeBoundingSphere();
+	else if (mesh.geometry) mesh.geometry.computeBoundingSphere();
+	zoneChunks.push({ mesh, minX, maxX, minZ, maxZ });
+}
 let yardEpoch = 0;
 let fieldLive = false;
 let yardAssertsQueued = false;
@@ -2222,6 +2228,24 @@ function buildYard(canvas) {
 	const sun = new DirectionalLight(16774365, 1.2);
 	sun.position.set(9, 16, 7);
 	sun.castShadow = true;
+	sun.shadow.autoUpdate = false;
+	zoneChunks.length = 0;
+	const renderSamples = [];
+	let shadowMark = null;
+	function cullZoneChunks() {
+		const lim = 60 * 60;
+		for (let i = 0; i < zoneChunks.length; i++) {
+			const c = zoneChunks[i];
+			const dx = px < c.minX ? c.minX - px : px > c.maxX ? px - c.maxX : 0;
+			const dz = pz < c.minZ ? c.minZ - pz : pz > c.maxZ ? pz - c.maxZ : 0;
+			const on = dx * dx + dz * dz <= lim;
+			if (c.mesh.visible !== on) c.mesh.visible = on;
+		}
+		if (!shadowMark || Math.hypot(px - shadowMark.x, pz - shadowMark.z) > 8) {
+			sun.shadow.needsUpdate = true;
+			shadowMark = { x: px, z: pz };
+		}
+	}
 	sun.shadow.mapSize.set(Math.min(window.innerWidth || 0, window.innerHeight || 0) < 700 ? 512 : 1024, Math.min(window.innerWidth || 0, window.innerHeight || 0) < 700 ? 512 : 1024);
 	sun.shadow.camera.near = .5;
 	sun.shadow.camera.far = 90;
@@ -10967,7 +10991,6 @@ function buildYard(canvas) {
 	canvas.addEventListener("contextmenu", onMenu);
 	let portrait = false;
 	let viewAspect = 1;
-	let yugDrawFast = false;
 	function applyFrustum() {
 		const frustum = portrait ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE;
 		camera.top = frustum / 2;
@@ -10981,7 +11004,7 @@ function buildYard(canvas) {
 		const h = canvas.clientHeight || 1;
 		const narrow = Math.min(window.innerWidth || w, window.innerHeight || h) < 700;
 		const baseRatio = Math.min(window.devicePixelRatio || 1, narrow ? 1.25 : 1.6);
-		renderer.setPixelRatio(yugDrawFast ? Math.min(baseRatio, 0.5) : baseRatio);
+		renderer.setPixelRatio(baseRatio);
 		portrait = h > w;
 		renderer.setSize(w, h, false);
 		viewAspect = w / Math.max(1, h);
@@ -13641,21 +13664,6 @@ function buildYard(canvas) {
 		const orcFall = scene.userData.orcFall;
 		if (orcFall) orcFall.opacity = 0.34 + 0.14 * Math.sin(elapsed * 2.4);
 		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inFort(px, pz) ? FORT_FOG.color : inGhelsba(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x15141c : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
-		// The grotto's shelf is a lot of triangles. Still shots keep it (and the
-		// shadow pass) so the portrait luminance stays put. A walk only needs the
-		// collision, so drop the heavy meshes until the player stops.
-		const yugMove = inYughott(px, pz) && speed >= 0.4;
-		if (yugMove !== yugDrawFast) {
-			yugDrawFast = yugMove;
-			resize();
-		}
-		sun.castShadow = !yugMove;
-		const yugHeavy = scene.userData.yugHeavy;
-		if (yugHeavy) {
-			for (let i = 0; i < yugHeavy.length; i++) {
-				if (yugHeavy[i].visible === yugMove) yugHeavy[i].visible = !yugMove;
-			}
-		}
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
@@ -13683,7 +13691,7 @@ function buildYard(canvas) {
 			oy: camPos.y,
 			oz: camPos.z
 		};
-		if (inYughott(px, pz) && speed < 0.4) publishGrottoView(px, pz, foot);
+		if (inYughott(px, pz)) publishGrottoView(px, pz, foot);
 		drawFish(dt);
 		placeRuneRow();
 		tickEffusion(dt);
@@ -41622,6 +41630,7 @@ function buildYard(canvas) {
 		return null;
 	}
 	function frame(now) {
+		const frameT = performance.now();
 		timer.update(now);
 		stepTraceMeshes(px, pz);
 		let dt = timer.getDelta();
@@ -41640,7 +41649,24 @@ function buildYard(canvas) {
 		}
 		if (acc > STEP) acc = 0;
 		fadePassWalls(dt);
+		cullZoneChunks();
+		const renderT = performance.now();
 		renderer.render(scene, camera);
+		const renderMs = performance.now() - renderT;
+		const frameMs = performance.now() - frameT;
+		renderSamples.push(frameMs);
+		if (renderSamples.length > 31) renderSamples.shift();
+		window.__yardGfx = {
+			pixelRatio: renderer.getPixelRatio(),
+			castShadow: sun.castShadow === true,
+			shadowAuto: sun.shadow.autoUpdate === true,
+			calls: renderer.info.render.calls,
+			triangles: renderer.info.render.triangles,
+			renderMs,
+			frameMs,
+			renders: renderSamples.slice(),
+			speed
+		};
 	}
 	const unsub = useGame.subscribe((s, prev) => {
 		if (s.started && !prev.started) ensureAudio();
@@ -41732,6 +41758,9 @@ function buildYard(canvas) {
 			if (window.__passNear === passNear) delete window.__passNear;
 			if (window.__passClick === passClickLog) delete window.__passClick;
 			if (window.__skillHop === skillHop) delete window.__skillHop;
+			if (window.__yardStep) delete window.__yardStep;
+			if (window.__yardGfx) delete window.__yardGfx;
+			if (window.__yardGfxReset) delete window.__yardGfxReset;
 			if (window.__seatAudit && window.__seatAudit.token === seatToken) delete window.__seatAudit;
 		}
 	};
@@ -41739,6 +41768,21 @@ function buildYard(canvas) {
 		getYaw: api.getYaw,
 		getSpeed: api.getSpeed,
 		setKeys: api.setKeys
+	};
+	window.__yardGfxReset = () => {
+		renderSamples.length = 0;
+	};
+	window.__yardStep = (ticks) => {
+		const n = Math.max(0, Math.min(480, ticks | 0));
+		let built = 0;
+		for (let i = 0; i < n; i++) {
+			tick(1 / 30);
+			if (stepTraceMeshes(px, pz)) built++;
+		}
+		cullZoneChunks();
+		const foot = groundY(px, pz);
+		if (inYughott(px, pz)) publishGrottoView(px, pz, foot, true);
+		return { x: px, z: pz, region: regionName(px, pz), speed, built };
 	};
 	const seatToken = {};
 	let heroFloorMin = Infinity;
@@ -41813,26 +41857,34 @@ function buildYard(canvas) {
 		if (name.includes("moss") || name === "outpost-terrain" || name === "fort-trace") return { kind: "wall", name, y, ground, rise: y - ground };
 		return { kind: "prop", name, y, ground, rise: y - ground };
 	}
-	function publishGrottoView(px, pz, foot) {
+	function publishGrottoView(px, pz, foot, force) {
 		if (!fieldLive) return;
 		const now = performance.now();
-		if (now - grottoViewAt < 400) return;
+		if (!force && now - grottoViewAt < 400) return;
 		grottoViewAt = now;
 		camera.updateMatrixWorld();
-		scene.updateMatrixWorld(true);
+		if (hero.root) hero.root.updateMatrixWorld(true);
+		for (let i = 0; i < puppets.length; i++) {
+			const root = puppets[i].body && puppets[i].body.root;
+			if (root) root.updateMatrixWorld(true);
+		}
 		const meshes = [];
-		scene.traverse((obj) => {
-			if (!grottoOpaque(obj)) return;
-			const name = obj.name || "";
-			if (name.includes("yug") || name === "moss-skirt" || obj === heroHit || name === "trust-hit" || grottoOwner(obj)) {
-				meshes.push(obj);
-				return;
+		const walk = (obj) => {
+			if (obj.isBone) return;
+			if (grottoOpaque(obj)) {
+				const name = obj.name || "";
+				if (name.includes("yug") || name === "moss-skirt" || obj === heroHit || name === "trust-hit" || grottoOwner(obj)) meshes.push(obj);
+				else {
+					obj.getWorldPosition(grottoTo);
+					const dx = grottoTo.x - px;
+					const dz = grottoTo.z - pz;
+					if (dx * dx + dz * dz < 1600) meshes.push(obj);
+				}
 			}
-			obj.getWorldPosition(grottoTo);
-			const dx = grottoTo.x - px;
-			const dz = grottoTo.z - pz;
-			if (dx * dx + dz * dz < 1600) meshes.push(obj);
-		});
+			const kids = obj.children;
+			for (let i = 0; i < kids.length; i++) walk(kids[i]);
+		};
+		walk(scene);
 		const castAt = (x, y, z) => {
 			grottoFrom.copy(camera.position);
 			grottoTo.set(x, y, z).sub(grottoFrom);
@@ -41880,8 +41932,8 @@ function buildYard(canvas) {
 		const prev = window.__grottoView;
 		const nextVoid = grid.includes("void");
 		const prevVoid = !!(prev && prev.grid && prev.grid.includes("void"));
-		if (prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2 && prev.portrait === portrait && prev.heroFirst && prev.trustFirst && !prevVoid && (nextVoid || prev.share >= share)) return;
-		if (good < 4 && heroRow.kind !== "hero") return;
+		if (!force && prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2 && prev.portrait === portrait && prev.heroFirst && prev.trustFirst && !prevVoid && (nextVoid || prev.share >= share)) return;
+		if (!force && good < 4 && heroRow.kind !== "hero") return;
 		window.__grottoView = {
 			portrait,
 			heroFirst: heroRow.kind === "hero",
@@ -41890,6 +41942,7 @@ function buildYard(canvas) {
 			trust: trustRow,
 			grid,
 			share,
+			moving: speed >= 0.4,
 			n: good,
 			first: heroRow.name,
 			x: px,
@@ -47669,7 +47722,7 @@ function buildRoom(scene, toonMat, colliders) {
 	fortLiftDeck.receiveShadow = true;
 	scene.add(fortLiftDeck);
 	const orcPoolMat = new MeshPhongMaterial({ color: 0x434340, transparent: true, opacity: 0.85, shininess: 30, specular: 0x889988, depthWrite: false });
-	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.28, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcShaftPoolMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcDrumGlowMat = new MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.18, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcFallMat = new MeshBasicMaterial({ color: 0xd5e7ff, transparent: true, opacity: 0.42, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
@@ -47684,9 +47737,9 @@ function buildRoom(scene, toonMat, colliders) {
 			scene.add(water);
 		} else if (mark.kind === "shaft") {
 			const floor = groundY(mark.x, mark.z);
-			const shaft = new Mesh(new PlaneGeometry(0.18, 3), orcShaftMat);
+			const shaft = new Mesh(new PlaneGeometry(0.18, 1.5), orcShaftMat);
 			shaft.name = "shaft";
-			shaft.position.set(mark.x, floor + 1.5, mark.z);
+			shaft.position.set(mark.x, floor + 0.75, mark.z);
 			scene.add(shaft);
 			const pool = new Mesh(new CircleGeometry(1.4, 8), orcShaftPoolMat);
 			pool.name = "shaft-pool";
@@ -47760,8 +47813,6 @@ function buildRoom(scene, toonMat, colliders) {
 	const tz1 = tz0 + GHELSBA_TERRAIN.span;
 	const tStep = GHELSBA_TERRAIN.step;
 	const tChunk = GHELSBA_TERRAIN.chunk;
-	const yugHeavy = [];
-	scene.userData.yugHeavy = yugHeavy;
 	for (let cz = tz0; cz < tz1 - 1e-3; cz += tChunk) {
 		const cz1 = Math.min(tz1, cz + tChunk);
 		for (let cx = tx0; cx < tx1 - 1e-3; cx += tChunk) {
@@ -47812,7 +47863,7 @@ function buildRoom(scene, toonMat, colliders) {
 			mesh.receiveShadow = true;
 			mesh.castShadow = false;
 			scene.add(mesh);
-			yugHeavy.push(mesh);
+			tagChunk(mesh, cx, cx1, cz, cz1);
 		}
 	}
 	const traceJobs = traceMeshFields().map((field) => {
@@ -47941,8 +47992,8 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.name = field.id === "fort" ? "fort-trace" : `${field.id}-trace`;
 		mesh.receiveShadow = true;
 		mesh.castShadow = false;
-		if (field.id !== "fort") yugHeavy.push(mesh);
 		scene.add(mesh);
+		tagChunk(mesh, field.x0 + chunk.i0 * field.step, field.x0 + chunk.i1 * field.step, field.z0 + chunk.j0 * field.step, field.z0 + chunk.j1 * field.step);
 	};
 	const traceBoxDist = (field, x, z) => {
 		const x1 = field.x0 + field.nX * field.step;
@@ -47952,34 +48003,40 @@ function buildRoom(scene, toonMat, colliders) {
 		return Math.hypot(x - cx, z - cz);
 	};
 	stepTraceMeshes = (x, z) => {
-		let best = null;
-		let bestD = 151;
+		let bestJob = null;
+		let bestIdx = -1;
+		let bestD = 96;
 		for (let n = 0; n < traceJobs.length; n++) {
 			const job = traceJobs[n];
 			if (job.built >= job.chunks.length) continue;
-			const d = traceBoxDist(job.field, x, z);
-			if (d > 150 || d >= bestD) continue;
-			bestD = d;
-			best = job;
+			if (traceBoxDist(job.field, x, z) > 150) continue;
+			const done = job.done || (job.done = new Uint8Array(job.chunks.length));
+			for (let i = 0; i < job.chunks.length; i++) {
+				if (done[i]) continue;
+				const chunk = job.chunks[i];
+				const cx = job.field.x0 + ((chunk.i0 + chunk.i1) / 2) * job.field.step;
+				const cz = job.field.z0 + ((chunk.j0 + chunk.j1) / 2) * job.field.step;
+				const d = Math.hypot(cx - x, cz - z);
+				if (d < bestD) {
+					bestD = d;
+					bestJob = job;
+					bestIdx = i;
+				}
+			}
 		}
-		if (!best) return;
-		if (!best.order) {
-			best.order = best.chunks.map((chunk, idx) => {
-				const cx = best.field.x0 + ((chunk.i0 + chunk.i1) / 2) * best.field.step;
-				const cz = best.field.z0 + ((chunk.j0 + chunk.j1) / 2) * best.field.step;
-				return { idx, d: Math.hypot(cx - x, cz - z) };
-			}).sort((a, b) => a.d - b.d);
-		}
-		const next = best.order[best.cursor++];
+		if (!bestJob) return false;
+		bestJob.done[bestIdx] = 1;
+		bestJob.done[bestIdx] = 1;
 		const t0 = performance.now();
-		layTraceChunk(best.field, best.chunks[next.idx]);
+		layTraceChunk(bestJob.field, bestJob.chunks[bestIdx]);
 		const dt = performance.now() - t0;
-		best.built++;
-		if (best.firstMs == null) {
-			best.firstMs = dt;
+		bestJob.built++;
+		if (bestJob.firstMs == null) {
+			bestJob.firstMs = dt;
 			const bag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
-			bag[best.field.id] = dt;
+			bag[bestJob.field.id] = dt;
 		}
+		return true;
 	};
 	const mossPad = toonMat(0x1c221a);
 	// The east skirt used to hang over Yughott at y=6, so the portrait camera
@@ -48015,9 +48072,9 @@ function buildRoom(scene, toonMat, colliders) {
 		const mesh = new Mesh(geo, mossPad);
 		mesh.name = "moss-skirt";
 		mesh.position.set(x, groundY(x, z) + (6), z);
-		mesh.receiveShadow = true;
+		mesh.receiveShadow = false;
 		scene.add(mesh);
-		yugHeavy.push(mesh);
+		tagChunk(mesh, x - w / 2, x + w / 2, z - d / 2, z + d / 2);
 	};
 	const pad = 180;
 	mossSheet((tx0 + tx1) / 2, tz1 + pad / 2, GHELSBA_TERRAIN.span + pad * 2, pad);
@@ -48073,13 +48130,77 @@ function buildRoom(scene, toonMat, colliders) {
 		6963248,
 		1316892
 	]);
+	const caveDummy = new Object3D();
+	const caveMats = new Map();
+	const caveGroups = new Map();
+	for (const bit of takeCaveBits()) {
+		const key = `${bit.kind}|${bit.shape}|${bit.color}|${Math.floor(bit.x / 64)}|${Math.floor(bit.z / 64)}`;
+		const list = caveGroups.get(key) ?? [];
+		list.push(bit);
+		caveGroups.set(key, list);
+	}
+	for (const list of caveGroups.values()) {
+		const head = list[0];
+		const geo = head.shape === "cone" ? new ConeGeometry(1, 1, 6) : new BoxGeometry(1, 1, 1);
+		let mat = caveMats.get(head.color);
+		if (!mat) {
+			mat = toonMat(head.color);
+			caveMats.set(head.color, mat);
+		}
+		const mesh = new InstancedMesh(geo, mat, list.length);
+		mesh.name = `cave-${head.kind}`;
+		mesh.castShadow = false;
+		mesh.receiveShadow = true;
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let minZ = Infinity;
+		let maxZ = -Infinity;
+		for (let i = 0; i < list.length; i++) {
+			const bit = list[i];
+			caveDummy.position.set(bit.x, bit.y, bit.z);
+			caveDummy.rotation.set(0, bit.yaw || 0, 0);
+			caveDummy.scale.set(Math.max(0.02, bit.sx), Math.max(0.02, bit.sy), Math.max(0.02, bit.sz));
+			caveDummy.updateMatrix();
+			mesh.setMatrixAt(i, caveDummy.matrix);
+			minX = Math.min(minX, bit.x - 1.2);
+			maxX = Math.max(maxX, bit.x + 1.2);
+			minZ = Math.min(minZ, bit.z - 1.2);
+			maxZ = Math.max(maxZ, bit.z + 1.2);
+		}
+		mesh.instanceMatrix.needsUpdate = true;
+		scene.add(mesh);
+		tagChunk(mesh, minX, maxX, minZ, maxZ);
+	}
+	const colorMats = new Map();
+	const colorBins = new Map();
 	for (const [color, geos] of buckets) {
+		for (const geo of geos) {
+			geo.computeBoundingBox();
+			const box = geo.boundingBox;
+			const cx = (box.min.x + box.max.x) * 0.5;
+			const cz = (box.min.z + box.max.z) * 0.5;
+			const key = `${color}:${Math.floor(cx / 64)}:${Math.floor(cz / 64)}`;
+			const list = colorBins.get(key) ?? [];
+			list.push(geo);
+			colorBins.set(key, list);
+		}
+	}
+	for (const [key, geos] of colorBins) {
+		const color = Number(key.split(":")[0]);
 		const merged = mergeGeometries(geos);
 		if (!merged) continue;
-		const mesh = new Mesh(merged, toonMat(color));
+		let mat = colorMats.get(color);
+		if (!mat) {
+			mat = toonMat(color);
+			colorMats.set(color, mat);
+		}
+		const mesh = new Mesh(merged, mat);
 		mesh.castShadow = !ground.has(color) && !leafy.has(color);
 		mesh.receiveShadow = true;
+		merged.computeBoundingBox();
+		const box = merged.boundingBox;
 		scene.add(mesh);
+		tagChunk(mesh, box.min.x, box.max.x, box.min.z, box.max.z);
 		for (const g of geos) g.dispose();
 	}
 	if (flagGeos.length) {

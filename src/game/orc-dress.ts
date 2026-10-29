@@ -22,6 +22,7 @@ import {
   clampYughottGraph,
   gridToWorld as yugWorld,
   inYughottGraph,
+  yughottMapAt,
   type YughottMap,
 } from "./yughott-graph";
 import { retreatYughott, seatedFortPois, seatedYughottPois, traceFloorY, fortNode } from "./orc-height";
@@ -204,6 +205,41 @@ function isSouth(segs: Seg[], x: number, z: number) {
   const dx = x - q.x;
   const dz = z - q.z;
   return dz > 0.75 && dz > Math.abs(dx) * 0.4;
+}
+
+function cameraBand(map: YughottMap, x: number, z: number) {
+  for (let d = 2; d <= 10; d += 2) {
+    if (inYughottGraph(x, z - d, 0, map)) return true;
+    if (inYughottGraph(x - d * 0.5, z - d, 0, map)) return true;
+    if (inYughottGraph(x + d * 0.5, z - d, 0, map)) return true;
+  }
+  return false;
+}
+
+export type CaveBit = {
+  kind: string;
+  shape: "box" | "cone";
+  color: number;
+  sx: number;
+  sy: number;
+  sz: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+};
+
+const caveBits: CaveBit[] = [];
+let cavePaint = "rubble";
+
+function caveBox(color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw = 0) {
+  caveBits.push({ kind: cavePaint, shape: "box", color, sx: w, sy: h, sz: d, x, y, z, yaw });
+}
+
+export function takeCaveBits(): CaveBit[] {
+  const out = caveBits.slice();
+  caveBits.length = 0;
+  return out;
 }
 
 function crossSide(segs: Seg[], x: number, z: number) {
@@ -1033,50 +1069,57 @@ function inCavePool(x: number, z: number) {
 const CAVE_SCATTER = ["rubble", "stal", "slab", "cairn", "bone", "moss"] as const;
 type CaveKind = (typeof CAVE_SCATTER)[number] | "crate";
 
-function paintCave(add: Add, colliders: Solid[], x: number, z: number, kind: CaveKind) {
+function paintCave(colliders: Solid[], x: number, z: number, kind: CaveKind) {
+  cavePaint = kind;
   const yaw = hash(x, z) * Math.PI;
   if (kind === "rubble") {
     const s = 0.85 + hash(x, z + 1) * 0.55;
-    footBox(add, 0x6d675c, s, 0.28, s * 0.72, x, z, yaw);
-    add(0x5a534c, s * 0.5, 0.22, s * 0.4, x + 0.12, 0.36, z - 0.08, yaw + 0.35);
-    add(0x7a7264, s * 0.28, 0.16, s * 0.22, x - 0.16, 0.2, z + 0.1);
+    footBox(caveBox, 0x6d675c, s, 0.28, s * 0.72, x, z, yaw);
+    caveBox(0x5a534c, s * 0.5, 0.22, s * 0.4, x + 0.12, 0.36, z - 0.08, yaw + 0.35);
+    caveBox(0x7a7264, s * 0.28, 0.16, s * 0.22, x - 0.16, 0.2, z + 0.1);
     collide(colliders, x, z, 0.32, 0.26);
   } else if (kind === "stal") {
+    const map = yughottMapAt(x, z);
+    const cap = cameraBand(map, x, z) ? 1.5 : 3;
     const n = 2 + Math.floor(hash(x + 1, z) * 3);
     let top = 0;
     for (let i = 0; i < n; i++) {
       const a = hash(x, z + i) * Math.PI * 2;
       const rad = 0.12 + hash(z, i + 2) * 0.28;
-      const h = 1 + hash(x + i, z + 3) * 2;
+      let h = 1 + hash(x + i, z + 3) * 2;
+      if (h > cap) h = cap;
       const px = x + Math.cos(a) * rad;
       const pz = z + Math.sin(a) * rad;
-      footBox(add, 0x4a4450, 0.26, h * 0.62, 0.26, px, pz);
-      add(0x4a4450, 0.14, h * 0.42, 0.14, px, h * 0.78, pz);
+      const radius = 0.16 + hash(px, pz) * 0.1;
+      caveBits.push({ kind: "stal", shape: "cone", color: 0x4a4450, sx: radius, sy: h, sz: radius, x: px, y: h / 2, z: pz, yaw: 0 });
+      const baseH = Math.min(h * 0.38, 0.55);
+      caveBits.push({ kind: "stal-base", shape: "cone", color: 0x3b3640, sx: radius * 1.35, sy: baseH, sz: radius * 1.35, x: px, y: baseH / 2, z: pz, yaw: 0 });
       if (h > top) top = h;
     }
     collide(colliders, x, z, 0.36, 0.36);
     if (top > 3) throw new Error("stalagmite over 3");
+    if (top > cap) throw new Error("stalagmite camera side");
   } else if (kind === "slab") {
-    footBox(add, 0x3a3640, 1.25, 0.18, 0.62, x, z, yaw);
-    add(0x322e38, 0.82, 0.14, 0.4, x + 0.16, 0.24, z - 0.06, yaw + 0.5);
+    footBox(caveBox, 0x3a3640, 1.25, 0.18, 0.62, x, z, yaw);
+    caveBox(0x322e38, 0.82, 0.14, 0.4, x + 0.16, 0.24, z - 0.06, yaw + 0.5);
     collide(colliders, x, z, 0.42, 0.28);
   } else if (kind === "cairn") {
-    footBox(add, 0x4a4450, 0.52, 0.26, 0.44, x, z, yaw);
-    add(0x3e3844, 0.34, 0.22, 0.3, x + 0.04, 0.36, z, yaw + 0.4);
-    add(0x514a58, 0.2, 0.18, 0.18, x, 0.54, z - 0.02);
+    footBox(caveBox, 0x4a4450, 0.52, 0.26, 0.44, x, z, yaw);
+    caveBox(0x3e3844, 0.34, 0.22, 0.3, x + 0.04, 0.36, z, yaw + 0.4);
+    caveBox(0x514a58, 0.2, 0.18, 0.18, x, 0.54, z - 0.02);
     collide(colliders, x, z, 0.28, 0.24);
   } else if (kind === "bone") {
-    add(0xe4d4c0, 0.68, 0.14, 0.24, x, 0.1, z, yaw);
-    add(0xd2c2ae, 0.42, 0.12, 0.18, x + 0.16, 0.12, z + 0.08, yaw - 0.6);
-    add(0xcbb8a4, 0.2, 0.16, 0.18, x - 0.14, 0.14, z + 0.02);
+    caveBox(0xe4d4c0, 0.68, 0.14, 0.24, x, 0.1, z, yaw);
+    caveBox(0xd2c2ae, 0.42, 0.12, 0.18, x + 0.16, 0.12, z + 0.08, yaw - 0.6);
+    caveBox(0xcbb8a4, 0.2, 0.16, 0.18, x - 0.14, 0.14, z + 0.02);
     collide(colliders, x, z, 0.28, 0.2);
   } else if (kind === "moss") {
-    add(0x3d4a3a, 1.15, 0.04, 0.82, x, 0.025, z, yaw);
-    add(0x44543f, 0.55, 0.035, 0.4, x + 0.28, 0.03, z + 0.18, yaw + 0.6);
+    caveBox(0x3d4a3a, 1.15, 0.04, 0.82, x, 0.025, z, yaw);
+    caveBox(0x44543f, 0.55, 0.035, 0.4, x + 0.28, 0.03, z + 0.18, yaw + 0.6);
   } else {
-    footBox(add, 0x6b4e32, 0.82, 0.36, 0.66, x, z, yaw);
-    add(0x5a422c, 0.7, 0.12, 0.16, x + 0.18, 0.42, z + 0.08, yaw + 0.7);
-    add(0x4a3824, 0.34, 0.1, 0.48, x - 0.12, 0.28, z - 0.1, yaw - 0.4);
+    footBox(caveBox, 0x6b4e32, 0.82, 0.36, 0.66, x, z, yaw);
+    caveBox(0x5a422c, 0.7, 0.12, 0.16, x + 0.18, 0.42, z + 0.08, yaw + 0.7);
+    caveBox(0x4a3824, 0.34, 0.1, 0.48, x - 0.12, 0.28, z - 0.1, yaw - 0.4);
     collide(colliders, x, z, 0.36, 0.3);
   }
 }
@@ -1095,7 +1138,7 @@ function fillYughottDensity(draw: Add, colliders: Solid[], avoid: { x: number; z
       if (!fits(zone, spec, avoid, x, z)) return false;
       const at = claim(spec, x, z);
       seq += 1;
-      begin(zone, spec.id, square, at, h, draw, (add) => paintCave(add, colliders, at.x, at.z, kind));
+      begin(zone, spec.id, square, at, h, draw, () => paintCave(colliders, at.x, at.z, kind));
       list.push(at);
       return true;
     };
@@ -1117,7 +1160,8 @@ function fillYughottDensity(draw: Add, colliders: Solid[], avoid: { x: number; z
         const kind0 = Math.floor(hash(mid.x, mid.z) * CAVE_SCATTER.length);
         const place = (x: number, z: number, n: number) => {
           const kind = CAVE_SCATTER[(kind0 + n) % CAVE_SCATTER.length];
-          const h = kind === "stal" ? 1 + hash(x, z) * 2 : kind === "moss" ? 0.08 : 0.7;
+          const openH = kind === "stal" ? 1 + hash(x, z) * 2 : kind === "moss" ? 0.08 : 0.7;
+          const h = kind === "stal" && cameraBand(map, x, z) ? Math.min(openH, 1.5) : openH;
           return seat(x, z, kind, h);
         };
         for (const off of [2.95, -2.95, 3.7, -3.7, 5.2, -5.2, 7.4, -7.4]) {
@@ -1220,7 +1264,7 @@ function fortExitCrates(draw: Add, colliders: Solid[], avoid: { x: number; z: nu
         const spec: Seek = { id: `crate-${node.id}-${placed}`, square, hx: 0.42, hz: 0.36, h: 0.6 };
         if (!fits(zone, spec, avoid, spot.x, spot.z)) continue;
         const at = claim(spec, spot.x, spot.z);
-        begin(zone, spec.id, square, at, 0.6, draw, (add) => paintCave(add, colliders, at.x, at.z, "crate"));
+        begin(zone, spec.id, square, at, 0.6, draw, () => paintCave(colliders, at.x, at.z, "crate"));
         placed += 1;
         n += 1;
       }
@@ -1352,6 +1396,7 @@ export function dressOrcCamps(add: Add, colliders: Solid[], hooks: Hooks, avoid:
   marks = [];
   flames = [];
   drums = [];
+  caveBits.length = 0;
   occupied.length = 0;
   fortDress(add, colliders, hooks, avoid);
   caveDress(add, colliders, hooks, avoid);
@@ -1434,6 +1479,9 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
     const path = nearest(segs, prop.x, prop.z);
     if (path.d < 1.5) throw new Error(`${prop.id} centreline ${path.d.toFixed(2)}`);
     if (prop.h > 3 && isSouth(segs, prop.x, prop.z)) throw new Error(`${prop.id} tall on the south`);
+    if (prop.zone === "yughott" && prop.map && (prop.id.startsWith("cave-") || prop.id.startsWith("crate-")) && prop.h > 1.5 && cameraBand(prop.map, prop.x, prop.z)) {
+      throw new Error(`${prop.id} camera-side ${prop.h.toFixed(2)}`);
+    }
   }
   const blocked = (x: number, z: number) => solids.some((box) => x > box.minX - 0.36 && x < box.maxX + 0.36 && z > box.minZ - 0.36 && z < box.maxZ + 0.36);
   const walk = (label: string, edges: { id: string; pts: [number, number][] }[], world: (gx: number, gy: number) => V2, inside: (x: number, z: number) => boolean) => {
