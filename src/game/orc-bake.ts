@@ -231,9 +231,9 @@ function graphPoints(graph: FortGraph | YughottGraph, world: (gx: number, gy: nu
   return pts;
 }
 
-function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake: Bake, id: BakedArrays["id"], map?: YughottMap): BakedArrays {
+function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake: Bake, id: BakedArrays["id"], map?: YughottMap, spanPad = 8): BakedArrays {
   const step = 2;
-  const pad = 8;
+  const pad = spanPad;
   const x0 = minX - pad;
   const z0 = minZ - pad;
   const nX = Math.ceil((maxX - minX + pad * 2) / step);
@@ -250,6 +250,15 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
   const clearance = (x: number, z: number) => {
     if (x < x0 - 2 || z < z0 - 2 || x > spanX + 2 || z > spanZ + 2) return -1000;
     return bake.clearance(x, z);
+  };
+  // South of the walk is the camera side. Both cameras sit at +Z.
+  const cameraSide = (x: number, z: number, c: number) => {
+    for (let d = 4; d <= 32; d += 4) {
+      if (clearance(x, z - d) > c + 0.25) return true;
+      if (clearance(x - d * 0.5, z - d) > c + 0.35) return true;
+      if (clearance(x + d * 0.5, z - d) > c + 0.35) return true;
+    }
+    return false;
   };
   const rimRise = (x: number, z: number, c: number) => {
     // Both cameras sit to the south (+Z) and look north. A lip whose floor is
@@ -274,7 +283,14 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
       floorY[idx] = terraceN;
       const c = clearance(x, z);
       if (bake.cave) {
-        if (c < -3.35) continue;
+        // Past the rim the portrait aim used to fall off into the clear color.
+        // The wall top keeps going, south at 1.45 and everywhere else at 3.35.
+        if (c < -3.35) {
+          draw[idx] = 2;
+          // Farther than the look can see a floor: the north cap, not a south lip.
+          ys[idx] = terraceN + (c < -36 || !cameraSide(x, z, c) ? 3.35 : 1.45);
+          continue;
+        }
         draw[idx] = 1;
         if (c >= -0.5) {
           if (c >= -0.05 && bake.onFloor(x, z)) {
@@ -398,7 +414,7 @@ function sampleGrid(field: BakedArrays, x: number, z: number) {
   const w = field.nX + 1;
   const at = (ii: number, jj: number) => {
     const idx = jj * w + ii;
-    return { y: field.ys[idx], draw: field.draw[idx] === 1 };
+    return { y: field.ys[idx], draw: field.draw[idx] !== 0 };
   };
   const y00 = at(i, j);
   const y10 = at(i + 1, j);
@@ -464,6 +480,7 @@ function yugPaint(pack: ReturnType<typeof yugPack>, x: number, z: number, y: num
   const wall = pack.map === 2 ? Y2_WALL : Y1_WALL;
   const top = pack.map === 2 ? Y2_TOP : Y1_TOP;
   if (on) return vary(floor, x, z, 0.04);
+  if (yughottClearance(x, z, pack.map) < -3.35) return vary(top, x, z, 0.02);
   return mix(vary(wall, x, z, 0.03), vary(top, x, z, 0.02), 0.18);
 }
 
@@ -483,7 +500,7 @@ export function bakeAllFields(): BakedArrays[] {
     onFloor: (x, z) => inYughottGraph(x, z, 0, pack.map),
     cave: true,
     paint: (x, z, y, on) => yugPaint(pack, x, z, y, on),
-  }, id, pack.map);
+  }, id, pack.map, 30);
   return [fort, bakeYug(yug1, "yug1"), bakeYug(yug2, "yug2")];
 }
 

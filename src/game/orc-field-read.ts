@@ -138,5 +138,5 @@ export function claimsDraw(field: OrcField, x: number, z: number): boolean {
   if (u < -0.5 || v < -0.5 || u > field.nX + 0.5 || v > field.nZ + 0.5) return false;
   const i = Math.max(0, Math.min(field.nX, Math.round(u)));
   const j = Math.max(0, Math.min(field.nZ, Math.round(v)));
-  return field.draw[j * (field.nX + 1) + i] === 1;
+  return field.draw[j * (field.nX + 1) + i] !== 0;
 }

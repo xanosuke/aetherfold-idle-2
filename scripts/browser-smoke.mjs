@@ -868,13 +868,17 @@ async function assertSeat(browser, url, seated) {
     });
     let viewSnap = null;
     if (stand.view) {
+      const minShare = view.name === "portrait" ? 0.5 : 0.6;
       try {
         await page.waitForFunction(
-          () => {
+          (min) => {
             const snap = window.__grottoView;
-            return snap && snap.heroFirst && snap.trustFirst && snap.share >= 0.6 && snap.grid && snap.grid.length === 25;
+            if (!snap || !snap.heroFirst || !snap.trustFirst || !snap.grid || snap.grid.length !== 25) return false;
+            if (snap.share < min) return false;
+            if (snap.portrait && snap.grid.includes("void")) return false;
+            return true;
           },
-          null,
+          minShare,
           { timeout: 12000 },
         );
       } catch (err) {
@@ -888,10 +892,17 @@ async function assertSeat(browser, url, seated) {
       const png = await page.screenshot({ path: shotPath, timeout: 15000, animations: "disabled" });
       const lum = grottoLum(png);
       viewSnap = await page.evaluate(() => window.__grottoView);
-      const badHit = (viewSnap.grid || []).filter((kind) => kind === "wall" || kind === "cap" || kind === "void");
-      if (viewSnap.share < 0.6 || badHit.length > 10) {
+      const grid = viewSnap.grid || [];
+      const badHit = grid.filter((kind) => kind === "wall" || kind === "cap" || kind === "void");
+      const voids = grid.filter((kind) => kind === "void");
+      if (view.name === "portrait") {
+        if (viewSnap.share < 0.5 || voids.length) {
+          await context.close();
+          return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${grid.join(",")}`, shots };
+        }
+      } else if (viewSnap.share < 0.6 || badHit.length > 10) {
         await context.close();
-        return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${viewSnap.grid.join(",")}`, shots };
+        return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${grid.join(",")}`, shots };
       }
       if (!(lum >= 0.10 && lum <= 0.35)) {
         await context.close();
@@ -951,6 +962,144 @@ async function assertSeat(browser, url, seated) {
   if (monsters < 1) return { ok: false, error: "no visible field monsters on the seat stands", shots };
   if (raised < 1) return { ok: false, error: "no raised terrace in the seat sample", shots };
   return { ok: true, shots, monsters, raised };
+}
+
+function camPlaces() {
+  const probe = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `
+        import { GHELSBA_GRAPH, gridToWorld } from "./src/game/ghelsba-graph.ts";
+        import { FORT_GRAPH, gridToWorld as fortWorld } from "./src/game/fort-graph.ts";
+        import { YUGHOTT_MAP1_GRAPH, YUGHOTT_MAP2_GRAPH, gridToWorld as yugWorld } from "./src/game/yughott-graph.ts";
+        import { ORC_GATES, ghelsbaSquare, fortSquare, yughottSquare, orcRegion } from "./src/game/ghelsba.ts";
+        import { regionName } from "./src/game/world.ts";
+        import { MANUAL_X, MANUAL_Z } from "./src/game/fov.ts";
+        import { squareOf, ZONE_GRIDS } from "./src/game/zone-grid.ts";
+        const atNode = (graph, id, world) => {
+          const row = graph.nodes.find((node) => node.id === id);
+          if (!row) throw new Error("missing " + id);
+          return world(row.gx, row.gy);
+        };
+        const out = atNode(GHELSBA_GRAPH, "area_plateau", gridToWorld);
+        const fort = atNode(FORT_GRAPH, "area_48", fortWorld);
+        const yug1 = atNode(YUGHOTT_MAP1_GRAPH, "area_c85", (gx, gy) => yugWorld(gx, gy, 1));
+        const yug2 = atNode(YUGHOTT_MAP2_GRAPH, "area_hub", (gx, gy) => yugWorld(gx, gy, 2));
+        const peak = ORC_GATES.find((gate) => gate.id === "yug-horlais-k6");
+        if (!peak) throw new Error("missing yug-horlais-k6");
+        const westGrid = ZONE_GRIDS.find((grid) => grid.zone === "ronfaure-south");
+        if (regionName(MANUAL_X, MANUAL_Z) !== "West Ronfaure") throw new Error("manual left West Ronfaure");
+        if (orcRegion(out.x, out.z) !== "Ghelsba Outpost") throw new Error("plateau left the outpost");
+        if (orcRegion(fort.x, fort.z) !== "Fort Ghelsba") throw new Error("area_48 left the fort");
+        if (orcRegion(yug1.x, yug1.z) !== "Yughott Grotto") throw new Error("area_c85 left the grotto");
+        if (orcRegion(yug2.x, yug2.z) !== "Yughott Grotto") throw new Error("area_hub left the grotto");
+        if (orcRegion(peak.arrive.x, peak.arrive.z) !== "Horlais Peak") throw new Error("k6 left Horlais");
+        const stands = [
+          { name: "outpost", x: out.x, z: out.z, region: "Ghelsba Outpost", square: ghelsbaSquare(out.x, out.z) },
+          { name: "fort", x: fort.x, z: fort.z, region: "Fort Ghelsba", square: fortSquare(fort.x, fort.z) },
+          { name: "yug1", x: yug1.x, z: yug1.z, region: "Yughott Grotto", square: yughottSquare(yug1.x, yug1.z) },
+          { name: "yug2", x: yug2.x, z: yug2.z, region: "Yughott Grotto", square: yughottSquare(yug2.x, yug2.z) },
+          { name: "horlais", x: peak.arrive.x, z: peak.arrive.z, region: "Horlais Peak", square: "" },
+          { name: "ronfaure", x: MANUAL_X, z: MANUAL_Z, region: "West Ronfaure", square: squareOf(westGrid, MANUAL_X, MANUAL_Z) },
+        ];
+        console.log("CAMJSON " + JSON.stringify({ stands }));
+      `,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const text = `${probe.stdout || ""}\n${probe.stderr || ""}`;
+  if (probe.status !== 0) return { ok: false, error: text.slice(-800) };
+  const line = (probe.stdout || "").split("\n").find((row) => row.startsWith("CAMJSON "));
+  if (!line) return { ok: false, error: text.slice(-800) };
+  return { ok: true, ...JSON.parse(line.slice("CAMJSON ".length)) };
+}
+
+async function assertCamParity(browser, url, seated) {
+  const places = camPlaces();
+  if (!places.ok) return places;
+  const views = [
+    { name: "landscape", width: 1280, height: 800, mobile: false },
+    { name: "portrait", width: 390, height: 844, mobile: true },
+  ];
+  const bags = { landscape: [], portrait: [] };
+  for (const stand of places.stands) {
+    for (const view of views) {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        deviceScaleFactor: view.mobile ? 3 : 1,
+        isMobile: !!view.mobile,
+        hasTouch: !!view.mobile,
+      });
+      const page = await context.newPage();
+      const errors = [];
+      page.on("console", (msg) => {
+        if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+      });
+      page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+      await page.route("**/*", (route) => {
+        if (route.request().url().includes("/_serverFn/")) return route.abort();
+        return route.continue();
+      });
+      await page.addInitScript((blob) => localStorage.setItem("aetherfold-idle-save", blob), seated({ x: stand.x, z: stand.z, yaw: 0 }));
+      page.__bootAt = Date.now();
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      try {
+        await waitBootLabel(
+          page,
+          ([region, square]) => {
+            const text = document.body?.innerText || "";
+            return text.includes(region) && (!square || text.includes(square));
+          },
+          [stand.region, stand.square],
+          `cam-${view.name}-${stand.name}`,
+        );
+      } catch (err) {
+        const text = await page.locator("body").innerText().catch(() => "");
+        await context.close();
+        return { ok: false, error: `${view.name} ${stand.name} never seated (${err.message})`, text: text.slice(0, 240), errors };
+      }
+      try {
+        await page.waitForFunction(
+          (want) => {
+            const cam = window.__yardCam;
+            return cam && cam.portrait === want && typeof cam.frustum === "number";
+          },
+          view.name === "portrait",
+          { timeout: 4000 },
+        );
+      } catch (err) {
+        const cam = await page.evaluate(() => window.__yardCam || null);
+        await context.close();
+        return { ok: false, error: `${view.name} ${stand.name} camera ${err.message} ${JSON.stringify(cam)}`, errors };
+      }
+      const cam = await page.evaluate(() => window.__yardCam);
+      await context.close();
+      if (errors.length) return { ok: false, error: `${view.name} ${stand.name} ${errors[0]}` };
+      bags[view.name].push({ name: stand.name, ...cam });
+    }
+  }
+  for (const name of ["landscape", "portrait"]) {
+    const rows = bags[name];
+    const head = rows[0];
+    for (const row of rows) {
+      const same = row.frustum === head.frustum && row.bias === head.bias && row.ox === head.ox && row.oy === head.oy && row.oz === head.oz && row.portrait === head.portrait;
+      if (!same) {
+        return { ok: false, error: `camera ${name} ${row.name} ${row.frustum}/${row.bias}/${row.ox},${row.oy},${row.oz} != ${head.name} ${head.frustum}/${head.bias}/${head.ox},${head.oy},${head.oz}` };
+      }
+    }
+    const wantFrustum = name === "portrait" ? 23.2 : 13;
+    const wantBias = name === "portrait" ? 2.32 : -2.2;
+    if (head.frustum !== wantFrustum || head.bias !== wantBias) {
+      return { ok: false, error: `camera ${name} frustum ${head.frustum} bias ${head.bias}` };
+    }
+    console.log(`CAM ${name} frustum ${head.frustum} bias ${head.bias} offset ${head.ox},${head.oy},${head.oz} zones ${rows.map((row) => row.name).join(",")}`);
+  }
+  return { ok: true, cams: bags };
 }
 
 async function checkGhelsba(browser, url) {
@@ -1069,6 +1218,8 @@ async function checkGhelsba(browser, url) {
   }
   const seat = await assertSeat(browser, url, seated);
   if (!seat.ok) return { ...seat, nodes: places.nodes, shots: [...shots, ...(seat.shots || [])] };
+  const cams = await assertCamParity(browser, url, seated);
+  if (!cams.ok) return { ...cams, nodes: places.nodes, shots };
   const trace = await orcTrace(browser, url, seated);
   if (!trace.ok) return { ...trace, nodes: places.nodes, shots: [...shots, ...(trace.shots || [])] };
   return { ok: true, nodes: places.nodes, shots: [...shots, ...(seat.shots || []), ...trace.shots] };

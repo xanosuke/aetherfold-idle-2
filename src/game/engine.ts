@@ -27,7 +27,7 @@ import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
 import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes, grottoMap } from "./ghelsba";
-import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottFloorY } from "./orc-height";
+import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottFloorY, yughottTerraceY } from "./orc-height";
 function groundY(x, z) {
 	return traceFloorY(x, z);
 }
@@ -10968,8 +10968,7 @@ function buildYard(canvas) {
 	let portrait = false;
 	let viewAspect = 1;
 	function applyFrustum() {
-		const grotto = portrait && inYughott(px, pz);
-		const frustum = grotto ? 16 : portrait ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE;
+		const frustum = portrait ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE;
 		camera.top = frustum / 2;
 		camera.bottom = -frustum / 2;
 		camera.left = -frustum * viewAspect / 2;
@@ -13643,9 +13642,7 @@ function buildYard(canvas) {
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
-		// Portrait used to look north of the hero (+2.32). In the grotto that
-		// puts the north rim and the void in the middle of the phone.
-		const bias = portrait ? (inYughott(px, pz) ? -1.8 : 2.32) : -2.2;
+		const bias = portrait ? 2.32 : -2.2;
 		let foot = groundY(px, pz);
 		if (fortLiftDeck) {
 			const span = fortLift();
@@ -13661,6 +13658,14 @@ function buildYard(canvas) {
 		sun.target.position.set(px, foot, pz);
 		sun.target.updateMatrixWorld();
 		camera.lookAt(px + look.x * bias, .9 + foot, pz + look.z * bias);
+		window.__yardCam = {
+			portrait,
+			frustum: camera.top * 2,
+			bias,
+			ox: camPos.x,
+			oy: camPos.y,
+			oz: camPos.z
+		};
 		if (inYughott(px, pz)) publishGrottoView(px, pz, foot);
 		drawFish(dt);
 		placeRuneRow();
@@ -41782,7 +41787,8 @@ function buildYard(canvas) {
 		if (name.includes("trace")) {
 			const map = grottoMap(hit.point.x, hit.point.z);
 			const terrace = map ? yughottFloorY(hit.point.x, hit.point.z, map) : null;
-			const above = (terrace == null ? y : y - terrace);
+			const bench = terrace == null && map ? yughottTerraceY(hit.point.x, hit.point.z, map) : terrace;
+			const above = bench == null ? y : y - bench;
 			if (above > 3.5 && ny > 0.65) return { kind: "cap", name, y, ground, rise: above };
 			if (ny < 0.5) return { kind: "wall", name, y, ground, rise: above };
 			return { kind: "floor", name, y, ground, rise: above };
@@ -41855,7 +41861,9 @@ function buildYard(canvas) {
 		const good = grid.filter((kind) => kind === "floor" || kind === "prop" || kind === "hero" || kind === "trust").length;
 		const share = good / grid.length;
 		const prev = window.__grottoView;
-		if (prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2 && prev.portrait === portrait && prev.heroFirst && prev.trustFirst && prev.share >= share) return;
+		const nextVoid = grid.includes("void");
+		const prevVoid = !!(prev && prev.grid && prev.grid.includes("void"));
+		if (prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2 && prev.portrait === portrait && prev.heroFirst && prev.trustFirst && !prevVoid && (nextVoid || prev.share >= share)) return;
 		if (good < 4 && heroRow.kind !== "hero") return;
 		window.__grottoView = {
 			portrait,
@@ -47849,6 +47857,12 @@ function buildRoom(scene, toonMat, colliders) {
 				const c = a + span;
 				const d = c + 1;
 				if (!live[a] || !live[b] || !live[c] || !live[d]) continue;
+				// Shelf rock (draw 2) stays at its baked top. Flattening it
+				// would turn the void fill back into a floor slab.
+				if (live[a] === 2 && live[b] === 2 && live[c] === 2 && live[d] === 2) {
+					index.push(a, c, b, b, c, d);
+					continue;
+				}
 				if (field.id !== "fort") {
 					const ra = riseOf(a), rb = riseOf(b), rc = riseOf(c), rd = riseOf(d);
 					const maxR = Math.max(ra, rb, rc, rd);

@@ -43,6 +43,11 @@ export function yughottFloorY(x: number, z: number, map: YughottMap): number | n
   return readFloorY(map === 1 ? yug1Field : yug2Field, x, z);
 }
 
+/** Nearest terrace under a vertex, including the shelf outside the floor mask. */
+export function yughottTerraceY(x: number, z: number, map: YughottMap): number | null {
+  return mixFloorY(map === 1 ? yug1Field : yug2Field, x, z);
+}
+
 export function yughottTerrainSample(x: number, z: number, map: YughottMap): TraceSample | null {
   return sampleTrace(map === 1 ? yug1Field : yug2Field, x, z);
 }
