@@ -904,7 +904,7 @@ async function assertSeat(browser, url, seated) {
         await context.close();
         return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${grid.join(",")}`, shots };
       }
-      if (!(lum >= 0.10 && lum <= 0.35)) {
+      if (!(lum >= 0.12 && lum <= 0.30)) {
         await context.close();
         return { ok: false, error: `${view.name} ${stand.name} floor lum ${lum.toFixed(3)}`, shots };
       }

@@ -10967,6 +10967,7 @@ function buildYard(canvas) {
 	canvas.addEventListener("contextmenu", onMenu);
 	let portrait = false;
 	let viewAspect = 1;
+	let yugDrawFast = false;
 	function applyFrustum() {
 		const frustum = portrait ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE;
 		camera.top = frustum / 2;
@@ -10979,7 +10980,8 @@ function buildYard(canvas) {
 		const w = canvas.clientWidth || 1;
 		const h = canvas.clientHeight || 1;
 		const narrow = Math.min(window.innerWidth || w, window.innerHeight || h) < 700;
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, narrow ? 1.25 : 1.6));
+		const baseRatio = Math.min(window.devicePixelRatio || 1, narrow ? 1.25 : 1.6);
+		renderer.setPixelRatio(yugDrawFast ? Math.min(baseRatio, 0.5) : baseRatio);
 		portrait = h > w;
 		renderer.setSize(w, h, false);
 		viewAspect = w / Math.max(1, h);
@@ -13639,6 +13641,21 @@ function buildYard(canvas) {
 		const orcFall = scene.userData.orcFall;
 		if (orcFall) orcFall.opacity = 0.34 + 0.14 * Math.sin(elapsed * 2.4);
 		renderer.setClearColor(onIce ? 12044764 : inPassNow ? 0x07090d : inFort(px, pz) ? FORT_FOG.color : inGhelsba(px, pz) ? GHELSBA_FOG.color : inYughott(px, pz) ? 0x15141c : orcFog(px, pz) === "peak" ? 0x8a9a58 : orcFog(px, pz) || inTomb(px, pz) ? 0 : 9357551, 1);
+		// The grotto's shelf is a lot of triangles. Still shots keep it (and the
+		// shadow pass) so the portrait luminance stays put. A walk only needs the
+		// collision, so drop the heavy meshes until the player stops.
+		const yugMove = inYughott(px, pz) && speed >= 0.4;
+		if (yugMove !== yugDrawFast) {
+			yugDrawFast = yugMove;
+			resize();
+		}
+		sun.castShadow = !yugMove;
+		const yugHeavy = scene.userData.yugHeavy;
+		if (yugHeavy) {
+			for (let i = 0; i < yugHeavy.length; i++) {
+				if (yugHeavy[i].visible === yugMove) yugHeavy[i].visible = !yugMove;
+			}
+		}
 		hutRoof.visible = !underHutRoof(px, pz);
 		const swayX = Math.sin(elapsed * 40) * sh * .08;
 		const swayZ = Math.cos(elapsed * 33) * sh * .08;
@@ -13666,7 +13683,7 @@ function buildYard(canvas) {
 			oy: camPos.y,
 			oz: camPos.z
 		};
-		if (inYughott(px, pz)) publishGrottoView(px, pz, foot);
+		if (inYughott(px, pz) && speed < 0.4) publishGrottoView(px, pz, foot);
 		drawFish(dt);
 		placeRuneRow();
 		tickEffusion(dt);
@@ -47718,11 +47735,11 @@ function buildRoom(scene, toonMat, colliders) {
 	yughottMat.transparent = false;
 	yughottMat.side = DoubleSide;
 	yughottMat.depthWrite = true;
-	yughottMat.customProgramCacheKey = () => "yughott-terrain-slope-view";
+	yughottMat.customProgramCacheKey = () => "yughott-terrain-strata";
 	yughottMat.onBeforeCompile = (shader) => {
-		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny));\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.02);\n#include <opaque_fragment>");
-		if (!shader.fragmentShader.includes("0.55 + 0.45")) throw new Error("yughott terrain shader");
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;\nvarying vec3 vWorldPos;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);").replace("#include <project_vertex>", "#include <project_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;\nvarying vec3 vWorldPos;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nfloat steep = 1.0 - smoothstep(0.35, 0.62, ny);\nfloat phase = fract(sin(dot(floor(vWorldPos.xz * 0.17), vec2(12.9898, 78.233))) * 43758.5453);\nfloat band = mod(floor((vWorldPos.y + (phase - 0.5) * 0.3) / 0.8), 2.0);\nfloat strata = mix(1.0, band > 0.5 ? 1.10 : 0.82, steep);\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny)) * strata;\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.02);\n#include <opaque_fragment>");
+		if (!shader.fragmentShader.includes("strata")) throw new Error("yughott terrain shader");
 	};
 	const fortMat = toonMat(0xffffff);
 	fortMat.vertexColors = true;
@@ -47743,6 +47760,8 @@ function buildRoom(scene, toonMat, colliders) {
 	const tz1 = tz0 + GHELSBA_TERRAIN.span;
 	const tStep = GHELSBA_TERRAIN.step;
 	const tChunk = GHELSBA_TERRAIN.chunk;
+	const yugHeavy = [];
+	scene.userData.yugHeavy = yugHeavy;
 	for (let cz = tz0; cz < tz1 - 1e-3; cz += tChunk) {
 		const cz1 = Math.min(tz1, cz + tChunk);
 		for (let cx = tx0; cx < tx1 - 1e-3; cx += tChunk) {
@@ -47793,6 +47812,7 @@ function buildRoom(scene, toonMat, colliders) {
 			mesh.receiveShadow = true;
 			mesh.castShadow = false;
 			scene.add(mesh);
+			yugHeavy.push(mesh);
 		}
 	}
 	const traceJobs = traceMeshFields().map((field) => {
@@ -47876,16 +47896,17 @@ function buildRoom(scene, toonMat, colliders) {
 						};
 						pushTri(base(a), base(c), base(b));
 						pushTri(base(b), base(c), base(d));
+						const wall = (p, q) => {
+							if (riseOf(p) <= 0.7 || riseOf(q) <= 0.7) return;
+							const pk = p * 3;
+							const qk = q * 3;
+							const fp = pushExtra(pos[pk], field.floorY[srcOf(p)], pos[pk + 2], colr[pk], colr[pk + 1], colr[pk + 2]);
+							const fq = pushExtra(pos[qk], field.floorY[srcOf(q)], pos[qk + 2], colr[qk], colr[qk + 1], colr[qk + 2]);
+							pushTri(fp, p, fq);
+							pushTri(fq, p, q);
+						};
 						const edges = [a, b, a, c, b, d, c, d];
-						for (let e = 0; e < edges.length; e += 2) {
-							const p = edges[e], q = edges[e + 1];
-							if (riseOf(p) <= 0.7 || riseOf(q) <= 0.7) continue;
-							const pk = p * 3, qk = q * 3;
-							const bp = pushExtra(pos[pk], field.floorY[srcOf(p)], pos[pk + 2], colr[pk], colr[pk + 1], colr[pk + 2]);
-							const bq = pushExtra(pos[qk], field.floorY[srcOf(q)], pos[qk + 2], colr[qk], colr[qk + 1], colr[qk + 2]);
-							pushTri(bp, p, bq);
-							pushTri(bq, p, q);
-						}
+						for (let e = 0; e < edges.length; e += 2) wall(edges[e], edges[e + 1]);
 						continue;
 					}
 				}
@@ -47920,6 +47941,7 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.name = field.id === "fort" ? "fort-trace" : `${field.id}-trace`;
 		mesh.receiveShadow = true;
 		mesh.castShadow = false;
+		if (field.id !== "fort") yugHeavy.push(mesh);
 		scene.add(mesh);
 	};
 	const traceBoxDist = (field, x, z) => {
@@ -47995,6 +48017,7 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.position.set(x, groundY(x, z) + (6), z);
 		mesh.receiveShadow = true;
 		scene.add(mesh);
+		yugHeavy.push(mesh);
 	};
 	const pad = 180;
 	mossSheet((tx0 + tx1) / 2, tz1 + pad / 2, GHELSBA_TERRAIN.span + pad * 2, pad);

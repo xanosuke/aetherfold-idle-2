@@ -400,6 +400,39 @@ export function assertYughott(): void {
     const raw = yugWorld(poi.gx, poi.gy, poi.map ?? 1);
     if (Math.hypot(poi.x - raw.x, poi.z - raw.z) > SEAT_REACH) throw new Error(`${poi.id} clamped too far`);
   }
+  assertYughottContrast();
+}
+
+/** Open floor against the rim faces. Shelf tops are not faces. */
+export function assertYughottContrast(): void {
+  for (const field of [yug1Field, yug2Field]) {
+    const w = field.nX + 1;
+    const h = field.nZ + 1;
+    let floorN = 0;
+    let floorL = 0;
+    let wallN = 0;
+    let wallL = 0;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const idx = j * w + i;
+        if (!field.draw[idx]) continue;
+        const lum = (0.2126 * field.rgb[idx * 3] + 0.7152 * field.rgb[idx * 3 + 1] + 0.0722 * field.rgb[idx * 3 + 2]) / 255;
+        if (field.floor[idx]) {
+          floorN += 1;
+          floorL += lum;
+        } else if (field.draw[idx] === 1) {
+          const rise = field.ys[idx] - field.floorY[idx];
+          if (rise > 0.55 && rise <= 3.4) {
+            wallN += 1;
+            wallL += lum;
+          }
+        }
+      }
+    }
+    if (floorN < 50 || wallN < 50) throw new Error(`${field.id} contrast samples floor ${floorN} wall ${wallN}`);
+    const delta = floorL / floorN - wallL / wallN;
+    if (!(delta >= 0.08)) throw new Error(`${field.id} contrast ${delta.toFixed(3)} floor ${(floorL / floorN).toFixed(3)} wall ${(wallL / wallN).toFixed(3)}`);
+  }
 }
 
 function mulberry(seed: number) {

@@ -19,11 +19,12 @@ import {
   YUGHOTT_GRAPHS,
   YUGHOTT_ORIGINS,
   buildYughottMask,
+  clampYughottGraph,
   gridToWorld as yugWorld,
   inYughottGraph,
   type YughottMap,
 } from "./yughott-graph";
-import { seatedFortPois, seatedYughottPois, traceFloorY, fortNode } from "./orc-height";
+import { retreatYughott, seatedFortPois, seatedYughottPois, traceFloorY, fortNode } from "./orc-height";
 
 type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
 type Solid = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -729,8 +730,8 @@ function distPointSeg(px: number, pz: number, ax: number, az: number, bx: number
   return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
 }
 
-function edgeWalk(edge: { pts: [number, number][] }) {
-  const pts = edge.pts.map(([gx, gy]) => fortWorld(gx, gy));
+function edgeWalk(edge: { pts: [number, number][] }, world: (gx: number, gy: number) => V2 = fortWorld) {
+  const pts = edge.pts.map(([gx, gy]) => world(gx, gy));
   const samples: V2[] = [pts[0]];
   const arc = [0];
   let walked = 0;
@@ -1020,6 +1021,214 @@ function inPool(x: number, z: number, cx: number, cz: number, r: number) {
   return Math.hypot(x - cx, z - cz) < r - 0.7;
 }
 
+const CAVE_POOLS = [
+  { ...yugWorld(5.45, 8.5, 1), r: 8.5 },
+  { ...yugWorld(9.55, 6.62, 1), r: 8.2 },
+];
+
+function inCavePool(x: number, z: number) {
+  return CAVE_POOLS.some((pool) => Math.hypot(x - pool.x, z - pool.z) < pool.r - 0.5);
+}
+
+const CAVE_SCATTER = ["rubble", "stal", "slab", "cairn", "bone", "moss"] as const;
+type CaveKind = (typeof CAVE_SCATTER)[number] | "crate";
+
+function paintCave(add: Add, colliders: Solid[], x: number, z: number, kind: CaveKind) {
+  const yaw = hash(x, z) * Math.PI;
+  if (kind === "rubble") {
+    const s = 0.85 + hash(x, z + 1) * 0.55;
+    footBox(add, 0x6d675c, s, 0.28, s * 0.72, x, z, yaw);
+    add(0x5a534c, s * 0.5, 0.22, s * 0.4, x + 0.12, 0.36, z - 0.08, yaw + 0.35);
+    add(0x7a7264, s * 0.28, 0.16, s * 0.22, x - 0.16, 0.2, z + 0.1);
+    collide(colliders, x, z, 0.32, 0.26);
+  } else if (kind === "stal") {
+    const n = 2 + Math.floor(hash(x + 1, z) * 3);
+    let top = 0;
+    for (let i = 0; i < n; i++) {
+      const a = hash(x, z + i) * Math.PI * 2;
+      const rad = 0.12 + hash(z, i + 2) * 0.28;
+      const h = 1 + hash(x + i, z + 3) * 2;
+      const px = x + Math.cos(a) * rad;
+      const pz = z + Math.sin(a) * rad;
+      footBox(add, 0x4a4450, 0.26, h * 0.62, 0.26, px, pz);
+      add(0x4a4450, 0.14, h * 0.42, 0.14, px, h * 0.78, pz);
+      if (h > top) top = h;
+    }
+    collide(colliders, x, z, 0.36, 0.36);
+    if (top > 3) throw new Error("stalagmite over 3");
+  } else if (kind === "slab") {
+    footBox(add, 0x3a3640, 1.25, 0.18, 0.62, x, z, yaw);
+    add(0x322e38, 0.82, 0.14, 0.4, x + 0.16, 0.24, z - 0.06, yaw + 0.5);
+    collide(colliders, x, z, 0.42, 0.28);
+  } else if (kind === "cairn") {
+    footBox(add, 0x4a4450, 0.52, 0.26, 0.44, x, z, yaw);
+    add(0x3e3844, 0.34, 0.22, 0.3, x + 0.04, 0.36, z, yaw + 0.4);
+    add(0x514a58, 0.2, 0.18, 0.18, x, 0.54, z - 0.02);
+    collide(colliders, x, z, 0.28, 0.24);
+  } else if (kind === "bone") {
+    add(0xe4d4c0, 0.68, 0.14, 0.24, x, 0.1, z, yaw);
+    add(0xd2c2ae, 0.42, 0.12, 0.18, x + 0.16, 0.12, z + 0.08, yaw - 0.6);
+    add(0xcbb8a4, 0.2, 0.16, 0.18, x - 0.14, 0.14, z + 0.02);
+    collide(colliders, x, z, 0.28, 0.2);
+  } else if (kind === "moss") {
+    add(0x3d4a3a, 1.15, 0.04, 0.82, x, 0.025, z, yaw);
+    add(0x44543f, 0.55, 0.035, 0.4, x + 0.28, 0.03, z + 0.18, yaw + 0.6);
+  } else {
+    footBox(add, 0x6b4e32, 0.82, 0.36, 0.66, x, z, yaw);
+    add(0x5a422c, 0.7, 0.12, 0.16, x + 0.18, 0.42, z + 0.08, yaw + 0.7);
+    add(0x4a3824, 0.34, 0.1, 0.48, x - 0.12, 0.28, z - 0.1, yaw - 0.4);
+    collide(colliders, x, z, 0.36, 0.3);
+  }
+}
+
+function fillYughottDensity(draw: Add, colliders: Solid[], avoid: { x: number; z: number; r: number }[]) {
+  for (const map of [1, 2] as const) {
+    const zone = yugZone(map);
+    const world = (gx: number, gy: number) => yugWorld(gx, gy, map);
+    const list: V2[] = props.filter((p) => p.zone === "yughott" && p.map === map).map((p) => ({ x: p.x, z: p.z }));
+    let seq = 0;
+    const seat = (x: number, z: number, kind: CaveKind, h: number) => {
+      if (inCavePool(x, z)) return false;
+      const square = zone.square(x, z);
+      if (!square || square === "?" || square.length < 3) return false;
+      const spec: Seek = { id: `cave-${map}-${seq}`, square, hx: 0.44, hz: 0.4, h };
+      if (!fits(zone, spec, avoid, x, z)) return false;
+      const at = claim(spec, x, z);
+      seq += 1;
+      begin(zone, spec.id, square, at, h, draw, (add) => paintCave(add, colliders, at.x, at.z, kind));
+      list.push(at);
+      return true;
+    };
+    for (const edge of YUGHOTT_GRAPHS[map].edges) {
+      const walked = edgeWalk(edge, world);
+      if (walked.walked <= 22) continue;
+      for (let start = 0; start <= walked.walked - 22 + 0.05; start += 4) {
+        let i0 = 0;
+        while (i0 < walked.arc.length && walked.arc[i0] < start - 0.05) i0 += 1;
+        let i1 = i0;
+        while (i1 < walked.arc.length && walked.arc[i1] <= start + 22) i1 += 1;
+        if (i1 <= i0 + 1) continue;
+        let have = nearStretch(walked.samples, i0, i1 - 1, list);
+        if (have >= 2) continue;
+        const mid = walked.samples[Math.min(walked.samples.length - 1, i0 + Math.floor((i1 - i0) / 2))];
+        const path = nearest(zone.segs, mid.x, mid.z);
+        const nx = -path.tz;
+        const nz = path.tx;
+        const kind0 = Math.floor(hash(mid.x, mid.z) * CAVE_SCATTER.length);
+        const place = (x: number, z: number, n: number) => {
+          const kind = CAVE_SCATTER[(kind0 + n) % CAVE_SCATTER.length];
+          const h = kind === "stal" ? 1 + hash(x, z) * 2 : kind === "moss" ? 0.08 : 0.7;
+          return seat(x, z, kind, h);
+        };
+        for (const off of [2.95, -2.95, 3.7, -3.7, 5.2, -5.2, 7.4, -7.4]) {
+          if (have >= 2) break;
+          if (place(mid.x + nx * off, mid.z + nz * off, have)) have += 1;
+        }
+        for (let ring = 3.2; ring <= 10 && have < 2; ring += 1.5) {
+          const steps = Math.max(8, Math.ceil(ring));
+          for (let k = 0; k < steps && have < 2; k++) {
+            const ang = hash(mid.z, ring) + (k / steps) * Math.PI * 2;
+            if (place(mid.x + Math.cos(ang) * ring, mid.z + Math.sin(ang) * ring, k + have)) have += 1;
+          }
+        }
+        for (let dx = -12; dx <= 12 && have < 2; dx += 1.15) {
+          for (let dz = -12; dz <= 12 && have < 2; dz += 1.15) {
+            if (dx * dx + dz * dz > 144) continue;
+            const x = mid.x + dx;
+            const z = mid.z + dz;
+            if (place(x, z, Math.floor(hash(x, z) * 5))) have += 1;
+          }
+        }
+        if (have < 2) throw new Error(`${edge.id} density ${have} at ${start.toFixed(0)}`);
+      }
+    }
+  }
+}
+
+function approachTrace(map: YughottMap, start: V2, gate: V2): V2[] {
+  const dx0 = gate.x - start.x;
+  const dz0 = gate.z - start.z;
+  let ix = 0;
+  let iy = 0;
+  if (dx0 > 0.45) ix = 1;
+  if (dx0 < -0.45) ix = -1;
+  if (dz0 < -0.45) iy = 1;
+  if (dz0 > 0.45) iy = -1;
+  if (ix === 0 && iy === 0) {
+    if (Math.abs(dx0) > Math.abs(dz0)) ix = dx0 > 0 ? 1 : -1;
+    else iy = dz0 > 0 ? -1 : 1;
+  }
+  const km = Math.hypot(ix, iy) || 1;
+  ix /= km;
+  iy /= km;
+  const out: V2[] = [];
+  let x = start.x;
+  let z = start.z;
+  let speed = 0;
+  const dt = 1 / 30;
+  for (let frame = 0; frame < 12 * 30; frame++) {
+    speed += (5 - speed) * Math.min(1, 28 * dt);
+    const held = clampYughottGraph(x + ix * speed * dt, z + (-iy) * speed * dt, 0.36, map);
+    x = held.x;
+    z = held.z;
+    if ((frame & 1) === 0) out.push({ x, z });
+    if (Math.abs(x - gate.x) <= 2.4 && Math.abs(z - gate.z) <= 5.2) break;
+  }
+  return out;
+}
+
+function fortExitCrates(draw: Add, colliders: Solid[], avoid: { x: number; z: number; r: number }[]) {
+  let n = 0;
+  for (const map of [1, 2] as const) {
+    const zone = yugZone(map);
+    for (const node of YUGHOTT_GRAPHS[map].nodes) {
+      if (!node.id.startsWith("exit_fort")) continue;
+      const gate = yugWorld(node.gx, node.gy, map);
+      const samples: V2[] = [];
+      for (const yards of [8, 10, 12]) samples.push(...approachTrace(map, retreatYughott(map, node.id, yards), gate));
+      const back = retreatYughott(map, node.id, 7);
+      let tx = gate.x - back.x;
+      let tz = gate.z - back.z;
+      const tlen = Math.hypot(tx, tz) || 1;
+      tx /= tlen;
+      tz /= tlen;
+      const lx = -tz;
+      const lz = tx;
+      const spots: V2[] = [];
+      for (const along of [6.4, 8.6, 5.5, 7.6]) {
+        const base = retreatYughott(map, node.id, along);
+        for (const sign of [1, -1]) {
+          for (const off of [2.95, 3.15]) spots.push({ x: base.x + lx * sign * off, z: base.z + lz * sign * off });
+        }
+      }
+      const gap = (spot: V2) => {
+        let best = Infinity;
+        for (const p of samples) {
+          const d = Math.hypot(p.x - spot.x, p.z - spot.z);
+          if (d < best) best = d;
+        }
+        return best;
+      };
+      spots.sort((a, b) => gap(b) - gap(a));
+      let placed = 0;
+      for (const spot of spots) {
+        if (placed >= 2) break;
+        if (gap(spot) < 1.2) continue;
+        if (inCavePool(spot.x, spot.z)) continue;
+        const square = zone.square(spot.x, spot.z);
+        if (!square || square === "?" || square.length < 3) continue;
+        const spec: Seek = { id: `crate-${node.id}-${placed}`, square, hx: 0.42, hz: 0.36, h: 0.6 };
+        if (!fits(zone, spec, avoid, spot.x, spot.z)) continue;
+        const at = claim(spec, spot.x, spot.z);
+        begin(zone, spec.id, square, at, 0.6, draw, (add) => paintCave(add, colliders, at.x, at.z, "crate"));
+        placed += 1;
+        n += 1;
+      }
+    }
+  }
+  if (n < 2) throw new Error(`fort-exit crates ${n}`);
+}
+
 function caveDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: number; z: number; r: number }[]) {
   const draw: Add = (color, w, h, d, x, y, z, yaw, pitch) => {
     if (current) {
@@ -1134,6 +1343,8 @@ function caveDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: numbe
       add(0xcbb8a4, 0.22, 0.2, 0.22, spot.x - 0.18, 0.16, spot.z + 0.04);
     });
   }
+  fortExitCrates(draw, colliders, avoid);
+  fillYughottDensity(draw, colliders, avoid);
 }
 
 export function dressOrcCamps(add: Add, colliders: Solid[], hooks: Hooks, avoid: { x: number; z: number; r: number }[]) {
@@ -1159,6 +1370,26 @@ function assertFortDensity() {
       if (i1 <= i0 + 1) continue;
       const have = nearStretch(walked.samples, i0, i1 - 1, list);
       if (have < 2) throw new Error(`${edge.id} density ${have} at ${start.toFixed(0)}`);
+    }
+  }
+}
+
+function assertYughottDensity() {
+  for (const map of [1, 2] as const) {
+    const world = (gx: number, gy: number) => yugWorld(gx, gy, map);
+    const list = props.filter((p) => p.zone === "yughott" && p.map === map);
+    for (const edge of YUGHOTT_GRAPHS[map].edges) {
+      const walked = edgeWalk(edge, world);
+      if (walked.walked <= 22) continue;
+      for (let start = 0; start <= walked.walked - 22 + 0.05; start += 4) {
+        let i0 = 0;
+        while (i0 < walked.arc.length && walked.arc[i0] < start - 0.05) i0 += 1;
+        let i1 = i0;
+        while (i1 < walked.arc.length && walked.arc[i1] <= start + 22) i1 += 1;
+        if (i1 <= i0 + 1) continue;
+        const have = nearStretch(walked.samples, i0, i1 - 1, list);
+        if (have < 2) throw new Error(`yug${map} ${edge.id} density ${have} at ${start.toFixed(0)}`);
+      }
     }
   }
 }
@@ -1234,6 +1465,7 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
   walk("yug1", YUGHOTT_GRAPHS[1].edges, (gx, gy) => yugWorld(gx, gy, 1), (x, z) => inYughottGraph(x, z, 0, 1));
   walk("yug2", YUGHOTT_GRAPHS[2].edges, (gx, gy) => yugWorld(gx, gy, 2), (x, z) => inYughottGraph(x, z, 0, 2));
   assertFortDensity();
+  assertYughottDensity();
   for (const poi of [...seatedFortPois(), ...seatedYughottPois()]) {
     if (blocked(poi.x, poi.z)) throw new Error(`${poi.id} blocked`);
   }

@@ -387,6 +387,27 @@ function bakeField(minX: number, minZ: number, maxX: number, maxZ: number, bake:
     }
     if (!grew) break;
   }
+  if (bake.cave) {
+    // Baked once. ±0.25 on the lip so the terrace edge is not a ruler line.
+    // South stays at or under 1.45 and the north shelf stays at or under 3.35.
+    for (let j = 0; j < h; j++) {
+      const z = z0 + j * step;
+      for (let i = 0; i < w; i++) {
+        const idx = j * w + i;
+        if (!draw[idx] || floor[idx]) continue;
+        const rise = ys[idx] - floorY[idx];
+        if (rise < 0.45) continue;
+        const x = x0 + i * step;
+        const jag = (hash(x * 0.91 + 4.2, z * 0.77 - 2.4) - 0.5) * 0.5;
+        const limit = rise <= 1.55 ? Math.min(rise, 1.45) : Math.min(3.35, rise + 0.25);
+        let next = rise + jag;
+        if (next > limit) next = limit;
+        if (next < rise - 0.25) next = rise - 0.25;
+        if (next < 0.3) next = 0.3;
+        ys[idx] = floorY[idx] + next;
+      }
+    }
+  }
   for (let j = 0; j < h; j++) {
     const z = z0 + j * step;
     for (let i = 0; i < w; i++) {
@@ -475,13 +496,92 @@ function fortPaint(x: number, z: number, y: number, on: boolean) {
   return mix(vary(FORT_CLIFF_FOOT, x, z, 0.03), vary(FORT_CLIFF_FACE, x, z, 0.03), smoothstep(0.15, 3.1, rise));
 }
 
+function rgbOf(hex: number) {
+  return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255] as const;
+}
+
+function shiftHex(hex: number, dr: number, dg: number, db: number) {
+  const clamp = (n: number) => Math.max(0, Math.min(255, n));
+  const r = clamp(((hex >> 16) & 255) + dr);
+  const g = clamp(((hex >> 8) & 255) + dg);
+  const b = clamp((hex & 255) + db);
+  return (r << 16) | (g << 8) | b;
+}
+
+/** Vertical strata. Same bands the wall faces use when the mesh is built. */
+function wallBands(y: number, x: number, z: number, map: YughottMap) {
+  const phase = (hash(x * 0.17, z * 0.17) - 0.5) * 0.3;
+  const t = (Math.floor((y + phase) / 0.8) & 1) ? 0.82 : 0.18;
+  const shade = 0.58;
+  if (map === 2) {
+    const k = (0.9 + 0.2 * t) * shade;
+    return [0x28 / 255 * k, 0x27 / 255 * k, 0x27 / 255 * k] as const;
+  }
+  const a = [0x33, 0x2e, 0x39];
+  const c = [0x3d, 0x37, 0x44];
+  return [
+    (a[0] + (c[0] - a[0]) * t) / 255 * shade,
+    (a[1] + (c[1] - a[1]) * t) / 255 * shade,
+    (a[2] + (c[2] - a[2]) * t) / 255 * shade,
+  ] as const;
+}
+
+const YUG_POOLS = [
+  { map: 1 as const, ...yugWorld(5.45, 8.5, 1), r: 8.5 },
+  { map: 1 as const, ...yugWorld(9.55, 6.62, 1), r: 8.2 },
+];
+
+function grottoFloor(map: YughottMap, x: number, z: number, room: number) {
+  const baseHex = map === 2 ? Y2_FLOOR : Y1_FLOOR;
+  const dark = rgbOf(map === 2 ? shiftHex(Y2_FLOOR, -9, -8, -5) : 0x35313a);
+  const lite = rgbOf(map === 2 ? shiftHex(Y2_FLOOR, 9, 8, 11) : 0x47414a);
+  const damp = rgbOf(map === 2 ? shiftHex(Y2_FLOOR, -16, -15, -12) : 0x2e2a33);
+  const base = rgbOf(baseHex);
+  const cell = 3 + hash(Math.floor(x / 30) + 3, Math.floor(z / 30) - 1) * 3;
+  const gx = x / cell;
+  const gz = z / cell;
+  const ix = Math.floor(gx);
+  const iz = Math.floor(gz);
+  const tx = gx - ix;
+  const tz = gz - iz;
+  const sx = tx * tx * (3 - 2 * tx);
+  const sz = tz * tz * (3 - 2 * tz);
+  const h00 = hash(ix, iz);
+  const h10 = hash(ix + 1, iz);
+  const h01 = hash(ix, iz + 1);
+  const h11 = hash(ix + 1, iz + 1);
+  const n = h00 + (h10 - h00) * sx + (h01 - h00) * sz + (h00 - h10 - h01 + h11) * sx * sz;
+  let color = vary(baseHex, x, z, 0.025);
+  if (n > 0.64) color = mix(base, lite, 0.32);
+  else if (n < 0.36) color = mix(base, dark, 0.38);
+  if (room < 1.5) {
+    const shade = 1 - 0.25 * Math.max(0, Math.min(1, 1 - room / 1.5));
+    color = [color[0] * shade, color[1] * shade, color[2] * shade];
+  }
+  let wet = room < 2.2 ? Math.max(0, 1 - room / 2.2) * 0.42 : 0;
+  for (const pool of YUG_POOLS) {
+    if (pool.map !== map) continue;
+    const edge = Math.abs(Math.hypot(x - pool.x, z - pool.z) - pool.r * 0.72);
+    if (edge < 1.5) wet = Math.max(wet, (1 - edge / 1.5) * 0.5);
+  }
+  if (wet > 0.02) color = mix(color, damp, Math.min(0.7, wet));
+  return color;
+}
+
+function shelfPaint(map: YughottMap, c: number) {
+  const near = rgbOf(map === 2 ? Y2_TOP : Y1_TOP);
+  const far = rgbOf(0x1c1a22);
+  const t = Math.max(0, Math.min(1, -c / 12));
+  const mixed = mix(near, far, t);
+  const shade = 1 - 0.55 * t;
+  return [mixed[0] * shade, mixed[1] * shade, mixed[2] * shade] as const;
+}
+
 function yugPaint(pack: ReturnType<typeof yugPack>, x: number, z: number, y: number, on: boolean) {
-  const floor = pack.map === 2 ? Y2_FLOOR : Y1_FLOOR;
-  const wall = pack.map === 2 ? Y2_WALL : Y1_WALL;
-  const top = pack.map === 2 ? Y2_TOP : Y1_TOP;
-  if (on) return vary(floor, x, z, 0.04);
-  if (yughottClearance(x, z, pack.map) < -3.35) return vary(top, x, z, 0.02);
-  return mix(vary(wall, x, z, 0.03), vary(top, x, z, 0.02), 0.18);
+  const room = yughottClearance(x, z, pack.map);
+  if (on) return grottoFloor(pack.map, x, z, room);
+  if (room < -3.35) return shelfPaint(pack.map, room);
+  return wallBands(y, x, z, pack.map);
 }
 
 export function bakeAllFields(): BakedArrays[] {
