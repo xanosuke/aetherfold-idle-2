@@ -88,10 +88,15 @@ function paintY(map: 1 | 2, x: number, z: number) {
   return 0.04;
 }
 
-function wallColor(top: boolean) {
-  const c = new Color(top ? 0x4a4454 : 0x332e39);
+function wallRgb(hex: number) {
+  const c = new Color(hex);
   return [c.r, c.g, c.b];
 }
+
+const WALL_SIDE = wallRgb(0x332e39);
+const WALL_LIP = wallRgb(0x3d3846);
+const WALL_ROCK = wallRgb(0x1c1a22);
+const LIP_W = 0.3;
 
 export function buildYughottPaint(tag: Tag) {
   const groups: Record<1 | 2, Group> = { 1: new Group(), 2: new Group() };
@@ -236,54 +241,115 @@ export function buildYughottPaint(tag: Tag) {
       group.add(mesh);
       tag(mesh, tile.x, tile.x + tile.w, tile.z, tile.z + tile.d);
     }
-    const wpos: number[] = [];
-    const wcol: number[] = [];
-    const widx: number[] = [];
-    const pushWall = (ax: number, az: number, bx: number, bz: number, inwardX: number, inwardZ: number, south: boolean) => {
-      const mx = (ax + bx) * 0.5 + inwardX * 0.4;
-      const mz = (az + bz) * 0.5 + inwardZ * 0.4;
-      const y0 = paintY(map, mx, mz);
-      const h = south ? 1 : 2.5;
-      const y1 = y0 + h;
-      const side = wallColor(false);
-      const top = wallColor(true);
-      const base = wpos.length / 3;
-      wpos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
-      wcol.push(...side, ...side, ...side, ...side);
-      widx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-      const cap = wpos.length / 3;
-      const ix = inwardX * 0.45;
-      const iz = inwardZ * 0.45;
-      wpos.push(ax, y1, az, bx, y1, bz, bx + ix, y1, bz + iz, ax + ix, y1, az + iz);
-      wcol.push(...top, ...top, ...top, ...top);
-      widx.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
-    };
-    for (let j = 0; j < pack.gh; j++) {
-      for (let i = 0; i < pack.gw; i++) {
-        if (!cellOn(bits, pack.gw, pack.gh, i, j)) continue;
-        const x0 = pack.ox + i * paint.step;
-        const z0 = pack.oz + j * paint.step;
-        const x1 = x0 + paint.step;
-        const z1 = z0 + paint.step;
-        if (!cellOn(bits, pack.gw, pack.gh, i, j + 1)) pushWall(x0, z1, x1, z1, 0, -1, true);
-        if (!cellOn(bits, pack.gw, pack.gh, i, j - 1)) pushWall(x1, z0, x0, z0, 0, 1, false);
-        if (!cellOn(bits, pack.gw, pack.gh, i + 1, j)) pushWall(x1, z1, x1, z0, -1, 0, false);
-        if (!cellOn(bits, pack.gw, pack.gh, i - 1, j)) pushWall(x0, z0, x0, z1, 1, 0, false);
+    const buckets = new Map<string, { pos: number[]; col: number[]; idx: number[]; ix: number; iz: number }>();
+    const cell = 48;
+    const take = (x: number, z: number) => {
+      const ix = Math.floor((x - pack.ox) / cell);
+      const iz = Math.floor((z - pack.oz) / cell);
+      const key = `${ix}:${iz}`;
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { pos: [], col: [], idx: [], ix, iz };
+        buckets.set(key, bucket);
       }
-    }
-    if (wpos.length) {
+      return bucket;
+    };
+    const pushContour = (flat: readonly number[]) => {
+      const n = flat.length / 2;
+      if (n < 3) return;
+      let area = 0;
+      for (let i = 0; i < n; i++) {
+        const ax = flat[i * 2];
+        const az = flat[i * 2 + 1];
+        const bx = flat[((i + 1) % n) * 2];
+        const bz = flat[((i + 1) % n) * 2 + 1];
+        area += ax * bz - bx * az;
+      }
+      const ccw = area >= 0;
+      for (let i = 0; i < n; i++) {
+        const ax = flat[i * 2];
+        const az = flat[i * 2 + 1];
+        const bx = flat[((i + 1) % n) * 2];
+        const bz = flat[((i + 1) % n) * 2 + 1];
+        const dx = bx - ax;
+        const dz = bz - az;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.05) continue;
+        let ox = dz / len;
+        let oz = -dx / len;
+        if (!ccw) {
+          ox = -ox;
+          oz = -oz;
+        }
+        const h = oz > 0.2 ? 1 : 2.5;
+        const mx = (ax + bx) * 0.5 - ox * 0.25;
+        const mz = (az + bz) * 0.5 - oz * 0.25;
+        const y0 = paintY(map, mx, mz);
+        const y1 = y0 + h;
+        const bucket = take((ax + bx) * 0.5, (az + bz) * 0.5);
+        const { pos: wpos, col: wcol, idx: widx } = bucket;
+        const base = wpos.length / 3;
+        wpos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
+        wcol.push(...WALL_SIDE, ...WALL_SIDE, ...WALL_SIDE, ...WALL_SIDE);
+        widx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        const cap = wpos.length / 3;
+        wpos.push(ax, y1, az, bx, y1, bz, bx + ox * LIP_W, y1, bz + oz * LIP_W, ax + ox * LIP_W, y1, az + oz * LIP_W);
+        wcol.push(...WALL_LIP, ...WALL_LIP, ...WALL_ROCK, ...WALL_ROCK);
+        widx.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
+      }
+    };
+    const loops = (pack as { loops?: readonly (readonly number[])[] }).loops ?? [];
+    for (let li = 0; li < loops.length; li++) pushContour(loops[li]);
+    for (const bucket of buckets.values()) {
+      if (!bucket.pos.length) continue;
       const geo = new BufferGeometry();
-      geo.setAttribute("position", new Float32BufferAttribute(wpos, 3));
-      geo.setAttribute("color", new Float32BufferAttribute(wcol, 3));
-      geo.setIndex(widx);
+      geo.setAttribute("position", new Float32BufferAttribute(bucket.pos, 3));
+      geo.setAttribute("color", new Float32BufferAttribute(bucket.col, 3));
+      geo.setIndex(bucket.idx);
       const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide, fog: false });
       const mesh = new Mesh(geo, mat);
       mesh.name = "yug-wall";
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       group.add(mesh);
-      tag(mesh, pack.ox, pack.ox + pack.span, pack.oz, pack.oz + pack.span);
+      const minX = pack.ox + bucket.ix * cell;
+      const minZ = pack.oz + bucket.iz * cell;
+      tag(mesh, minX - 1.5, minX + cell + 1.5, minZ - 1.5, minZ + cell + 1.5);
     }
+  }
+  if (typeof window !== "undefined") {
+    const edgeRun = (x: number, z: number, radius = 28) => {
+      const r2 = radius * radius;
+      let worst = 0;
+      for (const key of [1, 2] as const) {
+        const pack = key === 1 ? paint.maps["1"] : paint.maps["2"];
+        const loops = (pack as { loops?: readonly (readonly number[])[] }).loops ?? [];
+        for (let li = 0; li < loops.length; li++) {
+          const flat = loops[li];
+          const n = flat.length / 2;
+          let run = 0;
+          for (let i = 0; i < n; i++) {
+            const ax = flat[i * 2];
+            const az = flat[i * 2 + 1];
+            const bx = flat[((i + 1) % n) * 2];
+            const bz = flat[((i + 1) % n) * 2 + 1];
+            const mx = (ax + bx) * 0.5;
+            const mz = (az + bz) * 0.5;
+            const dx = bx - ax;
+            const dz = bz - az;
+            const len = Math.hypot(dx, dz);
+            const near = (mx - x) * (mx - x) + (mz - z) * (mz - z) <= r2;
+            const axis = len > 0.04 && (Math.abs(dx) <= 0.12 * len || Math.abs(dz) <= 0.12 * len);
+            if (near && axis) {
+              run += len;
+              if (run > worst) worst = run;
+            } else run = 0;
+          }
+        }
+      }
+      return worst;
+    };
+    (window as unknown as { __yughottEdgeRun?: typeof edgeRun }).__yughottEdgeRun = edgeRun;
   }
   return groups;
 }

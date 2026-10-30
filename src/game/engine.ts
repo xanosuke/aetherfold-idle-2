@@ -5528,8 +5528,7 @@ function buildYard(canvas) {
 		const runes = new Group();
 		runes.name = "runes";
 		const runeR = hex ? .52 : .66;
-		const runeN = inYughott(px, pz) ? 0 : 8;
-		for (let i = 0; i < runeN; i++) {
+		for (let i = 0; i < 8; i++) {
 			const tick2 = new Mesh(new BoxGeometry(hex ? .1 : .14, .025, hex ? .028 : .035), chantMat(look2.accent, .9));
 			const a = i / 8 * Math.PI * 2;
 			tick2.position.set(Math.cos(a) * runeR, .055, Math.sin(a) * runeR);
@@ -5539,7 +5538,7 @@ function buildYard(canvas) {
 		}
 		const motes = new Group();
 		motes.name = "motes";
-		const n = inYughott(px, pz) ? 4 : hex ? 6 : 10;
+		const n = hex ? 6 : 10;
 		for (let i = 0; i < n; i++) motes.add(makeElementMote(look2, i));
 		g.add(circle, inner, runes, motes);
 		if (hex) {
@@ -33553,7 +33552,7 @@ function buildYard(canvas) {
 			cage.userData.ownGeo = true;
 			cage.userData.peak = 1;
 			g.add(cage);
-			if (!inYughott(x, z) && tier >= 2) {
+			if (tier >= 2) {
 				const outer = new Mesh(new IcosahedronGeometry(.98, 0), new MeshBasicMaterial({
 					color: film,
 					wireframe: true,
@@ -33568,20 +33567,18 @@ function buildYard(canvas) {
 				outer.userData.peak = .65;
 				g.add(outer);
 			}
-			if (!inYughott(x, z)) {
-				const body = new Mesh(new SphereGeometry(.58, 10, 8), new MeshBasicMaterial({
-					color: film,
-					transparent: true,
-					opacity: .22,
-					depthWrite: false,
-					toneMapped: false,
-					side: 2
-				}));
-				body.position.y = .95;
-				body.userData.ownGeo = true;
-				body.userData.peak = .28;
-				g.add(body);
-			}
+			const body = new Mesh(new SphereGeometry(.58, 10, 8), new MeshBasicMaterial({
+				color: film,
+				transparent: true,
+				opacity: .22,
+				depthWrite: false,
+				toneMapped: false,
+				side: 2
+			}));
+			body.position.y = .95;
+			body.userData.ownGeo = true;
+			body.userData.peak = .28;
+			g.add(body);
 		} else {
 			const dome = new Mesh(new SphereGeometry(.76, 14, 8, 0, Math.PI * 2, 0, Math.PI * .58), new MeshBasicMaterial({
 				color,
@@ -41631,51 +41628,46 @@ function buildYard(canvas) {
 		padEdgeY = false;
 		return null;
 	}
-	const grottoFxHide = [];
-	function grottoFxRelease() {
-		for (let i = 0; i < grottoFxHide.length; i++) grottoFxHide[i].visible = true;
-		grottoFxHide.length = 0;
+	if (!Mesh.prototype.__yardFxHook) {
+		const prevBefore = Mesh.prototype.onBeforeRender;
+		Mesh.prototype.onBeforeRender = function () {
+			if (this.userData && this.userData.spellFx) globalThis.__yardSpellFxDraws = (globalThis.__yardSpellFxDraws || 0) + 1;
+			if (prevBefore) prevBefore.apply(this, arguments);
+		};
+		Mesh.prototype.__yardFxHook = true;
 	}
-	function grottoFxMesh(mesh, out) {
-		if (mesh && mesh.isMesh && mesh.visible) out.push(mesh);
-	}
-	function grottoFxTree(obj, out) {
+	function tagSpellObj(obj) {
 		if (!obj) return;
-		grottoFxMesh(obj, out);
+		if (obj.isMesh) obj.userData.spellFx = true;
 		const kids = obj.children;
 		if (!kids) return;
-		for (let i = 0; i < kids.length; i++) grottoFxTree(kids[i], out);
+		for (let i = 0; i < kids.length; i++) tagSpellObj(kids[i]);
 	}
-	function capGrottoFx() {
-		if (!inYughott(px, pz)) return;
-		const fx = [];
+	function tagSpellFx() {
+		for (let i = 0; i < embers.length; i++) if (embers[i].mesh) embers[i].mesh.userData.spellFx = true;
+		for (let i = 0; i < rings.length; i++) tagSpellObj(rings[i].g);
+		for (let i = 0; i < sparks.length; i++) tagSpellObj(sparks[i].g);
+		for (let i = 0; i < heats.length; i++) tagSpellObj(heats[i].g || heats[i].mesh);
+		for (let i = 0; i < lotuses.length; i++) tagSpellObj(lotuses[i].g || lotuses[i].mesh);
+		for (let i = 0; i < stuns.length; i++) tagSpellObj(stuns[i].g || stuns[i].mesh);
+		for (let i = 0; i < sparkles.length; i++) tagSpellObj(sparkles[i].g || sparkles[i].mesh);
+		for (let i = 0; i < songBits.length; i++) tagSpellObj(songBits[i].g);
+		for (let i = 0; i < trails.length; i++) tagSpellObj(trails[i].g || trails[i].mesh);
+		for (let i = 0; i < laterFx.length; i++) tagSpellObj(laterFx[i].g || laterFx[i].mesh);
+		for (let i = 0; i < charmHearts.length; i++) tagSpellObj(charmHearts[i].g || charmHearts[i].mesh);
+		if (flame) tagSpellObj(flame);
 		if (chantFx) {
-			grottoFxTree(chantFx.g, fx);
-			grottoFxTree(chantFx.mark, fx);
+			tagSpellObj(chantFx.g);
+			tagSpellObj(chantFx.mark);
 		}
 		for (let i = 0; i < puppets.length; i++) {
 			const chant = puppets[i].chant;
 			if (!chant) continue;
-			grottoFxTree(chant.g, fx);
-			grottoFxTree(chant.mark, fx);
-		}
-		for (let i = 0; i < embers.length; i++) grottoFxMesh(embers[i].mesh, fx);
-		for (let i = 0; i < rings.length; i++) grottoFxTree(rings[i].g, fx);
-		for (let i = 0; i < sparks.length; i++) grottoFxTree(sparks[i].g, fx);
-		const keep = 16;
-		if (fx.length <= keep) return;
-		for (let i = 0; i < fx.length; i++) {
-			const geo = fx[i].geometry;
-			if (geo && !geo.boundingSphere) geo.computeBoundingSphere();
-		}
-		fx.sort((a, b) => ((b.geometry && b.geometry.boundingSphere && b.geometry.boundingSphere.radius) || 0) - ((a.geometry && a.geometry.boundingSphere && a.geometry.boundingSphere.radius) || 0));
-		for (let i = keep; i < fx.length; i++) {
-			fx[i].visible = false;
-			grottoFxHide.push(fx[i]);
+			tagSpellObj(chant.g);
+			tagSpellObj(chant.mark);
 		}
 	}
 	function frame(now) {
-		grottoFxRelease();
 		const frameT = performance.now();
 		timer.update(now);
 		stepTraceMeshes(px, pz);
@@ -41722,7 +41714,8 @@ function buildYard(canvas) {
 			if (grottoNow) placeActorBlobs();
 		}
 		syncGrottoActors(grottoNow);
-		capGrottoFx();
+		tagSpellFx();
+		globalThis.__yardSpellFxDraws = 0;
 		const renderT = performance.now();
 		renderer.render(scene, camera);
 		const renderMs = performance.now() - renderT;
@@ -41740,6 +41733,7 @@ function buildYard(canvas) {
 			castShadow: sun.castShadow === true,
 			shadowAuto: sun.shadow.autoUpdate === true,
 			calls: renderer.info.render.calls,
+			scenery: Math.max(0, renderer.info.render.calls - (globalThis.__yardSpellFxDraws || 0)),
 			triangles: renderer.info.render.triangles,
 			renderMs,
 			frameMs,
@@ -42051,6 +42045,44 @@ function buildYard(canvas) {
 		const foot = groundY(px, pz);
 		if (inYughott(px, pz)) publishGrottoView(px, pz, foot, true);
 		return { x: px, z: pz, region: regionName(px, pz), speed, built };
+	};
+	function spellFxRows(root, rows) {
+		if (!root) return;
+		if (root.isMesh && root.geometry) {
+			const g = root.geometry;
+			const m = root.material;
+			const p = g.parameters || {};
+			rows.push([
+				g.type,
+				p.radius ?? "",
+				p.detail ?? "",
+				p.tube ?? "",
+				p.radialSegments ?? p.widthSegments ?? "",
+				m && m.color ? m.color.getHexString() : "",
+				m && m.wireframe ? 1 : 0,
+				Math.round(((m && m.opacity) ?? 1) * 100)
+			].join(":"));
+		}
+		const kids = root.children;
+		if (!kids) return;
+		for (let i = 0; i < kids.length; i++) spellFxRows(kids[i], rows);
+	}
+	window.__spellFxSample = (name) => {
+		const spell = spellByName(name);
+		if (!spell || !spell.barrier) return [];
+		const ward = {
+			kind: spell.barrier.kind,
+			tier: spell.barrier.tier,
+			area: spell.barrier.area === true
+		};
+		const sparkAt = sparks.length;
+		const ringAt = rings.length;
+		spawnBarrierLand(px, pz, ward);
+		const rows = [];
+		for (let i = sparkAt; i < sparks.length; i++) spellFxRows(sparks[i].g, rows);
+		for (let i = ringAt; i < rings.length; i++) spellFxRows(rings[i].g, rows);
+		rows.sort();
+		return rows;
 	};
 	const seatToken = {};
 	let heroFloorMin = Infinity;

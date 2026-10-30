@@ -189,28 +189,36 @@ function percentile(values, q) {
   return values[Math.min(values.length - 1, Math.floor(values.length * q))];
 }
 
-function floorLum(png) {
+function sceneryCalls(gfx) {
+  if (!gfx) return Infinity;
+  return typeof gfx.scenery === "number" ? gfx.scenery : gfx.calls;
+}
+
+function floorBand(png) {
   const { width, height, data } = decodePng(png);
-  const at = (x, y) => {
-    const i = (y * width + x) * 4;
-    return [data[i], data[i + 1], data[i + 2]];
-  };
   const vals = [];
-  const y0 = Math.floor(height * 0.42);
-  const y1 = Math.floor(height * 0.62);
-  const x0 = Math.floor(width * 0.38);
-  const x1 = Math.floor(width * 0.62);
-  for (let y = y0; y < y1; y += 3) {
-    for (let x = x0; x < x1; x += 3) {
-      const [r, g, b] = at(x, y);
-      if (r < 20 && g < 20 && b < 20) continue;
-      if (r > 210 && g > 180) continue;
-      vals.push((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255);
+  const x0 = Math.floor(width * 0.22);
+  const x1 = Math.floor(width * 0.78);
+  const y0 = Math.floor(height * 0.45);
+  const y1 = Math.floor(height * 0.68);
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      if (L < 0.1) continue;
+      const flame = r > 168 && r > g + 18 && r > b + 30;
+      const actor = x >= x0 && x <= x1 && y >= y0 && y <= y1;
+      const water = g > r + 8 && b > r + 4 && r < 90;
+      if (flame || actor || water) continue;
+      vals.push(L);
     }
   }
   vals.sort((a, b) => a - b);
   if (!vals.length) return 0;
-  return vals[Math.floor(vals.length * 0.35)];
+  return vals[Math.floor(vals.length * 0.9)];
 }
 
 function grottoLum(png) {
@@ -958,6 +966,13 @@ async function assertSeat(browser, url, seated) {
       const shotPath = `/workspace/screenshots/yug-${view.name}-${stand.name}.png`;
       const png = await page.screenshot({ path: shotPath, timeout: 15000, animations: "disabled" });
       const lum = grottoLum(png);
+      const canvasB64 = await page.evaluate(() => {
+        const canvas = document.querySelector("canvas");
+        return canvas ? canvas.toDataURL("image/png") : "";
+      });
+      const band = canvasB64.startsWith("data:image/png;base64,")
+        ? floorBand(Buffer.from(canvasB64.slice("data:image/png;base64,".length), "base64"))
+        : 0;
       viewSnap = await page.evaluate(() => window.__grottoView);
       const grid = viewSnap.grid || [];
       const badHit = grid.filter((kind) => kind === "wall" || kind === "cap" || kind === "void");
@@ -972,9 +987,9 @@ async function assertSeat(browser, url, seated) {
         await context.close();
         return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${grid.join(",")}`, shots };
       }
-      if (!(lum >= 0.12 && lum <= 0.30)) {
+      if (!(band >= 0.12 && band <= 0.24)) {
         await context.close();
-        return { ok: false, error: `${view.name} ${stand.name} floor lum ${lum.toFixed(3)}`, shots };
+        return { ok: false, error: `${view.name} ${stand.name} floor lum ${band.toFixed(3)} (shot ${lum.toFixed(3)})`, shots };
       }
       if (stand.square === "F-9" && view.name === "portrait") {
         const canvasPng = await page.locator("canvas").first().screenshot({ timeout: 15000, animations: "disabled" });
@@ -989,7 +1004,7 @@ async function assertSeat(browser, url, seated) {
           return { ok: false, error: `${stand.name} sheen ${pool.sheen.toFixed(3)} floor ${pool.floor.toFixed(3)}`, shots };
         }
       }
-      console.log(`GROTTO ${view.name} ${stand.name} lum ${lum.toFixed(3)} share ${viewSnap.share.toFixed(2)} hero ${viewSnap.hero && viewSnap.hero.name} trust ${viewSnap.trust && viewSnap.trust.name}`);
+      console.log(`GROTTO ${view.name} ${stand.name} lum ${band.toFixed(3)} shot ${lum.toFixed(3)} share ${viewSnap.share.toFixed(2)} hero ${viewSnap.hero && viewSnap.hero.name} trust ${viewSnap.trust && viewSnap.trust.name}`);
       shots.push({ name: stand.name, view: view.name, path: shotPath, lum });
     }
     await context.close();
@@ -1342,12 +1357,12 @@ async function assertGrottoWalk(browser, url, seated) {
       if (!still || !gfx || still.pixelRatio !== gfx.pixelRatio || still.castShadow !== gfx.castShadow || still.shadowAuto !== gfx.shadowAuto) {
         return { ok: false, error: `${stand.name} gfx changed ${JSON.stringify(still)} -> ${JSON.stringify(gfx)}` };
       }
-      console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-calls ${gfx.calls} walk-tris ${gfx.triangles} walk-share ${snap.share.toFixed(2)} props ${stillView.props}/${snap.props} points ${still.yugPoints}`);
-      if (!(still.calls <= 37) || !(still.triangles < 40000) || still.yugPoints) {
-        return { ok: false, error: `${stand.name} draw ${still.calls} tris ${still.triangles} points ${still.yugPoints}` };
+      console.log(`DRAW ${stand.name} calls ${still.calls} scenery ${sceneryCalls(still)} tris ${still.triangles} walk-calls ${gfx.calls} walk-scenery ${sceneryCalls(gfx)} walk-tris ${gfx.triangles} walk-share ${snap.share.toFixed(2)} props ${stillView.props}/${snap.props} points ${still.yugPoints}`);
+      if (!(sceneryCalls(still) <= 37) || !(still.triangles < 40000) || still.yugPoints) {
+        return { ok: false, error: `${stand.name} draw ${sceneryCalls(still)} tris ${still.triangles} points ${still.yugPoints}` };
       }
-      if (!(gfx.calls <= 37) || !(gfx.triangles < 40000) || gfx.yugPoints) {
-        return { ok: false, error: `${stand.name} walk draw ${gfx.calls} tris ${gfx.triangles} points ${gfx.yugPoints}` };
+      if (!(sceneryCalls(gfx) <= 37) || !(gfx.triangles < 40000) || gfx.yugPoints) {
+        return { ok: false, error: `${stand.name} walk draw ${sceneryCalls(gfx)} tris ${gfx.triangles} points ${gfx.yugPoints}` };
       }
       const pngB64 = await page.evaluate(() => {
         const canvas = document.querySelector("canvas");
@@ -1437,16 +1452,52 @@ async function assertGrottoCover(browser, url, seated) {
       }
       if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
       const stats = paintStats(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64"));
-      console.log(`COVER ${stand.name} clear ${stats.clear} bright ${stats.bright} calls ${gfx && gfx.calls} meshes ${cast.meshes.map((hit) => hit.name || "unnamed").join(",")}`);
+      const band = floorBand(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64"));
+      const edge = await boot.page.evaluate((at) => (window.__yughottEdgeRun ? window.__yughottEdgeRun(at.x, at.z, 30) : null), stand);
+      console.log(`COVER ${stand.name} clear ${stats.clear} bright ${stats.bright} scenery ${sceneryCalls(gfx)} calls ${gfx && gfx.calls} floor ${band.toFixed(3)} edge ${edge} meshes ${cast.meshes.map((hit) => hit.name || "unnamed").join(",")}`);
       if (stats.clear > 0) return { ok: false, error: `${stand.name} clear-colour pixels ${stats.clear}` };
       if (stats.bright > 0) return { ok: false, error: `${stand.name} bright pixels ${stats.bright}` };
-      if (!gfx || !(gfx.calls <= 37)) return { ok: false, error: `${stand.name} draw ${gfx && gfx.calls}` };
+      if (!gfx || !(sceneryCalls(gfx) <= 37)) return { ok: false, error: `${stand.name} draw ${sceneryCalls(gfx)}` };
+      if (!(band >= 0.12 && band <= 0.24)) return { ok: false, error: `${stand.name} floor lum ${band.toFixed(3)}` };
+      if ((stand.name === "h8" || stand.name === "g8" || stand.name === "f9") && !(edge <= 2)) {
+        return { ok: false, error: `${stand.name} edge run ${edge}` };
+      }
     } catch (err) {
       return { ok: false, error: `${stand.name} cover ${err.message}` };
     } finally {
       await boot.context.close();
     }
   }
+  return { ok: true };
+}
+
+async function assertFxParity(browser, url, seated) {
+  const places = walkPlaces();
+  if (!places.ok) return places;
+  const view = { name: "portrait", width: 390, height: 844, mobile: true };
+  const stands = [places.stands[0], places.fort];
+  const sigs = [];
+  for (const stand of stands) {
+    const boot = await bootStand(browser, url, seated, stand, view);
+    try {
+      await boot.page.waitForFunction(() => window.__spellFxSample, null, { timeout: 15000 });
+      const sig = await boot.page.evaluate(() => ({
+        protect: window.__spellFxSample("Protectra V"),
+        shell: window.__spellFxSample("Shellra V"),
+      }));
+      if (boot.errors.length) return { ok: false, error: `${stand.name} ${boot.errors[0]}` };
+      sigs.push({ name: stand.region, sig });
+    } catch (err) {
+      return { ok: false, error: `${stand.name} fx ${err.message}` };
+    } finally {
+      await boot.context.close();
+    }
+  }
+  const a = JSON.stringify(sigs[0].sig);
+  const b = JSON.stringify(sigs[1].sig);
+  if (!sigs[0].sig.protect.length || !sigs[0].sig.shell.length) return { ok: false, error: "fx parity empty" };
+  if (a !== b) return { ok: false, error: `fx parity ${sigs[0].name} != ${sigs[1].name} ${a} vs ${b}` };
+  console.log(`FX parity ${sigs[0].name} = ${sigs[1].name} protect ${sigs[0].sig.protect.length} shell ${sigs[0].sig.shell.length}`);
   return { ok: true };
 }
 
@@ -1574,6 +1625,8 @@ async function checkGhelsba(browser, url) {
   if (!walking.ok) return { ...walking, nodes: places.nodes, shots };
   const cover = await assertGrottoCover(browser, url, seated);
   if (!cover.ok) return { ...cover, nodes: places.nodes, shots };
+  const parity = await assertFxParity(browser, url, seated);
+  if (!parity.ok) return { ...parity, nodes: places.nodes, shots };
   const trace = await orcTrace(browser, url, seated);
   if (!trace.ok) return { ...trace, nodes: places.nodes, shots: [...shots, ...(trace.shots || [])] };
   return { ok: true, nodes: places.nodes, shots: [...shots, ...(seat.shots || []), ...trace.shots] };
