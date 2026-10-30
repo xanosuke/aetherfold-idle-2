@@ -712,9 +712,55 @@ function fireDrum(add: Add, colliders: Solid[], x: number, z: number) {
   footBox(add, 0x3a3538, 1, 0.6, 1, x, z);
   add(0x2a241c, 0.7, 0.16, 0.22, x, 0.7, z, 0.4);
   add(0x2a241c, 0.55, 0.14, 0.18, x, 0.78, z, -0.6);
-  add(0xffa050, 0.28, 0.8, 0.28, x, 1.15, z);
-  add(0xffd0a0, 0.14, 0.45, 0.14, x + 0.08, 1.45, z);
+  const flameH = 0.28;
+  if (flameH > 0.3) throw new Error("drum flame");
+  add(0xffa050, 0.24, flameH, 0.24, x, 0.6 + flameH / 2, z);
+  add(0xffe0b0, 0.1, 0.14, 0.1, x, 0.6 + flameH * 0.42, z);
   drums.push({ x, z });
+}
+
+function poolTotem(add: Add, colliders: Solid[], x: number, z: number, h: number) {
+  if (h < 2.5 || h > 3.2) throw new Error(`pool totem height ${h.toFixed(2)}`);
+  const wood = 0x2a221c;
+  const yaw = (hash(x, z) - 0.5) * 0.5;
+  const skull = hash(z, x) > 0.48;
+  const bands = hash(x + 2, z) > 0.42 ? 2 : 1;
+  const cap = 0.22;
+  const post = h - cap;
+  collide(colliders, x, z, 0.24, 0.24);
+  add(wood, 0.45, post, 0.4, x, post / 2, z, yaw);
+  add(0x1a1612, 0.18, 0.34, 0.44, x, post * 0.58, z, yaw);
+  add(0x7a2e28, 0.52, 0.1, 0.46, x, post * 0.72, z, yaw);
+  if (bands === 2) add(0xc4a56a, 0.5, 0.08, 0.44, x, post * 0.4, z, yaw);
+  if (skull) {
+    add(0xd9d0c2, 0.26, 0.2, 0.22, x, post + 0.1, z, yaw);
+    add(0x1c1612, 0.05, 0.04, 0.04, x - 0.06, post + 0.14, z + 0.07, yaw);
+    add(0x1c1612, 0.05, 0.04, 0.04, x + 0.06, post + 0.14, z + 0.07, yaw);
+  } else {
+    add(0xe6dcc8, 0.07, 0.2, 0.07, x - 0.12, post + 0.08, z, yaw);
+    add(0xe6dcc8, 0.07, 0.2, 0.07, x + 0.12, post + 0.08, z, yaw);
+  }
+}
+
+function waterDiscs(anchor: V2, poolR: number) {
+  return [
+    { x: anchor.x, z: anchor.z, r: poolR },
+    { x: anchor.x + poolR * 0.35, z: anchor.z - poolR * 0.2, r: poolR * 0.72 },
+    { x: anchor.x - poolR * 0.28, z: anchor.z + poolR * 0.32, r: poolR * 0.64 },
+  ];
+}
+
+function clearsPool(x: number, z: number, anchor: V2, poolR: number) {
+  return waterDiscs(anchor, poolR).every((d) => Math.hypot(x - d.x, z - d.z) > d.r + 0.3);
+}
+
+/** South arc of a pool: the side toward the camera. North is -Z. */
+function poolFacesCamera(anchor: V2, poolR: number, x: number, z: number) {
+  const dx = x - anchor.x;
+  const dz = z - anchor.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist > poolR + 2.6 || dist < poolR - 1.4) return false;
+  return dz > dist * 0.22 && dz > Math.abs(dx) * 0.45;
 }
 
 function poolDiscs(x: number, z: number, r: number) {
@@ -1294,60 +1340,73 @@ function caveDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: numbe
     const last = props[props.length - 1];
     last.localBase = 0.06;
     poolDiscs(anchor.x, anchor.z, poolR);
-    const seats: { x: number; z: number; south: boolean }[] = [];
+    const rim: { x: number; z: number }[] = [];
+    for (let k = 0; k < 48; k++) {
+      const a = -Math.PI + (k / 48) * Math.PI * 2;
+      const south = Math.sin(a) > 0.12;
+      const north = Math.sin(a) < -0.08;
+      const side = Math.abs(Math.cos(a)) > 0.5 && Math.sin(a) <= 0.12;
+      if (south || !(north || side)) continue;
+      for (let rad = poolR * 0.85; rad <= poolR + 2.8; rad += 0.3) {
+        const x = anchor.x + Math.cos(a) * rad;
+        const z = anchor.z + Math.sin(a) * rad;
+        if (!clearsPool(x, z, anchor, poolR)) continue;
+        if (poolFacesCamera(anchor, poolR, x, z)) continue;
+        const open: Seek = { id: `${id}-rim`, square, hx: 0.4, hz: 0.4, h: 3.2 };
+        if (!fits(zone, open, avoid, x, z)) continue;
+        rim.push({ x, z });
+        break;
+      }
+    }
+    const picked: { x: number; z: number }[] = [];
+    const left = rim.slice();
+    while (picked.length < totemsN && left.length) {
+      let best = 0;
+      let score = -Infinity;
+      for (let i = 0; i < left.length; i++) {
+        const gap = picked.length
+          ? Math.min(...picked.map((p) => Math.hypot(p.x - left[i].x, p.z - left[i].z)))
+          : -left[i].z;
+        if (gap > score) {
+          score = gap;
+          best = i;
+        }
+      }
+      if (picked.length && score < 3) break;
+      picked.push(left.splice(best, 1)[0]);
+    }
+    for (const spot of picked) {
+      const h = 2.5 + hash(spot.x, spot.z) * 0.7;
+      const spec: Seek = { id: `${id}-totem`, square, hx: 0.4, hz: 0.4, h };
+      if (!fits(zone, spec, avoid, spot.x, spot.z)) continue;
+      const at = claim(spec, spot.x, spot.z);
+      begin(zone, `${id}-totem`, square, at, h, draw, (add) => poolTotem(add, colliders, at.x, at.z, h));
+    }
+    const seats: { x: number; z: number }[] = [];
     for (let x = anchor.x - poolR; x <= anchor.x + poolR; x += 0.9) {
       for (let z = anchor.z - poolR; z <= anchor.z + poolR; z += 0.9) {
         if (Math.hypot(x - anchor.x, z - anchor.z) < 2.2 || !inPool(x, z, anchor.x, anchor.z, poolR)) continue;
-        const open: Seek = { id: `${id}-seat`, square, hx: 0.58, hz: 0.58, h: 1 };
+        const open: Seek = { id: `${id}-seat`, square, hx: 0.58, hz: 0.58, h: 1.5 };
         if (!fits(zone, open, avoid, x, z)) continue;
-        seats.push({ x, z, south: isSouth(zone.segs, x, z) });
+        seats.push({ x, z });
       }
     }
-    const take = (tall: boolean) => {
-      for (const seat of seats) {
-        if (tall && seat.south) continue;
-        const spec: Seek = { id: `${id}-pick`, square, hx: 0.58, hz: 0.58, h: tall ? 4 : 1.2 };
-        if (!fits(zone, spec, avoid, seat.x, seat.z)) continue;
-        return claim(spec, seat.x, seat.z);
-      }
-      return null;
-    };
-    let totems = 0;
     let gotDrums = 0;
-    for (let i = 0; i < seats.length * 2 && (totems < totemsN || gotDrums < drumN); i++) {
-      const wantDrum = gotDrums < drumN && (totems >= totemsN || i % 4 === 0);
-      let h = wantDrum ? 1.5 : 3 + (totems % 5) * 0.45;
-      let spot = take(!wantDrum && h > 3);
-      if (!spot && !wantDrum && h > 3) {
-        h = 3;
-        spot = take(false);
-      }
-      if (!spot) continue;
-      if (wantDrum) {
-        begin(zone, `${id}-drum`, square, spot, 1.5, draw, (add) => fireDrum(add, colliders, spot.x, spot.z));
-        gotDrums += 1;
-      } else {
-        begin(zone, `${id}-totem`, square, spot, h, draw, (add) => totem(add, colliders, spot.x, spot.z, h, hash(spot.z, spot.x) > 0.62));
-        totems += 1;
-      }
+    for (const seat of seats) {
+      if (gotDrums >= drumN) break;
+      const spec: Seek = { id: `${id}-drum`, square, hx: 0.58, hz: 0.58, h: 1.5 };
+      if (!fits(zone, spec, avoid, seat.x, seat.z)) continue;
+      const spot = claim(spec, seat.x, seat.z);
+      begin(zone, `${id}-drum`, square, spot, 1.5, draw, (add) => fireDrum(add, colliders, spot.x, spot.z));
+      gotDrums += 1;
     }
+    const totems = props.filter((p) => p.id.startsWith(`${id}-totem`)).length;
     if (totems < totemsN) throw new Error(`${id} totems ${totems}`);
     if (gotDrums < drumN) throw new Error(`${id} drums ${gotDrums}`);
     return anchor;
   };
-  const f9 = fillRoom(upper, "F-9", 15, 7, 8.5, "f9", yugWorld(5.45, 8.5, 1));
-  const j7 = fillRoom(upper, "J-7", 8, 3, 8.2, "j7", yugWorld(9.55, 6.62, 1));
-  for (const room of [
-    { at: f9, n: 3 },
-    { at: j7, n: 2 },
-  ]) {
-    for (let i = 0; i < room.n; i++) {
-      const a = (i / room.n) * Math.PI * 2 + 0.4;
-      const x = room.at.x + Math.cos(a) * 2.4;
-      const z = room.at.z + Math.sin(a) * 2.4;
-      marks.push({ kind: "shaft", x, z, y: traceFloorY(x, z) });
-    }
-  }
+  fillRoom(upper, "F-9", 5, 7, 8.5, "f9", yugWorld(5.45, 8.5, 1));
+  fillRoom(upper, "J-7", 3, 3, 8.2, "j7", yugWorld(9.55, 6.62, 1));
   for (const square of ["G-9", "I-7", "L-6"]) {
     const spot = must(upper, { id: `rubble-${square}`, square, hx: 1.6, hz: 1.3, h: 1.2 }, avoid);
     const s = 3 + hash(spot.x, spot.z) * 2;
@@ -1453,10 +1512,30 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
   if (count((p) => p.id === "lever-g7") < 1) throw new Error("lever");
   if (count((p) => p.id.startsWith("tree-")) < 6) throw new Error("trees");
   if (count((p) => p.id.startsWith("palisade-")) < 12) throw new Error("palisades");
-  if (count((p) => p.id.startsWith("f9-totem")) < 15) throw new Error("f9 totems");
-  if (count((p) => p.id.startsWith("j7-totem")) < 8) throw new Error("j7 totems");
+  if (count((p) => p.id.startsWith("f9-totem")) !== 5) throw new Error("f9 totems");
+  if (count((p) => p.id.startsWith("j7-totem")) !== 3) throw new Error("j7 totems");
   if (drums.length < 10) throw new Error(`drums ${drums.length}`);
-  if (marks.filter((m) => m.kind === "shaft").length < 4 || marks.filter((m) => m.kind === "shaft").length > 6) throw new Error("shafts");
+  if (marks.some((m) => m.kind === "shaft")) throw new Error("shafts");
+  const poolRooms = [
+    { id: "f9", n: 5, r: 8.5, at: yugWorld(5.45, 8.5, 1) },
+    { id: "j7", n: 3, r: 8.2, at: yugWorld(9.55, 6.62, 1) },
+  ];
+  for (const room of poolRooms) {
+    const list = props.filter((p) => p.id.startsWith(`${room.id}-totem`));
+    if (list.length !== room.n) throw new Error(`${room.id} totems ${list.length}`);
+    for (const prop of list) {
+      if (prop.h < 2.5 || prop.h > 3.2) throw new Error(`${prop.id} height ${prop.h.toFixed(2)}`);
+      if (poolFacesCamera(room.at, room.r, prop.x, prop.z)) throw new Error(`${prop.id} camera-side`);
+      const dist = Math.hypot(prop.x - room.at.x, prop.z - room.at.z);
+      if (dist < room.r * 0.8 || dist > room.r + 3) throw new Error(`${prop.id} off the rim`);
+    }
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const d = Math.hypot(list[i].x - list[j].x, list[i].z - list[j].z);
+        if (d < 3) throw new Error(`${list[i].id} near ${list[j].id}`);
+      }
+    }
+  }
   if (marks.filter((m) => m.kind === "pool").length < 2) throw new Error("pools");
   if (marks.filter((m) => m.kind === "fall").length < 1) throw new Error("waterfall");
   if (count((p) => p.id === "crystal") < 1) throw new Error("crystal");
@@ -1472,6 +1551,14 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
     if (prop.h > 3 && isSouth(segs, prop.x, prop.z)) throw new Error(`${prop.id} tall on the south`);
     if (prop.zone === "yughott" && prop.map && (prop.id.startsWith("cave-") || prop.id.startsWith("crate-")) && prop.h > 1.5 && cameraBand(prop.map, prop.x, prop.z)) {
       throw new Error(`${prop.id} camera-side ${prop.h.toFixed(2)}`);
+    }
+    for (const room of [
+      { r: 8.5, at: yugWorld(5.45, 8.5, 1) },
+      { r: 8.2, at: yugWorld(9.55, 6.62, 1) },
+    ]) {
+      if (prop.h > 1.5 && poolFacesCamera(room.at, room.r, prop.x, prop.z)) {
+        throw new Error(`${prop.id} camera-side ${prop.h.toFixed(2)}`);
+      }
     }
   }
   const blocked = (x: number, z: number) => solids.some((box) => x > box.minX - 0.36 && x < box.maxX + 0.36 && z > box.minZ - 0.36 && z < box.maxZ + 0.36);

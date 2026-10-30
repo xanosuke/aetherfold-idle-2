@@ -2,7 +2,7 @@
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { YUGHOTT_CELL, YUGHOTT_GEO, YUGHOTT_ORIGINS } from "../src/game/yughott-graph.ts";
+import { YUGHOTT_CELL, YUGHOTT_GEO, YUGHOTT_ORIGINS, gridToWorld as yugWorld } from "../src/game/yughott-graph.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const pub = resolve(root, "public/yughott");
@@ -12,6 +12,27 @@ const TILE = 256;
 const PAD = 96;
 const STEP = 4;
 const MAPS = [1, 2];
+
+function poolDiscs(gx, gy, r) {
+  const c = yugWorld(gx, gy, 1);
+  return [
+    { x: c.x, z: c.z, r },
+    { x: c.x + r * 0.35, z: c.z - r * 0.2, r: r * 0.72 },
+    { x: c.x - r * 0.28, z: c.z + r * 0.32, r: r * 0.64 },
+  ];
+}
+const DAMP = [...poolDiscs(5.45, 8.5, 8.5), ...poolDiscs(9.55, 6.62, 8.2)];
+
+function dampAt(x, z) {
+  let damp = 0;
+  for (const d of DAMP) {
+    const edge = Math.hypot(x - d.x, z - d.z) - d.r;
+    if (edge < -0.5 || edge > 1.8) continue;
+    const t = edge < 0 ? (edge + 0.5) / 0.5 : 1 - edge / 1.8;
+    if (t > damp) damp = t;
+  }
+  return damp;
+}
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -305,7 +326,18 @@ function bakeMap(map) {
           const srcI = Math.max(0, Math.min(W - 1, i0 + col));
           const src = srcJ * W + srcI;
           const inside = mask[src] === 1;
-          const [r, g, b] = paintPixel(inside, distIn[src], inside ? distOut[src] : 0, srcI, srcJ);
+          let [r, g, b] = paintPixel(inside, distIn[src], inside ? distOut[src] : 0, srcI, srcJ);
+          if (inside && map === 1) {
+            const wx = ox + (srcI + 0.5) / RES;
+            const wz = oz + (srcJ + 0.5) / RES;
+            const damp = dampAt(wx, wz);
+            if (damp > 0) {
+              r = clampByte(r * (1 - damp * 0.46) - damp * 8);
+              g = clampByte(g * (1 - damp * 0.4) - damp * 4);
+              b = clampByte(b * (1 - damp * 0.22) + damp * 10);
+              [r, g, b] = avoidClear(r, g, b);
+            }
+          }
           const p = (row * pw + col) * 4;
           rgba[p] = r;
           rgba[p + 1] = g;

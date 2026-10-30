@@ -884,7 +884,7 @@ async function assertSeat(browser, url, seated) {
     });
     let viewSnap = null;
     if (stand.view) {
-      const minShare = view.name === "portrait" ? 0.5 : 0.6;
+      const minShare = stand.square === "F-9" && view.name === "portrait" ? 0.8 : view.name === "portrait" ? 0.5 : 0.6;
       try {
         await page.waitForFunction(
           (min) => {
@@ -912,7 +912,8 @@ async function assertSeat(browser, url, seated) {
       const badHit = grid.filter((kind) => kind === "wall" || kind === "cap" || kind === "void");
       const voids = grid.filter((kind) => kind === "void");
       if (view.name === "portrait") {
-        if (viewSnap.share < 0.5 || voids.length) {
+        const floorMin = stand.square === "F-9" ? 0.8 : 0.5;
+        if (viewSnap.share < floorMin || voids.length) {
           await context.close();
           return { ok: false, error: `${view.name} ${stand.name} grid ${viewSnap.share} ${grid.join(",")}`, shots };
         }
@@ -1246,10 +1247,11 @@ async function assertGrottoWalk(browser, url, seated) {
     const { page, context, errors } = boot;
     try {
       await page.waitForFunction(() => window.__seatAudit && window.__seatAudit.fieldLive, null, { timeout: 20000 });
-      await page.waitForFunction(() => {
+      const minShare = stand.square === "F-9" ? 0.8 : 0.6;
+      await page.waitForFunction((min) => {
         const snap = window.__grottoView;
-        return snap && snap.heroFirst && snap.trustFirst && snap.share >= 0.6 && snap.grid && !snap.grid.includes("void");
-      }, null, { timeout: 12000 });
+        return snap && snap.heroFirst && snap.trustFirst && snap.share >= min && snap.grid && !snap.grid.includes("void");
+      }, minShare, { timeout: 12000 });
       const still = await page.evaluate(() => window.__yardGfx);
       const walked = await page.evaluate(() => new Promise((resolve) => {
         window.__controlsTest.setKeys(["KeyW"]);
@@ -1265,7 +1267,7 @@ async function assertGrottoWalk(browser, url, seated) {
       }));
       if (errors.length) return { ok: false, error: `${stand.name} ${errors[0]}` };
       const snap = walked.snap;
-      if (!snap || snap.share < 0.6 || (snap.grid || []).includes("void") || !(walked.step.speed >= 0.4)) {
+      if (!snap || snap.share < (stand.square === "F-9" ? 0.8 : 0.6) || (snap.grid || []).includes("void") || !(walked.step.speed >= 0.4)) {
         return { ok: false, error: `${stand.name} mid-walk share ${snap && snap.share} speed ${walked.step && walked.step.speed} ${(snap && snap.grid || []).join(",")}` };
       }
       const gfx = walked.gfx;
@@ -1273,10 +1275,10 @@ async function assertGrottoWalk(browser, url, seated) {
         return { ok: false, error: `${stand.name} gfx changed ${JSON.stringify(still)} -> ${JSON.stringify(gfx)}` };
       }
       console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-calls ${gfx.calls} walk-tris ${gfx.triangles} walk-share ${snap.share.toFixed(2)}`);
-      if (!(still.calls < 60) || !(still.triangles < 40000)) {
+      if (!(still.calls <= 27) || !(still.triangles < 40000)) {
         return { ok: false, error: `${stand.name} draw ${still.calls} tris ${still.triangles}` };
       }
-      if (!(gfx.calls < 60) || !(gfx.triangles < 40000)) {
+      if (!(gfx.calls <= 27) || !(gfx.triangles < 40000)) {
         return { ok: false, error: `${stand.name} walk draw ${gfx.calls} tris ${gfx.triangles}` };
       }
       const path = `/workspace/screenshots/grotto-walk-${stand.name}.png`;

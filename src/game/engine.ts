@@ -47947,14 +47947,14 @@ function buildRoom(scene, toonMat, colliders) {
 	}
 	for (const drum of yughottDrums()) {
 		const floor = groundY(drum.x, drum.z);
-		const glow = new Mesh(new CircleGeometry(2.5, 8), orcDrumGlowMat);
+		const glow = new Mesh(new CircleGeometry(0.42, 8), orcDrumGlowMat);
 		glow.name = "drum-glow";
 		glow.rotation.x = -Math.PI / 2;
-		glow.position.set(drum.x, floor + 0.08, drum.z);
+		glow.position.set(drum.x, floor + 0.95, drum.z);
 		glow.castShadow = false;
 		yugParent(drum.x, drum.z).add(glow);
 		const light = new PointLight(0xffa050, 0.9, 8, 2);
-		light.position.set(drum.x, floor + 1.6, drum.z);
+		light.position.set(drum.x, floor + 1.05, drum.z);
 		yugParent(drum.x, drum.z).add(light);
 		drumLights.push(light);
 	}
