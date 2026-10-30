@@ -31,4 +31,14 @@ PAINTED GROUND (Yughott first; later zones use this pattern)
 - Walls are one extruded strip along the walkable edge: 2.5 yalms on the north and sides, 1.0 on the south (camera) side, flat colour with a lighter top. No terrace-step mesh, no shelf, no strata shader, no rim fill.
 - Props stay few (about 15–40 a map), merged by map, and do not cast shadows. Actors use blob shadows in the grotto and their parts draw as one batched toon mesh so a zone stays under 60 draw calls. Pools stay painted water with a soft sheen.
 
+ZONE LOOK RULES (all zones, Yughott first)
+- Painted ground with crack and damp detail painted in. Hard, jagged borders between ground types (no soft blur). Dungeon edges fade to dark in the painted ground instead of fog.
+- 5–10 bold props visible on screen at a time, each with one clear silhouette. A few bold pieces, not a clutter of tiny bits.
+- Props use the toon material plus an inverted-hull outline (colour 0x111014, about 0.04 yalm thick).
+- No dynamic shadows on props or terrain. Each prop gets a painted shadow: a soft dark ellipse, about 35% opacity, offset toward the lower right, baked into the ground texture (one shared decal, not a mesh per prop). Actors keep blob shadows.
+- Lighting is baked into vertex and texture colour: one ambient plus one directional light, no point lights. The shared camera and the lighting setup stay the same in every zone.
+- Each zone has one saturated accent, used sparingly on fire, water and markers. Yughott's accent is warm fire orange plus teal pool water.
+- Water is a flat coloured plane with a scrolling sheen texture. Fire is a flat sprite or a vertex-coloured flame, never a point light.
+- Nameplates and HP bars always draw above everything (they are HTML; keep them there).
+
 

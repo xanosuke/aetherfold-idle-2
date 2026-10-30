@@ -3,6 +3,9 @@ import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { YUGHOTT_CELL, YUGHOTT_GEO, YUGHOTT_ORIGINS, gridToWorld as yugWorld } from "../src/game/yughott-graph.ts";
+import { dressOrcCamps, campProps } from "../src/game/orc-dress.ts";
+import { seatedFortPois, seatedYughottPois } from "../src/game/orc-height.ts";
+import { ORC_GATES } from "../src/game/ghelsba.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const pub = resolve(root, "public/yughott");
@@ -23,15 +26,75 @@ function poolDiscs(gx, gy, r) {
 }
 const DAMP = [...poolDiscs(5.45, 8.5, 8.5), ...poolDiscs(9.55, 6.62, 8.2)];
 
-function dampAt(x, z) {
-  let damp = 0;
+function jagAt(x, z) {
   for (const d of DAMP) {
-    const edge = Math.hypot(x - d.x, z - d.z) - d.r;
-    if (edge < -0.5 || edge > 1.8) continue;
-    const t = edge < 0 ? (edge + 0.5) / 0.5 : 1 - edge / 1.8;
-    if (t > damp) damp = t;
+    const dx = x - d.x;
+    const dz = z - d.z;
+    const dist = Math.hypot(dx, dz);
+    const ang = Math.atan2(dz, dx);
+    const step = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 24);
+    const jag = ((step * 17) % 5) * 0.22 - 0.44;
+    const edge = dist - (d.r + jag);
+    if (edge >= -0.05 && edge <= 0.7) return 1;
+    if (edge < -0.05 && edge > -1.15) return 2;
   }
-  return damp;
+  return 0;
+}
+
+function shadowSpots() {
+  const avoid = [];
+  for (const gate of ORC_GATES) {
+    avoid.push({ x: gate.x, z: gate.z, r: 4.2 });
+    avoid.push({ x: gate.arrive.x, z: gate.arrive.z, r: 4.2 });
+  }
+  for (const poi of [...seatedFortPois(), ...seatedYughottPois()]) {
+    avoid.push({ x: poi.x, z: poi.z, r: poi.id.startsWith("chest") ? 2.4 : 1.8 });
+  }
+  const hooks = {
+    dome(add, x, z) { add(0x222222, 0.2, 0.2, 0.2, x, 0.1, z); },
+    tripod(add, x, z) { add(0x222222, 0.4, 0.2, 0.4, x, 0.1, z); },
+    dead(add, x, z) { add(0x222222, 0.2, 0.2, 0.2, x, 0.1, z); },
+    emblem() {},
+    rope() {},
+    crystal(add, x, z) { add(0x88ccff, 0.3, 1.2, 0.3, x, 0.6, z); },
+  };
+  dressOrcCamps(() => {}, [], hooks, avoid);
+  return campProps().filter((p) => p.zone === "yughott" && p.h > 0.35 && !p.id.endsWith("-pool"));
+}
+
+const SHADOWS = shadowSpots();
+
+function stampShadows(rgba, pw, ph, tileX, tileZ, map) {
+  for (const p of SHADOWS) {
+    if (p.map !== map) continue;
+    const cx = p.x + 0.6;
+    const cz = p.z + 0.45;
+    const rx = 1.15 + Math.min(p.h, 3) * 0.2;
+    const rz = 0.8 + Math.min(p.h, 3) * 0.14;
+    const i0 = Math.floor((cx - rx - tileX) * RES) - 1;
+    const i1 = Math.ceil((cx + rx - tileX) * RES) + 1;
+    const j0 = Math.floor((cz - rz - tileZ) * RES) - 1;
+    const j1 = Math.ceil((cz + rz - tileZ) * RES) + 1;
+    for (let row = j0; row <= j1; row++) {
+      if (row < 0 || row >= ph) continue;
+      for (let col = i0; col <= i1; col++) {
+        if (col < 0 || col >= pw) continue;
+        const wx = tileX + (col + 0.5) / RES;
+        const wz = tileZ + (row + 0.5) / RES;
+        const e = ((wx - cx) / rx) ** 2 + ((wz - cz) / rz) ** 2;
+        if (e >= 1) continue;
+        const a = 0.35 * (1 - e) * (1 - e);
+        const px = (row * pw + col) * 4;
+        let r = rgba[px] * (1 - a);
+        let g = rgba[px + 1] * (1 - a);
+        let b = rgba[px + 2] * (1 - a);
+        [r, g, b] = avoidClear(clampByte(r), clampByte(g), clampByte(b));
+        rgba[px] = r;
+        rgba[px + 1] = g;
+        rgba[px + 2] = b;
+      }
+    }
+  }
 }
 
 const CRC_TABLE = (() => {
@@ -234,14 +297,14 @@ function paintPixel(inside, distIn, distOut, i, j) {
       g -= 16;
       b -= 14;
     }
-    const vig = distOut < 4 ? (4 - distOut) / 4 : 0;
-    const shade = 1 - vig * 0.28;
-    r *= shade;
-    g *= shade;
-    b *= shade;
+    const vig = distOut < 2 ? 0.72 : distOut < 4 ? 0.86 : 1;
+    r *= vig;
+    g *= vig;
+    b *= vig;
     return avoidClear(clampByte(r), clampByte(g), clampByte(b));
   }
-  const fade = Math.max(0, Math.min(1, distIn / (18 * RES)));
+  const band = distIn < 6 * RES ? 0 : distIn < 12 * RES ? 1 : 2;
+  const fade = band / 2;
   const rockR = 46;
   const rockG = 42;
   const rockB = 52;
@@ -330,11 +393,16 @@ function bakeMap(map) {
           if (inside && map === 1) {
             const wx = ox + (srcI + 0.5) / RES;
             const wz = oz + (srcJ + 0.5) / RES;
-            const damp = dampAt(wx, wz);
-            if (damp > 0) {
-              r = clampByte(r * (1 - damp * 0.46) - damp * 8);
-              g = clampByte(g * (1 - damp * 0.4) - damp * 4);
-              b = clampByte(b * (1 - damp * 0.22) + damp * 10);
+            const jag = jagAt(wx, wz);
+            if (jag === 1) {
+              r = 32;
+              g = 58;
+              b = 60;
+              [r, g, b] = avoidClear(r, g, b);
+            } else if (jag === 2) {
+              r = 40;
+              g = 54;
+              b = 58;
               [r, g, b] = avoidClear(r, g, b);
             }
           }
@@ -345,6 +413,7 @@ function bakeMap(map) {
           rgba[p + 3] = 255;
         }
       }
+      stampShadows(rgba, pw, ph, x, z, map);
       const file = `m${map}-${ix}-${iz}.png`;
       writePng(resolve(pub, file), pw, ph, rgba);
       tiles.push({ ix, iz, x, z, w: wY, d: dY, src: `/yughott/${file}` });

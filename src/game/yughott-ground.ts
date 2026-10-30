@@ -4,13 +4,17 @@
  */
 import {
   BufferGeometry,
+  CanvasTexture,
   Color,
   DoubleSide,
   Float32BufferAttribute,
+  FrontSide,
   Group,
   LinearFilter,
   Mesh,
   MeshBasicMaterial,
+  MeshToonMaterial,
+  NearestFilter,
   SRGBColorSpace,
   TextureLoader,
   type Object3D,
@@ -194,6 +198,7 @@ function appendTransformed(
   pos: number[],
   col: number[],
   idx: number[],
+  outline: number[],
   verts: number[][],
   faces: number[][],
   bit: Bit,
@@ -206,13 +211,42 @@ function appendTransformed(
     const x = v[0] * bit.sx;
     const y = v[1] * bit.sy;
     const z = v[2] * bit.sz;
-    pos.push(bit.x + x * c + z * s, bit.y + y, bit.z - x * s + z * c);
+    const wx = bit.x + x * c + z * s;
+    const wy = bit.y + y;
+    const wz = bit.z - x * s + z * c;
+    pos.push(wx, wy, wz);
     col.push(color.r, color.g, color.b);
+    const dx = wx - bit.x;
+    const dy = wy - bit.y;
+    const dz = wz - bit.z;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const k = 0.04 / len;
+    outline.push(wx + dx * k, wy + dy * k, wz + dz * k);
   }
   for (const f of faces) {
     idx.push(base + f[0], base + f[1], base + f[2]);
     if (f.length === 4) idx.push(base + f[0], base + f[2], base + f[3]);
   }
+}
+
+let yugGradient: CanvasTexture | null = null;
+function yughottGradient() {
+  if (yugGradient) return yugGradient;
+  const canvas = document.createElement("canvas");
+  canvas.width = 4;
+  canvas.height = 1;
+  const g = canvas.getContext("2d");
+  if (!g) throw new Error("gradient");
+  ["#3a342c", "#8d8478", "#e4d8c8", "#fffaf3"].forEach((col, i) => {
+    g.fillStyle = col;
+    g.fillRect(i, 0, 1, 1);
+  });
+  const tex = new CanvasTexture(canvas);
+  tex.magFilter = NearestFilter;
+  tex.minFilter = NearestFilter;
+  tex.colorSpace = SRGBColorSpace;
+  yugGradient = tex;
+  return tex;
 }
 
 export function buildYughottProps(groups: Record<1 | 2, Group>, bits: Bit[], tag: Tag) {
@@ -232,20 +266,29 @@ export function buildYughottProps(groups: Record<1 | 2, Group>, bits: Bit[], tag
     coneFaces.push([a, b, 1 + coneSegs]);
   }
   coneVerts.push([0, -0.5, 0]);
+  const toon = new MeshToonMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    gradientMap: yughottGradient(),
+    fog: false,
+    side: FrontSide,
+  });
+  const ink = new MeshBasicMaterial({ color: 0x111014, side: 1, fog: false });
   for (const map of [1, 2] as const) {
     const list = packs[map];
     if (!list.length) continue;
     const pos: number[] = [];
     const col: number[] = [];
     const idx: number[] = [];
+    const shell: number[] = [];
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
     let maxZ = -Infinity;
     for (const bit of list) {
       tint.setHex(bit.color);
-      if (bit.shape === "cone") appendTransformed(pos, col, idx, coneVerts, coneFaces, bit, tint);
-      else appendTransformed(pos, col, idx, boxCorners, boxFaces, bit, tint);
+      if (bit.shape === "cone") appendTransformed(pos, col, idx, shell, coneVerts, coneFaces, bit, tint);
+      else appendTransformed(pos, col, idx, shell, boxCorners, boxFaces, bit, tint);
       minX = Math.min(minX, bit.x);
       maxX = Math.max(maxX, bit.x);
       minZ = Math.min(minZ, bit.z);
@@ -255,11 +298,21 @@ export function buildYughottProps(groups: Record<1 | 2, Group>, bits: Bit[], tag
     geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
     geo.setAttribute("color", new Float32BufferAttribute(col, 3));
     geo.setIndex(idx);
-    const mesh = new Mesh(geo, new MeshBasicMaterial({ vertexColors: true, side: DoubleSide }));
+    geo.computeVertexNormals();
+    const mesh = new Mesh(geo, toon);
     mesh.name = "yug-prop";
     mesh.castShadow = false;
     mesh.receiveShadow = false;
-    groups[map].add(mesh);
+    const hullGeo = new BufferGeometry();
+    hullGeo.setAttribute("position", new Float32BufferAttribute(shell, 3));
+    hullGeo.setIndex(idx.slice());
+    const hull = new Mesh(hullGeo, ink);
+    hull.name = "yug-outline";
+    hull.castShadow = false;
+    hull.receiveShadow = false;
+    hull.raycast = () => {};
+    groups[map].add(hull, mesh);
+    tag(hull, minX - 2, maxX + 2, minZ - 2, maxZ + 2);
     tag(mesh, minX - 2, maxX + 2, minZ - 2, maxZ + 2);
   }
 }

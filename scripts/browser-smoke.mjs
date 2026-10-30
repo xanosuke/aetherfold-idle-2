@@ -1247,12 +1247,13 @@ async function assertGrottoWalk(browser, url, seated) {
     const { page, context, errors } = boot;
     try {
       await page.waitForFunction(() => window.__seatAudit && window.__seatAudit.fieldLive, null, { timeout: 20000 });
-      const minShare = stand.square === "F-9" ? 0.8 : 0.6;
+      const minShare = 0.75;
       await page.waitForFunction((min) => {
         const snap = window.__grottoView;
-        return snap && snap.heroFirst && snap.trustFirst && snap.share >= min && snap.grid && !snap.grid.includes("void");
+        return snap && snap.heroFirst && snap.trustFirst && snap.share >= min && snap.props >= 5 && snap.props <= 12 && snap.grid && !snap.grid.includes("void");
       }, minShare, { timeout: 12000 });
       const still = await page.evaluate(() => window.__yardGfx);
+      const stillView = await page.evaluate(() => window.__grottoView);
       const walked = await page.evaluate(() => new Promise((resolve) => {
         window.__controlsTest.setKeys(["KeyW"]);
         const step = window.__yardStep(4);
@@ -1267,19 +1268,22 @@ async function assertGrottoWalk(browser, url, seated) {
       }));
       if (errors.length) return { ok: false, error: `${stand.name} ${errors[0]}` };
       const snap = walked.snap;
-      if (!snap || snap.share < (stand.square === "F-9" ? 0.8 : 0.6) || (snap.grid || []).includes("void") || !(walked.step.speed >= 0.4)) {
-        return { ok: false, error: `${stand.name} mid-walk share ${snap && snap.share} speed ${walked.step && walked.step.speed} ${(snap && snap.grid || []).join(",")}` };
+      if (!snap || snap.share < 0.75 || snap.props < 5 || snap.props > 12 || (snap.grid || []).includes("void") || !(walked.step.speed >= 0.4)) {
+        return { ok: false, error: `${stand.name} mid-walk share ${snap && snap.share} props ${snap && snap.props} speed ${walked.step && walked.step.speed} ${(snap && snap.grid || []).join(",")}` };
+      }
+      if (!stillView || stillView.props < 5 || stillView.props > 12) {
+        return { ok: false, error: `${stand.name} stand props ${stillView && stillView.props}` };
       }
       const gfx = walked.gfx;
       if (!still || !gfx || still.pixelRatio !== gfx.pixelRatio || still.castShadow !== gfx.castShadow || still.shadowAuto !== gfx.shadowAuto) {
         return { ok: false, error: `${stand.name} gfx changed ${JSON.stringify(still)} -> ${JSON.stringify(gfx)}` };
       }
-      console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-calls ${gfx.calls} walk-tris ${gfx.triangles} walk-share ${snap.share.toFixed(2)}`);
-      if (!(still.calls <= 27) || !(still.triangles < 40000)) {
-        return { ok: false, error: `${stand.name} draw ${still.calls} tris ${still.triangles}` };
+      console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-calls ${gfx.calls} walk-tris ${gfx.triangles} walk-share ${snap.share.toFixed(2)} props ${stillView.props}/${snap.props} points ${still.yugPoints}`);
+      if (!(still.calls <= 37) || !(still.triangles < 40000) || still.yugPoints) {
+        return { ok: false, error: `${stand.name} draw ${still.calls} tris ${still.triangles} points ${still.yugPoints}` };
       }
-      if (!(gfx.calls <= 27) || !(gfx.triangles < 40000)) {
-        return { ok: false, error: `${stand.name} walk draw ${gfx.calls} tris ${gfx.triangles}` };
+      if (!(gfx.calls <= 37) || !(gfx.triangles < 40000) || gfx.yugPoints) {
+        return { ok: false, error: `${stand.name} walk draw ${gfx.calls} tris ${gfx.triangles} points ${gfx.yugPoints}` };
       }
       const path = `/workspace/screenshots/grotto-walk-${stand.name}.png`;
       const png = await page.locator("canvas").first().screenshot({ path });

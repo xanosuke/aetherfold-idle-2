@@ -26,6 +26,8 @@ import {
   type YughottMap,
 } from "./yughott-graph";
 import { retreatYughott, seatedFortPois, seatedYughottPois, traceFloorY, fortNode } from "./orc-height";
+import { OrthographicCamera, Vector3 } from "three";
+
 
 type Add = (color: number, w: number, h: number, d: number, x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
 type Solid = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -1320,6 +1322,259 @@ function fortExitCrates(draw: Add, colliders: Solid[], avoid: { x: number; z: nu
   if (n < 2) throw new Error(`fort-exit crates ${n}`);
 }
 
+const LOOK_STANDS = [
+  { tag: "h8", x: -567.1, z: 656.6, map: 1 as const },
+  { tag: "g8", x: -597.0, z: 658.6, map: 1 as const },
+  { tag: "f9", x: -665.8, z: 688.6, map: 1 as const },
+];
+
+const lookCam = new OrthographicCamera(-1, 1, 1, -1, 0.1, 120);
+const lookNdc = new Vector3();
+
+function projectLook(px: number, pz: number, x: number, y: number, z: number) {
+  const aspect = 390 / 844;
+  const half = 11.6;
+  const foot = traceFloorY(px, pz);
+  lookCam.top = half;
+  lookCam.bottom = -half;
+  lookCam.left = -half * aspect;
+  lookCam.right = half * aspect;
+  lookCam.up.set(0, 1, 0);
+  lookCam.position.set(px, 15.2 + foot, pz + 13);
+  lookCam.lookAt(px, 0.9 + foot, pz - 2.32);
+  lookCam.updateProjectionMatrix();
+  lookCam.updateMatrixWorld(true);
+  lookNdc.set(x, y, z);
+  lookNdc.project(lookCam);
+  return { x: lookNdc.x, y: lookNdc.y, z: lookNdc.z };
+}
+
+function lookOnScreen(px: number, pz: number, x: number, propH: number, z: number) {
+  const y = traceFloorY(x, z) + Math.min(propH, 3) * 0.45;
+  const ndc = projectLook(px, pz, x, y, z);
+  return ndc.x >= -1 && ndc.x <= 1 && ndc.y >= -1 && ndc.y <= 1 && ndc.z >= -1 && ndc.z <= 1;
+}
+
+function lookInside(stand: { x: number; z: number }, x: number, z: number, propH: number) {
+  const y = traceFloorY(x, z) + Math.min(propH, 3) * 0.45;
+  for (const dz of [0, -1]) {
+    const ndc = projectLook(stand.x, stand.z + dz, x, y, z);
+    if (Math.abs(ndc.x) > 0.78 || Math.abs(ndc.y) > 0.72 || Math.abs(ndc.z) > 1) return false;
+  }
+  return true;
+}
+
+function lookFringe(x: number, z: number, propH: number) {
+  const y = traceFloorY(x, z) + Math.min(propH, 3) * 0.45;
+  for (const stand of LOOK_STANDS) {
+    for (const dz of [0, -1.2]) {
+      const foot = traceFloorY(stand.x, stand.z + dz);
+      const ndcX = (x - stand.x) / 5.36;
+      const ndcY = -0.168 - (z - (stand.z + dz)) * 0.0588 + (y - foot - 0.4) * 0.1;
+      if (Math.abs(ndcX) < 1.35 && Math.abs(ndcY) < 1.3) return true;
+    }
+  }
+  return false;
+}
+
+function skullPole(add: Add, x: number, z: number) {
+  const yaw = (hash(x, z) - 0.5) * 0.5;
+  add(0x2a221c, 0.2, 2.05, 0.2, x, 1.025, z, yaw);
+  add(0xc4a56a, 0.32, 0.08, 0.32, x, 2.06, z, yaw);
+  add(0xd9d0c2, 0.46, 0.38, 0.4, x, 2.28, z, yaw);
+  add(0x1c1612, 0.08, 0.07, 0.06, x - 0.1, 2.34, z + 0.14, yaw);
+  add(0x1c1612, 0.08, 0.07, 0.06, x + 0.1, 2.34, z + 0.14, yaw);
+}
+
+function beastPile(add: Add, x: number, z: number) {
+  const yaw = hash(x, z) * 1.4;
+  add(0xd2c2ae, 0.95, 0.14, 0.28, x, 0.07, z, yaw);
+  add(0xcbb8a4, 0.55, 0.12, 0.2, x + 0.22, 0.14, z + 0.16, yaw + 0.7);
+  add(0xe6dcc8, 0.78, 0.5, 0.58, x - 0.04, 0.36, z, yaw);
+  add(0x1c1612, 0.1, 0.09, 0.07, x - 0.16, 0.46, z + 0.18, yaw);
+  add(0x1c1612, 0.1, 0.09, 0.07, x + 0.08, 0.46, z + 0.18, yaw);
+}
+
+function orcBarricade(add: Add, x: number, z: number) {
+  const yaw = hash(z, x) * 0.8;
+  add(0x3a3028, 0.18, 1.2, 0.18, x - 0.55, 0.6, z, yaw);
+  add(0x3a3028, 0.16, 0.62, 0.16, x + 0.62, 0.31, z + 0.08, yaw);
+  add(0x6a3a22, 1.4, 0.14, 0.16, x, 0.78, z, yaw + 0.2);
+  add(0xd9d0c2, 0.32, 0.26, 0.28, x + 0.12, 0.2, z + 0.22, yaw);
+}
+
+function stalCluster(map: YughottMap, x: number, z: number, h: number) {
+  const parts: [number, number, number, number, number][] = [
+    [0, 0, h, 0.48, 0x4a4450],
+    [0.55, 0.16, h * 0.76, 0.32, 0x3b3640],
+    [-0.42, 0.24, h * 0.58, 0.26, 0x514a58],
+  ];
+  for (const [ox, oz] of parts) {
+    if (!inYughottGraph(x + ox, z + oz, 0, map)) return false;
+  }
+  for (const [ox, oz, hh, rad, color] of parts) {
+    const px = x + ox;
+    const pz = z + oz;
+    const fy = traceFloorY(px, pz);
+    caveBits.push({ kind: "stal", shape: "cone", color, sx: rad, sy: hh, sz: rad, x: px, y: fy + hh / 2, z: pz, yaw: 0 });
+  }
+  return true;
+}
+
+function placeMiniLegion(draw: Add, avoid: { x: number; z: number; r: number }[]) {
+  const want = [
+    { kind: "stal", h: 2.72 },
+    { kind: "stal", h: 2.9 },
+    { kind: "skull", h: 2.5 },
+    { kind: "beast", h: 0.85 },
+    { kind: "skull", h: 2.4 },
+  ] as const;
+  for (const stand of LOOK_STANDS) {
+    const zone = yugZone(stand.map);
+    const cands: { x: number; z: number; band: boolean }[] = [];
+    for (let dz = -11; dz <= 5; dz += 0.8) {
+      for (let dx = -4.4; dx <= 4.4; dx += 0.8) {
+        const x = stand.x + dx;
+        const z = stand.z + dz;
+        if (Math.hypot(dx, dz) < 2.3) continue;
+        if (Math.hypot(x - stand.x, z - (stand.z + 1.15)) < 2.1) continue;
+        if (!zone.real(x, z)) continue;
+        if (inCavePool(x, z)) continue;
+        const square = zone.square(x, z);
+        if (!square || square === "?" || square.length < 3) continue;
+        if (!lookInside(stand, x, z, 2.9)) continue;
+        cands.push({ x, z, band: cameraBand(stand.map, x, z) });
+      }
+    }
+    let placed = 0;
+    for (const item of want) {
+      let found = false;
+      const ranked = cands
+        .map((c) => {
+          const gaps = props.filter((p) => p.id.startsWith(`look-${stand.tag}-`)).map((p) => Math.hypot(p.x - c.x, p.z - c.z));
+          return { c, gap: gaps.length ? Math.min(...gaps) : 6 };
+        })
+        .filter((row) => row.gap >= 1.36)
+        .sort((a, b) => b.gap - a.gap || hash(a.c.x, a.c.z) - hash(b.c.x, b.c.z));
+      for (const row of ranked) {
+        if (item.kind === "stal" && row.c.band) continue;
+        const square = zone.square(row.c.x, row.c.z);
+        const spec: Seek = { id: `look-${stand.tag}-${item.kind}`, square, hx: 0.5, hz: 0.45, h: item.h };
+        if (!fits(zone, spec, avoid, row.c.x, row.c.z)) continue;
+        if (item.h > 1.5 && CAVE_POOLS.some((pool) => poolFacesCamera(pool, pool.r, row.c.x, row.c.z))) continue;
+        if (item.kind === "stal" && !stalCluster(stand.map, row.c.x, row.c.z, item.h)) continue;
+        const at = claim(spec, row.c.x, row.c.z);
+        const id = `look-${stand.tag}-${item.kind}-${placed}`;
+        begin(zone, id, square, at, item.h, draw, (add) => {
+          if (item.kind === "skull") skullPole(add, at.x, at.z);
+          else if (item.kind === "beast") beastPile(add, at.x, at.z);
+        });
+        const idx = cands.indexOf(row.c);
+        if (idx >= 0) cands.splice(idx, 1);
+        placed += 1;
+        found = true;
+        break;
+      }
+      if (!found) throw new Error(`${stand.tag} missing ${item.kind} (${placed} seated)`);
+    }
+  }
+  for (const map of [1, 2] as const) {
+    const have = props.filter((p) => p.zone === "yughott" && p.map === map && p.id.includes("-stal")).length;
+    if (have >= 2) continue;
+    const zone = yugZone(map);
+    let got = have;
+    const edges = YUGHOTT_GRAPHS[map].edges;
+    for (let e = 0; e < edges.length && got < 2; e++) {
+      const edge = edges[e];
+      for (let i = 0; i + 1 < edge.pts.length && got < 2; i++) {
+        const a = yugWorld(edge.pts[i][0], edge.pts[i][1], map);
+        const b = yugWorld(edge.pts[i + 1][0], edge.pts[i + 1][1], map);
+        const steps = 3;
+        for (let s = 0; s <= steps && got < 2; s++) {
+          const t = s / steps;
+          const px = a.x + (b.x - a.x) * t;
+          const pz = a.z + (b.z - a.z) * t;
+          for (let d = 3; d <= 16 && got < 2; d += 2.5) {
+            const x = px;
+            const z = pz - d;
+            if (cameraBand(map, x, z) || !zone.real(x, z) || inCavePool(x, z)) continue;
+            const h = 2.6 + (got % 3) * 0.12;
+            if (lookFringe(x, z, h)) continue;
+            const square = zone.square(x, z);
+            if (!square || square === "?" || square.length < 3) continue;
+            const spec: Seek = { id: `stal-m${map}`, square, hx: 0.5, hz: 0.45, h };
+            if (!fits(zone, spec, avoid, x, z)) continue;
+            if (!stalCluster(map, x, z, h)) continue;
+            const at = claim(spec, x, z);
+            begin(zone, `north-stal-m${map}-${got}`, square, at, h, draw, () => {});
+            got += 1;
+          }
+        }
+      }
+    }
+    if (got < 2) throw new Error(`north stals map ${map} ${got}`);
+  }
+  for (const map of [1, 2] as const) {
+    const zone = yugZone(map);
+    for (const node of YUGHOTT_GRAPHS[map].nodes) {
+      if (!node.id.startsWith("exit_fort")) continue;
+      const gate = yugWorld(node.gx, node.gy, map);
+      let placed = false;
+      for (let ring = 5; ring <= 24 && !placed; ring += 0.55) {
+        const steps = 24;
+        for (let k = 0; k < steps && !placed; k++) {
+          const a = (k / steps) * Math.PI * 2 + ring * 0.17;
+          const x = gate.x + Math.cos(a) * ring;
+          const z = gate.z + Math.sin(a) * ring;
+          if (lookFringe(x, z, 1.3) || inCavePool(x, z)) continue;
+          const square = zone.square(x, z);
+          if (!square || square === "?" || square.length < 3) continue;
+          const spec: Seek = { id: `bar-${node.id}`, square, hx: 0.48, hz: 0.36, h: 1.3 };
+          if (!fits(zone, spec, avoid, x, z)) continue;
+          const at = claim(spec, x, z);
+          begin(zone, `bar-${node.id}`, square, at, 1.3, draw, (add) => orcBarricade(add, at.x, at.z));
+          placed = true;
+        }
+      }
+      if (!placed) throw new Error(`barricade ${node.id}`);
+    }
+  }
+}
+
+function countLookScreen(px: number, pz: number) {
+  let n = 0;
+  for (const prop of props) {
+    if (prop.zone !== "yughott") continue;
+    if (lookOnScreen(px, pz, prop.x, prop.h, prop.z)) n += 1;
+  }
+  return n;
+}
+
+function assertLookRules() {
+  for (const stand of LOOK_STANDS) {
+    for (const dz of [0, -1]) {
+      const n = countLookScreen(stand.x, stand.z + dz);
+      if (n < 5 || n > 12) throw new Error(`${stand.tag} screen ${n} dz ${dz}`);
+    }
+    const mine = props.filter((p) => p.id.startsWith(`look-${stand.tag}-`)).length;
+    if (mine < 5 || mine > 8) throw new Error(`${stand.tag} look ${mine}`);
+  }
+  for (const map of [1, 2] as const) {
+    const stals = props.filter((p) => p.zone === "yughott" && p.map === map && p.id.includes("-stal"));
+    if (stals.length < 2) throw new Error(`stal map ${map} ${stals.length}`);
+    for (const prop of stals) {
+      if (prop.h < 2.5 || prop.h > 3) throw new Error(`${prop.id} stal ${prop.h.toFixed(2)}`);
+      if (!prop.map || cameraBand(prop.map, prop.x, prop.z)) throw new Error(`${prop.id} not north`);
+    }
+  }
+  for (const id of ["exit_fort_h8", "exit_fort_k5", "exit_fort_f7"]) {
+    if (!props.some((p) => p.id === `bar-${id}`)) throw new Error(`barricade ${id}`);
+  }
+  if (!props.some((p) => p.id.includes("-beast"))) throw new Error("beast skulls");
+  if (!props.some((p) => p.id.includes("-skull"))) throw new Error("skull poles");
+}
+
+
 function caveDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: number; z: number; r: number }[]) {
   void raw;
   const draw: Add = (color, w, h, d, x, y, z, yaw) => {
@@ -1451,6 +1706,7 @@ function caveDress(raw: Add, colliders: Solid[], hooks: Hooks, avoid: { x: numbe
   }
   fortExitCrates(draw, colliders, avoid);
   fillYughottScatter(draw, colliders, avoid);
+  placeMiniLegion(draw, avoid);
 }
 
 export function dressOrcCamps(add: Add, colliders: Solid[], hooks: Hooks, avoid: { x: number; z: number; r: number }[]) {
@@ -1592,6 +1848,7 @@ export function assertCampDress(solids: Solid[], squareOf: (prop: CampProp) => s
   walk("yug2", YUGHOTT_GRAPHS[2].edges, (gx, gy) => yugWorld(gx, gy, 2), (x, z) => inYughottGraph(x, z, 0, 2));
   assertFortDensity();
   assertYughottDensity();
+  assertLookRules();
   for (const poi of [...seatedFortPois(), ...seatedYughottPois()]) {
     if (blocked(poi.x, poi.z)) throw new Error(`${poi.id} blocked`);
   }

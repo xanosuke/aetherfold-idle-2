@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, Object3D, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending, BatchedMesh } from "three";
+import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, BackSide, Euler, Float32BufferAttribute, Group, HemisphereLight, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, Object3D, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending, BatchedMesh } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -32,7 +32,7 @@ function groundY(x, z) {
 	return traceFloorY(x, z);
 }
 
-import { fortFlames, orcDressMarks, takeCaveBits, yughottDrums, yughottTorches } from "./orc-dress";
+import { campProps, fortFlames, orcDressMarks, takeCaveBits, yughottDrums, yughottTorches } from "./orc-dress";
 import { buildYughottPaint, buildYughottProps } from "./yughott-ground";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
@@ -4424,7 +4424,7 @@ function buildYard(canvas) {
 	const zoneFog = new Fog(9357551, 26, 52);
 	const ghelsbaFog = new Fog(GHELSBA_FOG.color, GHELSBA_FOG.near, GHELSBA_FOG.far);
 	const fortFog = new Fog(FORT_FOG.color, FORT_FOG.near, FORT_FOG.far);
-	const yughottFog = new Fog(0x15141c, 35, 100);
+	const yughottFog = new Fog(0x15141c, 480, 900);
 	const canyonFog = new Fog(7231552, 18, 40);
 	const caveFog = new Fog(525828, 36, 78);
 	const passFog = new Fog(0x07090d, 42, 120);
@@ -41649,10 +41649,16 @@ function buildYard(canvas) {
 			yugHere[1].visible = show === 1;
 			yugHere[2].visible = show === 2;
 		}
-		const yugSheenNow = scene.userData.yugSheen;
-		if (yugSheenNow && yugSheenNow.length) {
-			const glow = 0.04 + 0.02 * Math.sin(timer.getElapsed() * 1.6);
-			for (let i = 0; i < yugSheenNow.length; i++) yugSheenNow[i].opacity = glow;
+		const yugVoid = scene.userData.yugVoid;
+		if (yugVoid) {
+			yugVoid.visible = grottoNow;
+			if (grottoNow) yugVoid.position.set(px, 8, pz);
+		}
+		const yugSheenMatNow = scene.userData.yugSheenMat;
+		if (yugSheenMatNow && yugSheenMatNow.map) {
+			const t = timer.getElapsed();
+			yugSheenMatNow.map.offset.x = (t * 0.05) % 1;
+			yugSheenMatNow.map.offset.y = (t * 0.02) % 1;
 		}
 		if (sun.castShadow === grottoNow) {
 			sun.castShadow = !grottoNow;
@@ -41669,6 +41675,12 @@ function buildYard(canvas) {
 		const frameMs = performance.now() - frameT;
 		renderSamples.push(frameMs);
 		if (renderSamples.length > 31) renderSamples.shift();
+		let yugPoints = 0;
+		if (grottoNow) {
+			yugPoints = scene.userData.yugPointN || 0;
+			const orcHot = scene.userData.orcLights;
+			if (orcHot) for (let i = 0; i < orcHot.length; i++) if (orcHot[i].intensity > 0.02) yugPoints++;
+		}
 		window.__yardGfx = {
 			pixelRatio: renderer.getPixelRatio(),
 			castShadow: sun.castShadow === true,
@@ -41678,7 +41690,8 @@ function buildYard(canvas) {
 			renderMs,
 			frameMs,
 			renders: renderSamples.slice(),
-			speed
+			speed,
+			yugPoints
 		};
 	}
 	const unsub = useGame.subscribe((s, prev) => {
@@ -41961,6 +41974,7 @@ function buildYard(canvas) {
 	grottoRay.layers.enable(1);
 	const grottoFrom = new Vector3();
 	const grottoTo = new Vector3();
+	const grottoProp = new Vector3();
 	const grottoNdc = new Vector2();
 	const trustIds = new Set(puppets.map((pup) => pup.def.id));
 	let grottoViewAt = 0;
@@ -42107,6 +42121,15 @@ function buildYard(canvas) {
 		const prevVoid = !!(prev && prev.grid && prev.grid.includes("void"));
 		if (!force && prev && Math.hypot((prev.x || 0) - px, (prev.z || 0) - pz) < 2 && prev.portrait === portrait && prev.heroFirst && prev.trustFirst && !prevVoid && (nextVoid || prev.share >= share)) return;
 		if (!force && good < 4 && heroRow.kind !== "hero") return;
+		let propN = 0;
+		const dressed = campProps();
+		for (let i = 0; i < dressed.length; i++) {
+			const prop = dressed[i];
+			if (prop.zone !== "yughott") continue;
+			grottoProp.set(prop.x, foot + Math.min(prop.h, 3) * 0.45, prop.z);
+			grottoProp.project(camera);
+			if (grottoProp.x >= -1 && grottoProp.x <= 1 && grottoProp.y >= -1 && grottoProp.y <= 1 && grottoProp.z >= -1 && grottoProp.z <= 1) propN += 1;
+		}
 		window.__grottoView = {
 			portrait,
 			heroFirst: heroRow.kind === "hero",
@@ -42115,6 +42138,7 @@ function buildYard(canvas) {
 			trust: trustRow,
 			grid,
 			share,
+			props: propN,
 			moving: speed >= 0.4,
 			n: good,
 			first: heroRow.name,
@@ -47897,35 +47921,63 @@ function buildRoom(scene, toonMat, colliders) {
 	const yugGroups = buildYughottPaint(tagChunk);
 	scene.add(yugGroups[1], yugGroups[2]);
 	scene.userData.yugGroups = yugGroups;
+	const yugVoid = new Mesh(new SphereGeometry(220, 10, 8), new MeshBasicMaterial({ color: 0x100e12, side: BackSide, fog: false }));
+	yugVoid.name = "yug-void";
+	yugVoid.frustumCulled = false;
+	yugVoid.castShadow = false;
+	yugVoid.receiveShadow = false;
+	yugVoid.visible = false;
+	scene.add(yugVoid);
+	scene.userData.yugVoid = yugVoid;
 	const paintBag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
 	// Painted tiles are resident at boot. The old heightfield's first-chunk
 	// clock is this first tile, so a grotto hop still has a number under 50ms.
 	paintBag.yug1 = yugGroups[1].userData.paintMs ?? 0;
 	paintBag.yug2 = yugGroups[2].userData.paintMs ?? 0;
-	const yugSheen = [];
-	scene.userData.yugSheen = yugSheen;
+	const yugSheenCanvas = document.createElement("canvas");
+	yugSheenCanvas.width = 64;
+	yugSheenCanvas.height = 64;
+	const yugSheenCtx = yugSheenCanvas.getContext("2d");
+	yugSheenCtx.clearRect(0, 0, 64, 64);
+	yugSheenCtx.strokeStyle = "rgba(220,255,246,0.85)";
+	yugSheenCtx.lineWidth = 2;
+	yugSheenCtx.beginPath();
+	yugSheenCtx.moveTo(0, 52);
+	yugSheenCtx.lineTo(64, 16);
+	yugSheenCtx.stroke();
+	yugSheenCtx.lineWidth = 1;
+	yugSheenCtx.beginPath();
+	yugSheenCtx.moveTo(0, 30);
+	yugSheenCtx.lineTo(64, 2);
+	yugSheenCtx.stroke();
+	const yugSheenTex = new CanvasTexture(yugSheenCanvas);
+	yugSheenTex.colorSpace = SRGBColorSpace;
+	yugSheenTex.wrapS = RepeatWrapping;
+	yugSheenTex.wrapT = RepeatWrapping;
+	yugSheenTex.magFilter = LinearFilter;
+	yugSheenTex.minFilter = LinearFilter;
+	yugSheenTex.repeat.set(3, 3);
+	const yugWaterMat = new MeshBasicMaterial({ color: 0x124e48, fog: false });
+	const yugSheenMat = new MeshBasicMaterial({ color: 0xb7e6df, map: yugSheenTex, transparent: true, opacity: 0.22, depthWrite: false, fog: false });
+	scene.userData.yugSheenMat = yugSheenMat;
 	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcShaftPoolMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
-	const orcDrumGlowMat = new MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.18, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcFallMat = new MeshBasicMaterial({ color: 0xd5e7ff, transparent: true, opacity: 0.42, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const yugParent = (x, z) => yugGroups[grottoMap(x, z) || 1];
-	const drumLights = [];
 	for (const mark of orcDressMarks()) {
 		if (mark.kind === "pool") {
-			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 10), new MeshBasicMaterial({ color: 0x343c48, fog: false }));
+			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 12), yugWaterMat);
 			water.name = "yug-trace";
 			water.rotation.x = -Math.PI / 2;
 			water.position.set(mark.x, mark.y + 0.1, mark.z);
 			water.receiveShadow = false;
 			water.castShadow = false;
-			const sheenMat = new MeshBasicMaterial({ color: 0x8ea0a8, transparent: true, opacity: 0.1, depthWrite: false, fog: false });
-			const sheen = new Mesh(new CircleGeometry((mark.r ?? 4) * 0.92, 10), sheenMat);
+			const sheen = new Mesh(new CircleGeometry((mark.r ?? 4) * 0.96, 12), yugSheenMat);
 			sheen.name = "pool-sheen";
 			sheen.rotation.x = -Math.PI / 2;
 			sheen.position.set(mark.x, mark.y + 0.16, mark.z);
 			sheen.castShadow = false;
 			yugParent(mark.x, mark.z).add(water, sheen);
-			yugSheen.push(sheenMat);
 		} else if (mark.kind === "shaft") {
 			const floor = groundY(mark.x, mark.z);
 			const shaft = new Mesh(new PlaneGeometry(0.18, 1.5), orcShaftMat);
@@ -47945,26 +47997,50 @@ function buildRoom(scene, toonMat, colliders) {
 			scene.add(fall);
 		}
 	}
-	for (const drum of yughottDrums()) {
-		const floor = groundY(drum.x, drum.z);
-		const glow = new Mesh(new CircleGeometry(0.42, 8), orcDrumGlowMat);
-		glow.name = "drum-glow";
-		glow.rotation.x = -Math.PI / 2;
-		glow.position.set(drum.x, floor + 0.95, drum.z);
-		glow.castShadow = false;
-		yugParent(drum.x, drum.z).add(glow);
-		const light = new PointLight(0xffa050, 0.9, 8, 2);
-		light.position.set(drum.x, floor + 1.05, drum.z);
-		yugParent(drum.x, drum.z).add(light);
-		drumLights.push(light);
+	const glowGeo = new PlaneGeometry(0.72, 0.9);
+	const glowMat = new MeshBasicMaterial({ color: 0xffa050, transparent: true, opacity: 0.9, depthWrite: false, fog: false, blending: AdditiveBlending, side: DoubleSide });
+	const glowSpots = { 1: [], 2: [] };
+	const pushGlow = (x, z, y) => {
+		glowSpots[grottoMap(x, z) || 1].push({ x, z, y });
+	};
+	for (const drum of yughottDrums()) pushGlow(drum.x, drum.z, 1.05);
+	for (const torch of yughottTorches()) pushGlow(torch.x, torch.z, 1.35);
+	const glowDummy = new Object3D();
+	for (const map of [1, 2]) {
+		const spots = glowSpots[map];
+		if (!spots.length) continue;
+		const mesh = new InstancedMesh(glowGeo, glowMat, spots.length);
+		mesh.name = "yug-glow";
+		mesh.castShadow = false;
+		mesh.receiveShadow = false;
+		mesh.frustumCulled = false;
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let minZ = Infinity;
+		let maxZ = -Infinity;
+		for (let i = 0; i < spots.length; i++) {
+			const spot = spots[i];
+			const floor = groundY(spot.x, spot.z);
+			glowDummy.position.set(spot.x, floor + spot.y, spot.z);
+			glowDummy.rotation.set(0, 0, 0);
+			glowDummy.scale.set(1, 1, 1);
+			glowDummy.updateMatrix();
+			mesh.setMatrixAt(i, glowDummy.matrix);
+			if (spot.x < minX) minX = spot.x;
+			if (spot.x > maxX) maxX = spot.x;
+			if (spot.z < minZ) minZ = spot.z;
+			if (spot.z > maxZ) maxZ = spot.z;
+		}
+		mesh.instanceMatrix.needsUpdate = true;
+		mesh.count = spots.length;
+		yugGroups[map].add(mesh);
+		tagChunk(mesh, minX - 2, maxX + 2, minZ - 2, maxZ + 2);
 	}
-	for (const torch of yughottTorches()) {
-		const floor = groundY(torch.x, torch.z);
-		const light = new PointLight(0xffa050, 1.15, 9, 2);
-		light.position.set(torch.x, floor + 1.35, torch.z);
-		yugParent(torch.x, torch.z).add(light);
-	}
-	scene.userData.drumLights = drumLights;
+	let yugPointN = 0;
+	yugGroups[1].traverse((obj) => { if (obj.isPointLight) yugPointN++; });
+	yugGroups[2].traverse((obj) => { if (obj.isPointLight) yugPointN++; });
+	scene.userData.yugPointN = yugPointN;
+	scene.userData.drumLights = [];
 	scene.userData.orcFall = orcFallMat;
 	const terrainMat = toonMat(0xffffff);
 	terrainMat.vertexColors = true;

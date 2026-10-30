@@ -349,7 +349,7 @@ function VanadielClock() {
   const mm = row ? String(row.minute).padStart(2, "0") : "--";
   const tint = row ? ["text-hp", "text-bronze", "text-mp", "text-meadow", "text-sky", "text-gold", "text-ink", "text-muted"][row.weekDay] ?? "text-gold" : "text-gold";
   const dayPart = row ? row.daytime ? "Day" : "Night" : "—";
-  return <div className="ffxi-frame flex items-center gap-1.5 whitespace-nowrap px-2 py-1" aria-label={row ? `${row.weekDayName} ${hh}:${mm}, ${row.moonPhase}, ${dayPart}` : "Vana'diel clock"}><p className={`shrink-0 text-[11px] font-semibold leading-none ${tint}`}>{row?.weekDayName ?? "—"}</p><p className="shrink-0 font-display text-sm leading-none tabular-nums text-gold">{hh}:{mm}</p>{row ? <MoonMark phase={row.moonPhase} /> : <span className="text-[11px] leading-none text-muted">—</span>}<p className="shrink-0 text-[11px] leading-none text-ink">{dayPart}</p></div>;
+  return <div className="ffxi-frame flex items-center gap-1.5 whitespace-nowrap px-2 py-1" aria-label={row ? `${row.weekDayName} ${hh}:${mm}, ${row.moonPhase}, ${dayPart}` : "Vana'diel clock"}><p className={`inline-block min-w-[12ch] text-right shrink-0 text-[11px] font-semibold leading-none ${tint}`}>{row?.weekDayName ?? "—"}</p><p className="shrink-0 font-display text-sm leading-none tabular-nums text-gold">{hh}:{mm}</p>{row ? <MoonMark phase={row.moonPhase} /> : <span className="text-[11px] leading-none text-muted">—</span>}<p className="shrink-0 text-[11px] leading-none text-ink">{dayPart}</p></div>;
 }
 function colureName(name) {
   return name.startsWith("Indi-") || name.startsWith("Geo-");
