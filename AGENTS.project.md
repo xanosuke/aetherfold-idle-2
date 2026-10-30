@@ -41,4 +41,12 @@ ZONE LOOK RULES (all zones, Yughott first)
 - Water is a flat coloured plane with a scrolling sheen texture. Fire is a flat sprite or a vertex-coloured flame, never a point light.
 - Nameplates and HP bars always draw above everything (they are HTML; keep them there).
 
+OUTDOOR ZONES (addendum to Zone look rules)
+Dungeons keep the hard borders above. Outdoors override only the points listed here.
+- Ground-type borders: soft, wavy, hand-painted edges for grass, dirt, sand and paths. Hard, jagged edges only for hazards (lava, chasms, deep water).
+- Paint small detail into the ground: grass tufts, flowers, pebbles, at varied density so nothing visibly repeats.
+- Trees: round, readable crowns, 2.5–3× player height, outlined, with a painted shadow just below. A slow vertex-shader sway only (about a 2–3 s period, small amplitude, phase by position). No other ambient motion.
+- Bushes, stumps and logs fill the gaps. 5–8 props on screen.
+- Open fields don't need walls at the screen edge. Zone bounds use cliffs, tree lines or water, at retail exit positions.
+
 

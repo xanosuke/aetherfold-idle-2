@@ -32,7 +32,7 @@ function groundY(x, z) {
 	return traceFloorY(x, z);
 }
 
-import { campProps, fortFlames, orcDressMarks, takeCaveBits, yughottDrums, yughottTorches } from "./orc-dress";
+import { BRAZIER_FLAME_H, campProps, fortFlames, inYughottPool, orcDressMarks, poolRadiusAt, takeCaveBits, yughottDrums, yughottTorches } from "./orc-dress";
 import { buildYughottPaint, buildYughottProps } from "./yughott-ground";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
@@ -41654,11 +41654,9 @@ function buildYard(canvas) {
 			yugVoid.visible = grottoNow;
 			if (grottoNow) yugVoid.position.set(px, 8, pz);
 		}
-		const yugSheenMatNow = scene.userData.yugSheenMat;
-		if (yugSheenMatNow && yugSheenMatNow.map) {
-			const t = timer.getElapsed();
-			yugSheenMatNow.map.offset.x = (t * 0.05) % 1;
-			yugSheenMatNow.map.offset.y = (t * 0.02) % 1;
+		const yugWaterMatNow = scene.userData.yugWaterMat;
+		if (yugWaterMatNow && yugWaterMatNow.userData.shader) {
+			yugWaterMatNow.userData.shader.uniforms.uPoolTime.value = timer.getElapsed();
 		}
 		if (sun.castShadow === grottoNow) {
 			sun.castShadow = !grottoNow;
@@ -41666,6 +41664,7 @@ function buildYard(canvas) {
 		}
 		if (actorBlobs) {
 			actorBlobs.visible = grottoNow;
+			wadeRipples.visible = grottoNow;
 			if (grottoNow) placeActorBlobs();
 		}
 		syncGrottoActors(grottoNow);
@@ -41728,23 +41727,53 @@ function buildYard(canvas) {
 	actorBlobs.receiveShadow = false;
 	actorBlobs.count = 0;
 	actorBlobs.frustumCulled = false;
+	actorBlobs.renderOrder = 1;
 	scene.add(actorBlobs);
+	const rippleGeo = new RingGeometry(0.16, 0.32, 18);
+	rippleGeo.rotateX(-Math.PI / 2);
+	const rippleMat = new MeshBasicMaterial({ color: 0x2a5856, transparent: true, opacity: 0.55, depthWrite: false, fog: false });
+	const wadeRipples = new InstancedMesh(rippleGeo, rippleMat, 16);
+	wadeRipples.name = "wade-ripple";
+	wadeRipples.castShadow = false;
+	wadeRipples.receiveShadow = false;
+	wadeRipples.count = 0;
+	wadeRipples.frustumCulled = false;
+	wadeRipples.renderOrder = 3;
+	wadeRipples.raycast = () => {};
+	scene.add(wadeRipples);
 	const blobDummy = new Object3D();
+	const rippleDummy = new Object3D();
 	const placeActorBlobs = () => {
 		const spots = [hero.root.position];
 		for (let i = 0; i < puppets.length; i++) if (puppets[i].body.root.visible) spots.push(puppets[i].body.root.position);
 		for (let i = 0; i < fieldSlots.length; i++) if (fieldSlots[i].root && fieldSlots[i].root.visible) spots.push(fieldSlots[i].root.position);
-		const n = Math.min(spots.length, actorBlobs.instanceMatrix.count ? 24 : 24);
+		const n = Math.min(spots.length, 24);
+		let wetN = 0;
+		const now = timer.getElapsed();
 		for (let i = 0; i < n; i++) {
 			const p = spots[i];
-			blobDummy.position.set(p.x, groundY(p.x, p.z) + 0.04, p.z);
+			const wet = inYughottPool(p.x, p.z);
+			const gy = groundY(p.x, p.z);
+			blobDummy.position.set(p.x, gy + (wet ? -0.03 : 0.04), p.z);
 			blobDummy.rotation.set(0, 0, 0);
-			blobDummy.scale.set(1, 1, 1);
+			const spread = wet ? 0.78 : 1;
+			blobDummy.scale.set(spread, 1, spread);
 			blobDummy.updateMatrix();
 			actorBlobs.setMatrixAt(i, blobDummy.matrix);
+			if (wet && wetN < 16) {
+				const grow = 0.7 + ((now * 0.55 + wetN * 0.37) % 1.4);
+				rippleDummy.position.set(p.x, gy + 0.11, p.z);
+				rippleDummy.rotation.set(0, 0, 0);
+				rippleDummy.scale.set(grow, 1, grow);
+				rippleDummy.updateMatrix();
+				wadeRipples.setMatrixAt(wetN, rippleDummy.matrix);
+				wetN += 1;
+			}
 		}
 		actorBlobs.count = n;
 		actorBlobs.instanceMatrix.needsUpdate = true;
+		wadeRipples.count = wetN;
+		wadeRipples.instanceMatrix.needsUpdate = true;
 	};
 	const grottoActorMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: gradient });
 	const grottoBatch = new BatchedMesh(2048, 220000, 420000, grottoActorMat);
@@ -42018,6 +42047,7 @@ function buildYard(canvas) {
 	function grottoOpaque(obj) {
 		if (obj === heroHit || obj.name === "trust-hit") return !!obj.matrixWorld;
 		if (!obj.isMesh || !obj.visible || !obj.matrixWorld) return false;
+		if (obj.name === "yug-water") return true;
 		const mat = obj.material;
 		if (mat && (mat.transparent || mat.opacity < 0.9 || mat.depthWrite === false)) return false;
 		return true;
@@ -42030,7 +42060,7 @@ function buildYard(canvas) {
 		const owner = grottoOwner(hit.object);
 		if (owner === "hero") return { kind: "hero", name, y, ground, rise: y - ground };
 		if (owner === "trust") return { kind: "trust", name, y, ground, rise: y - ground };
-		if (name === "yug-trace") return { kind: "floor", name, y, ground, rise: y - ground };
+		if (name === "yug-trace" || name === "yug-water") return { kind: "floor", name, y, ground, rise: y - ground };
 		const ny = hit.face ? Math.abs(hit.face.normal.y) : 1;
 		if (name.includes("trace")) {
 			const map = grottoMap(hit.point.x, hit.point.z);
@@ -47934,50 +47964,77 @@ function buildRoom(scene, toonMat, colliders) {
 	// clock is this first tile, so a grotto hop still has a number under 50ms.
 	paintBag.yug1 = yugGroups[1].userData.paintMs ?? 0;
 	paintBag.yug2 = yugGroups[2].userData.paintMs ?? 0;
-	const yugSheenCanvas = document.createElement("canvas");
-	yugSheenCanvas.width = 64;
-	yugSheenCanvas.height = 64;
-	const yugSheenCtx = yugSheenCanvas.getContext("2d");
-	yugSheenCtx.clearRect(0, 0, 64, 64);
-	yugSheenCtx.strokeStyle = "rgba(220,255,246,0.85)";
-	yugSheenCtx.lineWidth = 2;
-	yugSheenCtx.beginPath();
-	yugSheenCtx.moveTo(0, 52);
-	yugSheenCtx.lineTo(64, 16);
-	yugSheenCtx.stroke();
-	yugSheenCtx.lineWidth = 1;
-	yugSheenCtx.beginPath();
-	yugSheenCtx.moveTo(0, 30);
-	yugSheenCtx.lineTo(64, 2);
-	yugSheenCtx.stroke();
-	const yugSheenTex = new CanvasTexture(yugSheenCanvas);
-	yugSheenTex.colorSpace = SRGBColorSpace;
-	yugSheenTex.wrapS = RepeatWrapping;
-	yugSheenTex.wrapT = RepeatWrapping;
-	yugSheenTex.magFilter = LinearFilter;
-	yugSheenTex.minFilter = LinearFilter;
-	yugSheenTex.repeat.set(3, 3);
-	const yugWaterMat = new MeshBasicMaterial({ color: 0x124e48, fog: false });
-	const yugSheenMat = new MeshBasicMaterial({ color: 0xb7e6df, map: yugSheenTex, transparent: true, opacity: 0.22, depthWrite: false, fog: false });
-	scene.userData.yugSheenMat = yugSheenMat;
+	const yugWaterMat = new MeshBasicMaterial({
+		color: 0xffffff,
+		vertexColors: true,
+		transparent: true,
+		opacity: 0.82,
+		depthWrite: false,
+		fog: false
+	});
+	yugWaterMat.customProgramCacheKey = () => "yug-pool-sheen";
+	yugWaterMat.onBeforeCompile = (shader) => {
+		shader.uniforms.uPoolTime = { value: 0 };
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vPoolUv;").replace("#include <uv_vertex>", "#include <uv_vertex>\nvPoolUv = uv;");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uPoolTime;\nvarying vec2 vPoolUv;").replace("#include <color_fragment>", "#include <color_fragment>\n{\nfloat t = uPoolTime;\nvec2 p = vPoolUv;\nvec2 b0 = vec2(sin(t * 1.26), cos(t * 1.05)) * 0.42;\nvec2 b1 = vec2(sin(t * 1.05 + 2.1), cos(t * 1.26 + 1.2)) * 0.48;\nvec2 b2 = vec2(cos(t * 1.15 + 4.0), sin(t * 1.47 + 2.4)) * 0.36;\nvec2 b3 = vec2(sin(t * 1.47 + 5.2) * 0.5, cos(t * 1.05 + 0.4) * 0.28);\nfloat hi = 0.0;\nhi += exp(-dot(p - b0, p - b0) * 14.0);\nhi += exp(-dot(p - b1, p - b1) * 16.0);\nhi += exp(-dot(p - b2, p - b2) * 18.0);\nhi += exp(-dot(p - b3, p - b3) * 15.0);\nfloat ripple = exp(-pow(fract(length(p) * 1.35 - t * 0.2) - 0.12, 2.0) * 90.0);\nfloat add = min(0.015, hi * 0.004 + ripple * 0.006);\ndiffuseColor.rgb += vec3(0.72, 0.9, 0.88) * add;\n}");
+		if (!shader.vertexShader.includes("vPoolUv") || !shader.fragmentShader.includes("uPoolTime")) throw new Error("pool sheen shader");
+		yugWaterMat.userData.shader = shader;
+	};
+	scene.userData.yugWaterMat = yugWaterMat;
 	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcShaftPoolMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcFallMat = new MeshBasicMaterial({ color: 0xd5e7ff, transparent: true, opacity: 0.42, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const yugParent = (x, z) => yugGroups[grottoMap(x, z) || 1];
+	const srgbToLinear = (byte) => {
+		const c = byte / 255;
+		return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+	};
+	const poolCenter = [srgbToLinear(0x1f), srgbToLinear(0x4a), srgbToLinear(0x4c)];
+	const poolEdge = [srgbToLinear(0x2d), srgbToLinear(0x64), srgbToLinear(0x66)];
 	for (const mark of orcDressMarks()) {
 		if (mark.kind === "pool") {
-			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 12), yugWaterMat);
-			water.name = "yug-trace";
-			water.rotation.x = -Math.PI / 2;
-			water.position.set(mark.x, mark.y + 0.1, mark.z);
+			const segs = 52;
+			const pos = [];
+			const col = [];
+			const uv = [];
+			const idx = [];
+			const y = mark.y + 0.07;
+			const pushV = (x, z, tint) => {
+				pos.push(x, y, z);
+				col.push(tint[0], tint[1], tint[2]);
+				uv.push((x - mark.x) / mark.r, (z - mark.z) / mark.r);
+			};
+			pushV(mark.x, mark.z, poolCenter);
+			const ringAt = (scale, tint) => {
+				const base = pos.length / 3;
+				for (let i = 0; i < segs; i++) {
+					const a = (i / segs) * Math.PI * 2;
+					const edge = poolRadiusAt(mark.x, mark.z, mark.r, mark.x + Math.cos(a), mark.z + Math.sin(a));
+					pushV(mark.x + Math.cos(a) * edge * scale, mark.z + Math.sin(a) * edge * scale, tint);
+				}
+				return base;
+			};
+			const inner = ringAt(0.72, poolCenter);
+			const outer = ringAt(1, poolEdge);
+			for (let i = 0; i < segs; i++) {
+				const a = inner + i;
+				const b = inner + ((i + 1) % segs);
+				const c = outer + i;
+				const d = outer + ((i + 1) % segs);
+				idx.push(0, b, a, a, b, d, a, d, c);
+			}
+			const geo = new BufferGeometry();
+			geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+			geo.setAttribute("color", new Float32BufferAttribute(col, 3));
+			geo.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+			geo.setIndex(idx);
+			const water = new Mesh(geo, yugWaterMat);
+			water.name = "yug-water";
 			water.receiveShadow = false;
 			water.castShadow = false;
-			const sheen = new Mesh(new CircleGeometry((mark.r ?? 4) * 0.96, 12), yugSheenMat);
-			sheen.name = "pool-sheen";
-			sheen.rotation.x = -Math.PI / 2;
-			sheen.position.set(mark.x, mark.y + 0.16, mark.z);
-			sheen.castShadow = false;
-			yugParent(mark.x, mark.z).add(water, sheen);
+			water.renderOrder = 2;
+			water.frustumCulled = false;
+			yugParent(mark.x, mark.z).add(water);
 		} else if (mark.kind === "shaft") {
 			const floor = groundY(mark.x, mark.z);
 			const shaft = new Mesh(new PlaneGeometry(0.18, 1.5), orcShaftMat);
@@ -48000,11 +48057,11 @@ function buildRoom(scene, toonMat, colliders) {
 	const glowGeo = new PlaneGeometry(0.72, 0.9);
 	const glowMat = new MeshBasicMaterial({ color: 0xffa050, transparent: true, opacity: 0.9, depthWrite: false, fog: false, blending: AdditiveBlending, side: DoubleSide });
 	const glowSpots = { 1: [], 2: [] };
-	const pushGlow = (x, z, y) => {
-		glowSpots[grottoMap(x, z) || 1].push({ x, z, y });
+	const pushGlow = (x, z, y, sx, sy) => {
+		glowSpots[grottoMap(x, z) || 1].push({ x, z, y, sx, sy });
 	};
-	for (const drum of yughottDrums()) pushGlow(drum.x, drum.z, 1.05);
-	for (const torch of yughottTorches()) pushGlow(torch.x, torch.z, 1.35);
+	for (const drum of yughottDrums()) pushGlow(drum.x, drum.z, 0.9 + BRAZIER_FLAME_H * 0.5, 0.42, BRAZIER_FLAME_H / 0.9);
+	for (const torch of yughottTorches()) pushGlow(torch.x, torch.z, 1.35, 1, 1);
 	const glowDummy = new Object3D();
 	for (const map of [1, 2]) {
 		const spots = glowSpots[map];
@@ -48023,7 +48080,7 @@ function buildRoom(scene, toonMat, colliders) {
 			const floor = groundY(spot.x, spot.z);
 			glowDummy.position.set(spot.x, floor + spot.y, spot.z);
 			glowDummy.rotation.set(0, 0, 0);
-			glowDummy.scale.set(1, 1, 1);
+			glowDummy.scale.set(spot.sx, spot.sy, 1);
 			glowDummy.updateMatrix();
 			mesh.setMatrixAt(i, glowDummy.matrix);
 			if (spot.x < minX) minX = spot.x;
@@ -48035,6 +48092,39 @@ function buildRoom(scene, toonMat, colliders) {
 		mesh.count = spots.length;
 		yugGroups[map].add(mesh);
 		tagChunk(mesh, minX - 2, maxX + 2, minZ - 2, maxZ + 2);
+	}
+	const drumList = yughottDrums();
+	if (drumList.length) {
+		const decalGeo = new CircleGeometry(1.2, 16);
+		decalGeo.rotateX(-Math.PI / 2);
+		const decalMat = new MeshBasicMaterial({ color: 0xffa050, transparent: true, opacity: 0.25, depthWrite: false, fog: false, blending: AdditiveBlending });
+		const decals = new InstancedMesh(decalGeo, decalMat, drumList.length);
+		decals.name = "yug-glow";
+		decals.castShadow = false;
+		decals.receiveShadow = false;
+		decals.frustumCulled = false;
+		decals.renderOrder = 1;
+		decals.raycast = () => {};
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let minZ = Infinity;
+		let maxZ = -Infinity;
+		for (let i = 0; i < drumList.length; i++) {
+			const spot = drumList[i];
+			glowDummy.position.set(spot.x, groundY(spot.x, spot.z) + 0.05, spot.z);
+			glowDummy.rotation.set(0, 0, 0);
+			glowDummy.scale.set(1, 1, 1);
+			glowDummy.updateMatrix();
+			decals.setMatrixAt(i, glowDummy.matrix);
+			if (spot.x < minX) minX = spot.x;
+			if (spot.x > maxX) maxX = spot.x;
+			if (spot.z < minZ) minZ = spot.z;
+			if (spot.z > maxZ) maxZ = spot.z;
+		}
+		decals.instanceMatrix.needsUpdate = true;
+		decals.count = drumList.length;
+		yugGroups[1].add(decals);
+		tagChunk(decals, minX - 2, maxX + 2, minZ - 2, maxZ + 2);
 	}
 	let yugPointN = 0;
 	yugGroups[1].traverse((obj) => { if (obj.isPointLight) yugPointN++; });

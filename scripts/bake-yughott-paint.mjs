@@ -2,8 +2,8 @@
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { YUGHOTT_CELL, YUGHOTT_GEO, YUGHOTT_ORIGINS, gridToWorld as yugWorld } from "../src/game/yughott-graph.ts";
-import { dressOrcCamps, campProps } from "../src/game/orc-dress.ts";
+import { YUGHOTT_CELL, YUGHOTT_GEO, YUGHOTT_ORIGINS } from "../src/game/yughott-graph.ts";
+import { dressOrcCamps, campProps, yughottPoolSpecs, poolRadiusAt } from "../src/game/orc-dress.ts";
 import { seatedFortPois, seatedYughottPois } from "../src/game/orc-height.ts";
 import { ORC_GATES } from "../src/game/ghelsba.ts";
 
@@ -16,29 +16,20 @@ const PAD = 96;
 const STEP = 4;
 const MAPS = [1, 2];
 
-function poolDiscs(gx, gy, r) {
-  const c = yugWorld(gx, gy, 1);
-  return [
-    { x: c.x, z: c.z, r },
-    { x: c.x + r * 0.35, z: c.z - r * 0.2, r: r * 0.72 },
-    { x: c.x - r * 0.28, z: c.z + r * 0.32, r: r * 0.64 },
-  ];
-}
-const DAMP = [...poolDiscs(5.45, 8.5, 8.5), ...poolDiscs(9.55, 6.62, 8.2)];
+const POOLS = yughottPoolSpecs();
 
-function jagAt(x, z) {
-  for (const d of DAMP) {
-    const dx = x - d.x;
-    const dz = z - d.z;
-    const dist = Math.hypot(dx, dz);
-    const ang = Math.atan2(dz, dx);
-    const step = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 24);
-    const jag = ((step * 17) % 5) * 0.22 - 0.44;
-    const edge = dist - (d.r + jag);
-    if (edge >= -0.05 && edge <= 0.7) return 1;
-    if (edge < -0.05 && edge > -1.15) return 2;
+function rimKind(x, z) {
+  for (const pool of POOLS) {
+    const edge = poolRadiusAt(pool.x, pool.z, pool.water, x, z);
+    const dist = Math.hypot(x - pool.x, z - pool.z);
+    const ang = Math.atan2(z - pool.z, x - pool.x);
+    const sector = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 11);
+    const width = 0.4 + ((sector * 5) % 4) * 0.1;
+    const t = dist - edge;
+    if (t >= 0 && t < 0.12) return "lip";
+    if (t >= 0.12 && t < width) return "stone";
   }
-  return 0;
+  return "";
 }
 
 function shadowSpots() {
@@ -393,17 +384,15 @@ function bakeMap(map) {
           if (inside && map === 1) {
             const wx = ox + (srcI + 0.5) / RES;
             const wz = oz + (srcJ + 0.5) / RES;
-            const jag = jagAt(wx, wz);
-            if (jag === 1) {
-              r = 32;
-              g = 58;
-              b = 60;
-              [r, g, b] = avoidClear(r, g, b);
-            } else if (jag === 2) {
-              r = 40;
-              g = 54;
-              b = 58;
-              [r, g, b] = avoidClear(r, g, b);
+            const kind = rimKind(wx, wz);
+            if (kind === "stone") {
+              r = 0x24;
+              g = 0x22;
+              b = 0x2a;
+            } else if (kind === "lip") {
+              r = 0x4a;
+              g = 0x44;
+              b = 0x50;
             }
           }
           const p = (row * pw + col) * 4;

@@ -232,6 +232,57 @@ function grottoLum(png) {
   return vals.length ? vals[Math.floor(vals.length * 0.7)] : 0;
 }
 
+function poolFrameStats(png) {
+  const { width, height, data } = decodePng(png);
+  const y0 = Math.floor(height * 0.16);
+  const y1 = Math.floor(height * 0.62);
+  const at = (x, y) => {
+    const i = (y * width + x) * 4;
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return { r, g, b, L };
+  };
+  const teal = (p) => p.g > p.r + 10 && p.b > p.r + 6 && Math.abs(p.g - p.b) < 20 && p.b < p.g + 30 && p.r < 90 && p.L > 0.08 && p.L < 0.6;
+  let waterN = 0;
+  let sheen = 0;
+  const floor = [];
+  const openL = [];
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const p = at(x, y);
+      if (teal(p)) waterN += 1;
+    }
+  }
+  for (let y = y0; y < y1; y += 2) {
+    for (let x = 8; x < width - 8; x += 2) {
+      const p = at(x, y);
+      if (!teal(p)) {
+        const spread = Math.max(p.r, p.g, p.b) - Math.min(p.r, p.g, p.b);
+        if (spread < 36 && p.L >= 0.1 && p.L <= 0.42 && p.r > 24) floor.push(p.L);
+        continue;
+      }
+      if (y + 8 >= height) continue;
+      if (!teal(at(x + 8, y)) || !teal(at(x - 8, y)) || !teal(at(x, y + 8)) || !teal(at(x, y - 8))) continue;
+      openL.push(p.L);
+    }
+  }
+  floor.sort((a, b) => a - b);
+  openL.sort((a, b) => a - b);
+  const base = openL.length ? openL[Math.floor(openL.length * 0.5)] : 0;
+  sheen = base;
+  for (const L of openL) if (L > base + 0.14 && L > sheen) sheen = L;
+  const samples = Math.ceil(height / 2) * Math.ceil(width / 2);
+  return {
+    cover: waterN / samples,
+    sheen,
+    floor: floor.length ? floor[Math.floor(floor.length * 0.5)] : 0.24,
+    waterN,
+    floorN: floor.length,
+  };
+}
+
 function canvasStats(png) {
   const { width, height, data } = decodePng(png);
   let black = 0;
@@ -924,6 +975,19 @@ async function assertSeat(browser, url, seated) {
       if (!(lum >= 0.12 && lum <= 0.30)) {
         await context.close();
         return { ok: false, error: `${view.name} ${stand.name} floor lum ${lum.toFixed(3)}`, shots };
+      }
+      if (stand.square === "F-9" && view.name === "portrait") {
+        const canvasPng = await page.locator("canvas").first().screenshot({ timeout: 15000, animations: "disabled" });
+        const pool = poolFrameStats(canvasPng);
+        console.log(`POOL ${stand.name} cover ${pool.cover.toFixed(3)} sheen ${pool.sheen.toFixed(3)} floor ${pool.floor.toFixed(3)} water ${pool.waterN}`);
+        if (pool.cover > 0.45) {
+          await context.close();
+          return { ok: false, error: `${stand.name} pool cover ${pool.cover.toFixed(3)}`, shots };
+        }
+        if (pool.waterN > 40 && pool.sheen > pool.floor + 0.12) {
+          await context.close();
+          return { ok: false, error: `${stand.name} sheen ${pool.sheen.toFixed(3)} floor ${pool.floor.toFixed(3)}`, shots };
+        }
       }
       console.log(`GROTTO ${view.name} ${stand.name} lum ${lum.toFixed(3)} share ${viewSnap.share.toFixed(2)} hero ${viewSnap.hero && viewSnap.hero.name} trust ${viewSnap.trust && viewSnap.trust.name}`);
       shots.push({ name: stand.name, view: view.name, path: shotPath, lum });

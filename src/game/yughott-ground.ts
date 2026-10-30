@@ -25,7 +25,7 @@ import { YUGHOTT_PAINT } from "./yughott-paint.generated";
 
 type Bit = {
   kind: string;
-  shape: "box" | "cone";
+  shape: "box" | "cone" | "cyl";
   color: number;
   sx: number;
   sy: number;
@@ -194,6 +194,42 @@ function coneRing(segs: number, y: number, r: number) {
   return out;
 }
 
+function cylinderParts(segs: number) {
+  const verts: number[][] = [];
+  const rows: number[][] = [];
+  for (let y = 0; y <= 1; y++) {
+    const row: number[] = [];
+    const py = 0.5 - y;
+    for (let x = 0; x <= segs; x++) {
+      const theta = (x / segs) * Math.PI * 2;
+      row.push(verts.length);
+      verts.push([Math.sin(theta) * 0.5, py, Math.cos(theta) * 0.5]);
+    }
+    rows.push(row);
+  }
+  const faces: number[][] = [];
+  for (let x = 0; x < segs; x++) {
+    const a = rows[0][x];
+    const b = rows[1][x];
+    const c = rows[1][x + 1];
+    const d = rows[0][x + 1];
+    faces.push([a, b, d]);
+    faces.push([b, c, d]);
+  }
+  const top = verts.length;
+  verts.push([0, 0.5, 0]);
+  const bot = verts.length;
+  verts.push([0, -0.5, 0]);
+  for (let x = 0; x < segs; x++) {
+    faces.push([top, rows[0][x + 1], rows[0][x]]);
+    faces.push([bot, rows[1][x], rows[1][x + 1]]);
+  }
+  return { verts, faces };
+}
+
+const CYL_SEGS = 10;
+const CYL = cylinderParts(CYL_SEGS);
+
 function appendTransformed(
   pos: number[],
   col: number[],
@@ -288,6 +324,7 @@ export function buildYughottProps(groups: Record<1 | 2, Group>, bits: Bit[], tag
     for (const bit of list) {
       tint.setHex(bit.color);
       if (bit.shape === "cone") appendTransformed(pos, col, idx, shell, coneVerts, coneFaces, bit, tint);
+      else if (bit.shape === "cyl") appendTransformed(pos, col, idx, shell, CYL.verts, CYL.faces, bit, tint);
       else appendTransformed(pos, col, idx, shell, boxCorners, boxFaces, bit, tint);
       minX = Math.min(minX, bit.x);
       maxX = Math.max(maxX, bit.x);
