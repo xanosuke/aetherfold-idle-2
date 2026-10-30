@@ -2235,11 +2235,18 @@ function buildYard(canvas) {
 	let shadowMark = null;
 	function cullZoneChunks() {
 		const lim = 60 * 60;
+		const grotto = inYughott(px, pz);
 		for (let i = 0; i < zoneChunks.length; i++) {
 			const c = zoneChunks[i];
+			const name = c.mesh.name || "";
+			const keep = name.startsWith("yug");
 			const dx = px < c.minX ? c.minX - px : px > c.maxX ? px - c.maxX : 0;
 			const dz = pz < c.minZ ? c.minZ - pz : pz > c.maxZ ? pz - c.maxZ : 0;
 			const on = dx * dx + dz * dz <= lim;
+			if (grotto && !keep) {
+				if (c.mesh.visible) c.mesh.visible = false;
+				continue;
+			}
 			if (c.mesh.visible !== on) c.mesh.visible = on;
 		}
 		if (!shadowMark || Math.hypot(px - shadowMark.x, pz - shadowMark.z) > 8) {
@@ -5521,7 +5528,8 @@ function buildYard(canvas) {
 		const runes = new Group();
 		runes.name = "runes";
 		const runeR = hex ? .52 : .66;
-		for (let i = 0; i < 8; i++) {
+		const runeN = inYughott(px, pz) ? 0 : 8;
+		for (let i = 0; i < runeN; i++) {
 			const tick2 = new Mesh(new BoxGeometry(hex ? .1 : .14, .025, hex ? .028 : .035), chantMat(look2.accent, .9));
 			const a = i / 8 * Math.PI * 2;
 			tick2.position.set(Math.cos(a) * runeR, .055, Math.sin(a) * runeR);
@@ -5531,7 +5539,7 @@ function buildYard(canvas) {
 		}
 		const motes = new Group();
 		motes.name = "motes";
-		const n = hex ? 6 : 10;
+		const n = inYughott(px, pz) ? 4 : hex ? 6 : 10;
 		for (let i = 0; i < n; i++) motes.add(makeElementMote(look2, i));
 		g.add(circle, inner, runes, motes);
 		if (hex) {
@@ -33545,7 +33553,7 @@ function buildYard(canvas) {
 			cage.userData.ownGeo = true;
 			cage.userData.peak = 1;
 			g.add(cage);
-			if (tier >= 2) {
+			if (!inYughott(x, z) && tier >= 2) {
 				const outer = new Mesh(new IcosahedronGeometry(.98, 0), new MeshBasicMaterial({
 					color: film,
 					wireframe: true,
@@ -33560,18 +33568,20 @@ function buildYard(canvas) {
 				outer.userData.peak = .65;
 				g.add(outer);
 			}
-			const body = new Mesh(new SphereGeometry(.58, 10, 8), new MeshBasicMaterial({
-				color: film,
-				transparent: true,
-				opacity: .22,
-				depthWrite: false,
-				toneMapped: false,
-				side: 2
-			}));
-			body.position.y = .95;
-			body.userData.ownGeo = true;
-			body.userData.peak = .28;
-			g.add(body);
+			if (!inYughott(x, z)) {
+				const body = new Mesh(new SphereGeometry(.58, 10, 8), new MeshBasicMaterial({
+					color: film,
+					transparent: true,
+					opacity: .22,
+					depthWrite: false,
+					toneMapped: false,
+					side: 2
+				}));
+				body.position.y = .95;
+				body.userData.ownGeo = true;
+				body.userData.peak = .28;
+				g.add(body);
+			}
 		} else {
 			const dome = new Mesh(new SphereGeometry(.76, 14, 8, 0, Math.PI * 2, 0, Math.PI * .58), new MeshBasicMaterial({
 				color,
@@ -41621,7 +41631,51 @@ function buildYard(canvas) {
 		padEdgeY = false;
 		return null;
 	}
+	const grottoFxHide = [];
+	function grottoFxRelease() {
+		for (let i = 0; i < grottoFxHide.length; i++) grottoFxHide[i].visible = true;
+		grottoFxHide.length = 0;
+	}
+	function grottoFxMesh(mesh, out) {
+		if (mesh && mesh.isMesh && mesh.visible) out.push(mesh);
+	}
+	function grottoFxTree(obj, out) {
+		if (!obj) return;
+		grottoFxMesh(obj, out);
+		const kids = obj.children;
+		if (!kids) return;
+		for (let i = 0; i < kids.length; i++) grottoFxTree(kids[i], out);
+	}
+	function capGrottoFx() {
+		if (!inYughott(px, pz)) return;
+		const fx = [];
+		if (chantFx) {
+			grottoFxTree(chantFx.g, fx);
+			grottoFxTree(chantFx.mark, fx);
+		}
+		for (let i = 0; i < puppets.length; i++) {
+			const chant = puppets[i].chant;
+			if (!chant) continue;
+			grottoFxTree(chant.g, fx);
+			grottoFxTree(chant.mark, fx);
+		}
+		for (let i = 0; i < embers.length; i++) grottoFxMesh(embers[i].mesh, fx);
+		for (let i = 0; i < rings.length; i++) grottoFxTree(rings[i].g, fx);
+		for (let i = 0; i < sparks.length; i++) grottoFxTree(sparks[i].g, fx);
+		const keep = 16;
+		if (fx.length <= keep) return;
+		for (let i = 0; i < fx.length; i++) {
+			const geo = fx[i].geometry;
+			if (geo && !geo.boundingSphere) geo.computeBoundingSphere();
+		}
+		fx.sort((a, b) => ((b.geometry && b.geometry.boundingSphere && b.geometry.boundingSphere.radius) || 0) - ((a.geometry && a.geometry.boundingSphere && a.geometry.boundingSphere.radius) || 0));
+		for (let i = keep; i < fx.length; i++) {
+			fx[i].visible = false;
+			grottoFxHide.push(fx[i]);
+		}
+	}
 	function frame(now) {
+		grottoFxRelease();
 		const frameT = performance.now();
 		timer.update(now);
 		stepTraceMeshes(px, pz);
@@ -41668,6 +41722,7 @@ function buildYard(canvas) {
 			if (grottoNow) placeActorBlobs();
 		}
 		syncGrottoActors(grottoNow);
+		capGrottoFx();
 		const renderT = performance.now();
 		renderer.render(scene, camera);
 		const renderMs = performance.now() - renderT;
@@ -42177,6 +42232,73 @@ function buildYard(canvas) {
 			ms: Math.round(performance.now() - now)
 		};
 	}
+	window.__frameCast = (cols = 8, rows = 12) => {
+		camera.updateMatrixWorld();
+		scene.updateMatrixWorld(true);
+		const meshes = [];
+		const saved = [];
+		scene.traverse((obj) => {
+			if (!obj.isMesh || !obj.visible) return;
+			meshes.push(obj);
+			if (obj.raycast !== Mesh.prototype.raycast) {
+				saved.push(obj);
+				obj.raycast = Mesh.prototype.raycast;
+			}
+		});
+		const cell = [];
+		const unique = new Map();
+		for (let iy = 0; iy < rows; iy++) {
+			for (let ix = 0; ix < cols; ix++) {
+				const nx = cols === 1 ? 0 : -0.96 + (1.92 * ix) / (cols - 1);
+				const ny = rows === 1 ? 0 : 0.96 - (1.92 * iy) / (rows - 1);
+				grottoNdc.set(nx, ny);
+				grottoRay.setFromCamera(grottoNdc, camera);
+				grottoRay.far = 260;
+				const hits = grottoHits(meshes);
+				const first = hits[0];
+				const name = first ? first.object.name || "unnamed" : "miss";
+				const mat = first && first.object.material;
+				const color = mat && mat.color ? mat.color.getHexString() : "";
+				const row = {
+					ix,
+					iy,
+					name,
+					mat: mat ? mat.type : "",
+					color,
+					vertexColors: !!(mat && mat.vertexColors),
+					map: !!(mat && mat.map),
+					x: first ? Math.round(first.point.x * 10) / 10 : null,
+					y: first ? Math.round(first.point.y * 10) / 10 : null,
+					z: first ? Math.round(first.point.z * 10) / 10 : null,
+				};
+				cell.push(row);
+				if (first && !unique.has(first.object)) {
+					const wp = new Vector3();
+					first.object.getWorldPosition(wp);
+					const geo = first.object.geometry;
+					if (geo && !geo.boundingSphere) geo.computeBoundingSphere();
+					const worldScale = new Vector3();
+					first.object.getWorldScale(worldScale);
+					const span = (geo && geo.boundingSphere ? geo.boundingSphere.radius : 0) * Math.max(worldScale.x, worldScale.y, worldScale.z);
+					unique.set(first.object, {
+						name,
+						mat: row.mat,
+						color,
+						vertexColors: row.vertexColors,
+						map: row.map,
+						px: Math.round(wp.x * 10) / 10,
+						py: Math.round(wp.y * 10) / 10,
+						pz: Math.round(wp.z * 10) / 10,
+						span: Math.round(span * 10) / 10,
+						hits: 0,
+					});
+				}
+				if (first) unique.get(first.object).hits++;
+			}
+		}
+		for (const obj of saved) obj.raycast = () => {};
+		return { meshes: [...unique.values()], cell };
+	};
 	function publishSeatAudit() {
 		const monsters = [];
 		for (const slot of fieldSlots) {
@@ -47951,7 +48073,7 @@ function buildRoom(scene, toonMat, colliders) {
 	const yugGroups = buildYughottPaint(tagChunk);
 	scene.add(yugGroups[1], yugGroups[2]);
 	scene.userData.yugGroups = yugGroups;
-	const yugVoid = new Mesh(new SphereGeometry(220, 10, 8), new MeshBasicMaterial({ color: 0x100e12, side: BackSide, fog: false }));
+	const yugVoid = new Mesh(new SphereGeometry(220, 24, 16), new MeshBasicMaterial({ color: 0x1a1820, side: BackSide, fog: false }));
 	yugVoid.name = "yug-void";
 	yugVoid.frustumCulled = false;
 	yugVoid.castShadow = false;

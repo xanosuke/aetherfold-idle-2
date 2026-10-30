@@ -10,7 +10,7 @@ import { ORC_GATES } from "../src/game/ghelsba.ts";
 const root = resolve(import.meta.dirname, "..");
 const pub = resolve(root, "public/yughott");
 const outTs = resolve(root, "src/game/yughott-paint.generated.ts");
-const RES = 2;
+const RES = 4;
 const TILE = 256;
 const PAD = 96;
 const STEP = 4;
@@ -258,55 +258,94 @@ function clampByte(n) {
 }
 
 function avoidClear(r, g, b) {
-  r = r < 44 ? 44 : r;
-  g = g < 42 ? 42 : g;
-  b = b < 50 ? 50 : b;
-  if (r === 21 && g === 20 && b === 28) return [22, 21, 30];
+  r = clampByte(r);
+  g = clampByte(g);
+  b = clampByte(b);
+  if (Math.abs(r - 21) <= 2 && Math.abs(g - 20) <= 2 && Math.abs(b - 28) <= 2) return [26, 24, 32];
   return [r, g, b];
 }
 
 function paintPixel(inside, distIn, distOut, i, j) {
-  if (inside) {
-    const n = hash2(i * 0.17, j * 0.17);
-    const broad = hash2(i * 0.04 + 3, j * 0.04 - 1);
-    let r = 62 + (n - 0.5) * 14;
-    let g = 57 + (hash2(j, i) - 0.5) * 12;
-    let b = 63 + (hash2(i + 9, j - 4) - 0.5) * 12;
-    if (broad < 0.16) {
-      r -= 10;
-      g -= 4;
-      b += 2;
+  if (!inside) {
+    const yalms = distIn / RES;
+    const jag = (hash2((i / (RES * 3)) | 0, (j / (RES * 4)) | 0) - 0.5) * 6;
+    const t = Math.max(0, Math.min(1, (yalms + jag - 1.5) / 22));
+    let r = 0x1c + (0x1a - 0x1c) * t;
+    let g = 0x1a + (0x18 - 0x1a) * t;
+    let b = 0x22 + (0x20 - 0x22) * t;
+    const crackCell = 40 * RES;
+    const bx = (i / crackCell) | 0;
+    const by = (j / crackCell) | 0;
+    const qx = i % crackCell;
+    const qy = j % crackCell;
+    const shift = (hash2(bx + 2, by) - 0.5) * crackCell * 0.4;
+    const diag = Math.abs(qx * 0.6 - qy - shift);
+    if (diag < RES * 1.3 && hash2(bx, by + 4) > 0.35) {
+      r = 0x14;
+      g = 0x12;
+      b = 0x18;
     }
-    if (broad > 0.9) {
-      r -= 14;
-      g += 16;
-      b -= 12;
-    }
-    const crack = hash2(i * 0.85, j * 0.08);
-    if (crack > 0.92) {
-      r -= 18;
-      g -= 16;
-      b -= 14;
-    }
-    const vig = distOut < 2 ? 0.72 : distOut < 4 ? 0.86 : 1;
-    r *= vig;
-    g *= vig;
-    b *= vig;
-    return avoidClear(clampByte(r), clampByte(g), clampByte(b));
+    return avoidClear(r, g, b);
   }
-  const band = distIn < 6 * RES ? 0 : distIn < 12 * RES ? 1 : 2;
-  const fade = band / 2;
-  const rockR = 46;
-  const rockG = 42;
-  const rockB = 52;
-  const fogR = 40;
-  const fogG = 36;
-  const fogB = 46;
-  return avoidClear(
-    clampByte(rockR + (fogR - rockR) * fade),
-    clampByte(rockG + (fogG - rockG) * fade),
-    clampByte(rockB + (fogB - rockB) * fade),
-  );
+  let r = 0x46;
+  let g = 0x40;
+  let b = 0x4a;
+  const damp = 26 * RES;
+  const dx = (i / damp) | 0;
+  const dy = (j / damp) | 0;
+  if (hash2(dx * 2.2 + 1, dy * 1.7) > 0.55) {
+    const lx = ((i % damp) / damp) - 0.5;
+    const ly = ((j % damp) / damp) - 0.48;
+    const edge = 0.28 + hash2(dx + 3, dy) * 0.16;
+    if (lx * lx * 1.2 + ly * ly < edge * edge) {
+      r = 0x2c;
+      g = 0x28;
+      b = 0x32;
+    }
+  }
+  const moss = 34 * RES;
+  const mx = (i / moss) | 0;
+  const my = (j / moss) | 0;
+  if (hash2(mx * 4.1 + 8, my * 2.4) > 0.72) {
+    const lx = ((i % moss) / moss) - 0.38;
+    const ly = ((j % moss) / moss) - 0.62;
+    const clump = lx * lx * 1.4 + ly * ly;
+    if (clump < 0.02) {
+      r = 0x3d;
+      g = 0x5c;
+      b = 0x38;
+    } else if (clump < 0.045) {
+      r = 0x2e;
+      g = 0x48;
+      b = 0x30;
+    }
+  }
+  const crackCell = 36 * RES;
+  const bx = (i / crackCell) | 0;
+  const by = (j / crackCell) | 0;
+  const qx = i % crackCell;
+  const qy = j % crackCell;
+  const tilt = hash2(bx + 1, by) > 0.5 ? 0.35 : 1.15;
+  const shift = (hash2(bx, by + 3) - 0.5) * crackCell * 0.55;
+  const diag = Math.abs(qx - qy * tilt - crackCell * 0.12 - shift);
+  const branchAt = (0.3 + hash2(bx + 5, by) * 0.45) * crackCell;
+  const branch = Math.abs(qy - branchAt);
+  const crackOn = (diag < RES * 1.5 && qx > RES * 3 && qx < crackCell - RES * 3)
+    || (branch < RES * 1.15 && qx > crackCell * 0.18 && qx < crackCell * 0.78);
+  if (crackOn) {
+    r = 0x22;
+    g = 0x1e;
+    b = 0x26;
+  }
+  if (distOut < 2.4 * RES) {
+    const tooth = hash2((i / (RES * 2)) | 0, (j / (RES * 3)) | 0) > 0.45;
+    if (distOut < RES * 1.1 || tooth) {
+      r = Math.min(r, 0x2a);
+      g = Math.min(g, 0x26);
+      b = Math.min(b, 0x30);
+    }
+  }
+  return avoidClear(r, g, b);
 }
 
 function bakeMap(map) {

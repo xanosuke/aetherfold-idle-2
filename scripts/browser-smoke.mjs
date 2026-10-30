@@ -1349,9 +1349,12 @@ async function assertGrottoWalk(browser, url, seated) {
       if (!(gfx.calls <= 37) || !(gfx.triangles < 40000) || gfx.yugPoints) {
         return { ok: false, error: `${stand.name} walk draw ${gfx.calls} tris ${gfx.triangles} points ${gfx.yugPoints}` };
       }
-      const path = `/workspace/screenshots/grotto-walk-${stand.name}.png`;
-      const png = await page.locator("canvas").first().screenshot({ path });
-      const { width, height, data } = decodePng(png);
+      const pngB64 = await page.evaluate(() => {
+        const canvas = document.querySelector("canvas");
+        return canvas ? canvas.toDataURL("image/png") : "";
+      });
+      if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
+      const { width, height, data } = decodePng(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64"));
       let clear = 0;
       for (let i = 0; i < width * height; i++) {
         const r = data[i * 4];
@@ -1365,6 +1368,83 @@ async function assertGrottoWalk(browser, url, seated) {
       return { ok: false, error: `${stand.name} walk ${err.message} ${JSON.stringify(snap)}` };
     } finally {
       await context.close();
+    }
+  }
+  return { ok: true };
+}
+
+function paintStats(png) {
+  const { width, height, data } = decodePng(png);
+  let clear = 0;
+  let bright = 0;
+  const x0 = Math.floor(width * 0.22);
+  const x1 = Math.floor(width * 0.78);
+  const y0 = Math.floor(height * 0.45);
+  const y1 = Math.floor(height * 0.68);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (r === 21 && g === 20 && b === 28) clear++;
+      const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const flame = r > 168 && r > g + 18 && r > b + 30;
+      const actor = x >= x0 && x <= x1 && y >= y0 && y <= y1;
+      if (lum > 0.45 && !flame && !actor) bright++;
+    }
+  }
+  return { width, height, clear, bright };
+}
+
+function allowedFrameMesh(hit) {
+  const name = hit.name || "";
+  if (name === "yug-trace" || name === "yug-rock" || name === "yug-wall" || name === "yug-prop" || name === "yug-outline" || name === "yug-water" || name === "yug-glow") return true;
+  if (name === "hero" || name === "trust-hit" || name === "field-mob" || name.startsWith("trust")) return true;
+  if (!name || name === "unnamed" || name === "miss") return hit.span == null || hit.span < 8;
+  return false;
+}
+
+async function assertGrottoCover(browser, url, seated) {
+  const stands = [
+    { name: "h8", x: -561.1, z: 659.6, square: "H-8", region: "Yughott Grotto" },
+    { name: "g8", x: -590.64, z: 658.4, square: "G-8", region: "Yughott Grotto" },
+    { name: "g9", x: -597.2, z: 689.23, square: "G-9", region: "Yughott Grotto" },
+    { name: "f9", x: -682.48, z: 707.6, square: "F-9", region: "Yughott Grotto" },
+    { name: "j7", x: -413.52, z: 584.27, square: "J-7", region: "Yughott Grotto" },
+    { name: "fort-gate", x: -527.47, z: 641.73, square: "H-8", region: "Yughott Grotto" },
+  ];
+  const view = { name: "portrait", width: 390, height: 844, mobile: true };
+  for (const stand of stands) {
+    const boot = await bootStand(browser, url, seated, stand, view);
+    try {
+      await boot.page.waitForFunction(() => window.__frameCast && window.__yardGfx, null, { timeout: 15000 });
+      await boot.page.evaluate(() => new Promise((resolve) => {
+        for (let i = 0; i < 24; i++) window.__yardStep(4);
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }));
+      const cast = await boot.page.evaluate(() => window.__frameCast(10, 14));
+      const gfx = await boot.page.evaluate(() => window.__yardGfx);
+      const pngB64 = await boot.page.evaluate(() => {
+        const canvas = document.querySelector("canvas");
+        return canvas ? canvas.toDataURL("image/png") : "";
+      });
+      if (boot.errors.length) return { ok: false, error: `${stand.name} ${boot.errors[0]}` };
+      const bad = (cast.meshes || []).filter((hit) => !allowedFrameMesh(hit));
+      if (bad.length) {
+        const row = bad.map((hit) => `${hit.name || "unnamed"}:${hit.mat}#${hit.color}@${hit.px},${hit.py},${hit.pz} span ${hit.span}`).join("; ");
+        return { ok: false, error: `${stand.name} ray ${row}` };
+      }
+      if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
+      const stats = paintStats(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64"));
+      console.log(`COVER ${stand.name} clear ${stats.clear} bright ${stats.bright} calls ${gfx && gfx.calls} meshes ${cast.meshes.map((hit) => hit.name || "unnamed").join(",")}`);
+      if (stats.clear > 0) return { ok: false, error: `${stand.name} clear-colour pixels ${stats.clear}` };
+      if (stats.bright > 0) return { ok: false, error: `${stand.name} bright pixels ${stats.bright}` };
+      if (!gfx || !(gfx.calls <= 37)) return { ok: false, error: `${stand.name} draw ${gfx && gfx.calls}` };
+    } catch (err) {
+      return { ok: false, error: `${stand.name} cover ${err.message}` };
+    } finally {
+      await boot.context.close();
     }
   }
   return { ok: true };
@@ -1492,6 +1572,8 @@ async function checkGhelsba(browser, url) {
   if (!pace.ok) return { ...pace, nodes: places.nodes, shots };
   const walking = await assertGrottoWalk(browser, url, seated);
   if (!walking.ok) return { ...walking, nodes: places.nodes, shots };
+  const cover = await assertGrottoCover(browser, url, seated);
+  if (!cover.ok) return { ...cover, nodes: places.nodes, shots };
   const trace = await orcTrace(browser, url, seated);
   if (!trace.ok) return { ...trace, nodes: places.nodes, shots: [...shots, ...(trace.shots || [])] };
   return { ok: true, nodes: places.nodes, shots: [...shots, ...(seat.shots || []), ...trace.shots] };

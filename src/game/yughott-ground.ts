@@ -1,5 +1,5 @@
 /**
- * Painted Yughott floor: baked tiles, flat pads at traceFloorY, short south walls.
+ * Painted Yughott floor: baked tiles on the walk terrace, short south walls.
  * The heightfield still answers groundY. This file only builds the meshes.
  */
 import {
@@ -19,7 +19,7 @@ import {
   TextureLoader,
   type Object3D,
 } from "three";
-import { traceFloorY } from "./orc-height";
+import { yughottFloorY, yughottTerraceY } from "./orc-height";
 import { inYughottGraph, type YughottMap } from "./yughott-graph";
 import { YUGHOTT_PAINT } from "./yughott-paint.generated";
 
@@ -53,6 +53,19 @@ function cellOn(bits: Uint8Array, gw: number, gh: number, i: number, j: number) 
   return ((bits[n >> 3] >> (n & 7)) & 1) === 1;
 }
 
+function pushVert(
+  pos: number[],
+  uv: number[],
+  idx: number[],
+  ax: number, az: number, bx: number, bz: number,
+  y0: number, y1: number,
+  u0: number, v0: number, u1: number, v1: number,
+) {
+  const base = pos.length / 3;
+  pos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
+  uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+  idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+}
 function pushQuad(
   pos: number[],
   uv: number[],
@@ -67,8 +80,17 @@ function pushQuad(
   idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
 }
 
+function paintY(map: 1 | 2, x: number, z: number) {
+  const floor = yughottFloorY(x, z, map);
+  if (floor != null) return Math.max(0.03, floor);
+  const terrace = yughottTerraceY(x, z, map);
+  if (terrace != null) return Math.max(0.03, terrace);
+  return 0.04;
+}
+
 function wallColor(top: boolean) {
-  return top ? [0x4a / 255, 0x44 / 255, 0x54 / 255] : [0x33 / 255, 0x2e / 255, 0x39 / 255];
+  const c = new Color(top ? 0x4a4454 : 0x332e39);
+  return [c.r, c.g, c.b];
 }
 
 export function buildYughottPaint(tag: Tag) {
@@ -86,27 +108,110 @@ export function buildYughottPaint(tag: Tag) {
       const pos: number[] = [];
       const uv: number[] = [];
       const idx: number[] = [];
-      pushQuad(pos, uv, idx, tile.x, tile.z, tile.x + tile.w, tile.z + tile.d, -0.04, 0, 0, 1, 1);
       const i0 = Math.max(0, Math.floor((tile.x - pack.ox) / paint.step) - 1);
       const i1 = Math.min(pack.gw, Math.ceil((tile.x + tile.w - pack.ox) / paint.step) + 1);
       const j0 = Math.max(0, Math.floor((tile.z - pack.oz) / paint.step) - 1);
       const j1 = Math.min(pack.gh, Math.ceil((tile.z + tile.d - pack.oz) / paint.step) + 1);
-      for (let j = j0; j < j1; j++) {
+      let walked = 0;
+      for (let j = j0; j < j1 && !walked; j++) {
         for (let i = i0; i < i1; i++) {
           if (!cellOn(bits, pack.gw, pack.gh, i, j)) continue;
-          const x0 = pack.ox + i * paint.step;
-          const z0 = pack.oz + j * paint.step;
-          const x1 = x0 + paint.step;
-          const z1 = z0 + paint.step;
-          const cx = (x0 + x1) * 0.5;
-          const cz = (z0 + z1) * 0.5;
+          const cx = pack.ox + (i + 0.5) * paint.step;
+          const cz = pack.oz + (j + 0.5) * paint.step;
           if (cx < tile.x || cx >= tile.x + tile.w || cz < tile.z || cz >= tile.z + tile.d) continue;
-          const y = Math.max(0.03, traceFloorY(cx, cz));
-          const u0 = (x0 - tile.x) / tile.w;
-          const u1 = (x1 - tile.x) / tile.w;
-          const v0 = (z0 - tile.z) / tile.d;
-          const v1 = (z1 - tile.z) / tile.d;
-          pushQuad(pos, uv, idx, x0, z0, x1, z1, y, u0, v0, u1, v1);
+          walked = 1;
+          break;
+        }
+      }
+      if (!walked) {
+        pushQuad(pos, uv, idx, tile.x, tile.z, tile.x + tile.w, tile.z + tile.d, 0.04, 0, 0, 1, 1);
+      } else {
+        const cellY = (i: number, j: number) => {
+          const cx = pack.ox + (i + 0.5) * paint.step;
+          const cz = pack.oz + (j + 0.5) * paint.step;
+          return paintY(map, cx, cz);
+        };
+        const inTile = (i: number, j: number) => {
+          const cx = pack.ox + (i + 0.5) * paint.step;
+          const cz = pack.oz + (j + 0.5) * paint.step;
+          return cx >= tile.x && cx < tile.x + tile.w && cz >= tile.z && cz < tile.z + tile.d;
+        };
+        const nearWalk = (i: number, j: number) => {
+          for (let dj = -1; dj <= 1; dj++) {
+            for (let di = -1; di <= 1; di++) {
+              if (cellOn(bits, pack.gw, pack.gh, i + di, j + dj)) return true;
+            }
+          }
+          return false;
+        };
+        const uOf = (x: number) => (x - tile.x) / tile.w;
+        const vOf = (z: number) => (z - tile.z) / tile.d;
+        const skirtWest = (iEdge: number, jCell: number, yHi: number) => {
+          const yLo = cellY(iEdge - 1, jCell);
+          if (yHi <= yLo + 0.08) return;
+          const x = pack.ox + iEdge * paint.step;
+          const z0 = pack.oz + jCell * paint.step;
+          const z1 = z0 + paint.step;
+          pushVert(pos, uv, idx, x, z1, x, z0, yLo, yHi, uOf(x), vOf(z1), uOf(x), vOf(z0));
+        };
+        const skirtNorth = (iCell: number, jEdge: number, yHi: number) => {
+          const yLo = cellY(iCell, jEdge - 1);
+          if (yHi <= yLo + 0.08) return;
+          const x0 = pack.ox + iCell * paint.step;
+          const x1 = x0 + paint.step;
+          const z = pack.oz + jEdge * paint.step;
+          pushVert(pos, uv, idx, x1, z, x0, z, yLo, yHi, uOf(x1), vOf(z), uOf(x0), vOf(z));
+        };
+        const skirtEast = (iEdge: number, jCell: number, yHi: number) => {
+          const yLo = cellY(iEdge, jCell);
+          if (yHi <= yLo + 0.08) return;
+          const x = pack.ox + iEdge * paint.step;
+          const z0 = pack.oz + jCell * paint.step;
+          const z1 = z0 + paint.step;
+          pushVert(pos, uv, idx, x, z0, x, z1, yLo, yHi, uOf(x), vOf(z0), uOf(x), vOf(z1));
+        };
+        const skirtSouth = (iCell: number, jEdge: number, yHi: number) => {
+          const yLo = cellY(iCell, jEdge);
+          if (yHi <= yLo + 0.08) return;
+          const x0 = pack.ox + iCell * paint.step;
+          const x1 = x0 + paint.step;
+          const z = pack.oz + jEdge * paint.step;
+          pushVert(pos, uv, idx, x0, z, x1, z, yLo, yHi, uOf(x0), vOf(z), uOf(x1), vOf(z));
+        };
+        for (let j = j0; j < j1; j++) {
+          let i = i0;
+          while (i < i1) {
+            if (!inTile(i, j)) {
+              i++;
+              continue;
+            }
+            const y = cellY(i, j);
+            if (nearWalk(i, j)) {
+              const x0 = pack.ox + i * paint.step;
+              const z0 = pack.oz + j * paint.step;
+              pushQuad(pos, uv, idx, x0, z0, x0 + paint.step, z0 + paint.step, y, uOf(x0), vOf(z0), uOf(x0 + paint.step), vOf(z0 + paint.step));
+              skirtEast(i + 1, j, y);
+              skirtWest(i, j, y);
+              skirtSouth(i, j + 1, y);
+              skirtNorth(i, j, y);
+              i++;
+              continue;
+            }
+            let end = i + 1;
+            while (end < i1 && inTile(end, j) && !nearWalk(end, j) && Math.abs(cellY(end, j) - y) < 0.08) end++;
+            const x0 = pack.ox + i * paint.step;
+            const z0 = pack.oz + j * paint.step;
+            const x1 = pack.ox + end * paint.step;
+            const z1 = z0 + paint.step;
+            pushQuad(pos, uv, idx, x0, z0, x1, z1, y, uOf(x0), vOf(z0), uOf(x1), vOf(z1));
+            for (let k = i; k < end; k++) {
+              skirtSouth(k, j + 1, y);
+              skirtNorth(k, j, y);
+            }
+            skirtEast(end, j, y);
+            skirtWest(i, j, y);
+            i = end;
+          }
         }
       }
       const geo = new BufferGeometry();
@@ -123,7 +228,7 @@ export function buildYughottPaint(tag: Tag) {
       tex.magFilter = LinearFilter;
       tex.minFilter = LinearFilter;
       tex.generateMipmaps = false;
-      const mat = new MeshBasicMaterial({ color: 0xffffff, map: tex, fog: false });
+      const mat = new MeshBasicMaterial({ color: 0xffffff, map: tex, fog: false, side: DoubleSide });
       const mesh = new Mesh(geo, mat);
       mesh.name = "yug-trace";
       mesh.castShadow = false;
@@ -137,15 +242,21 @@ export function buildYughottPaint(tag: Tag) {
     const pushWall = (ax: number, az: number, bx: number, bz: number, inwardX: number, inwardZ: number, south: boolean) => {
       const mx = (ax + bx) * 0.5 + inwardX * 0.4;
       const mz = (az + bz) * 0.5 + inwardZ * 0.4;
-      const y0 = Math.max(0, traceFloorY(mx, mz));
+      const y0 = paintY(map, mx, mz);
       const h = south ? 1 : 2.5;
       const y1 = y0 + h;
       const side = wallColor(false);
       const top = wallColor(true);
       const base = wpos.length / 3;
       wpos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
-      wcol.push(...side, ...side, ...top, ...top);
+      wcol.push(...side, ...side, ...side, ...side);
       widx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      const cap = wpos.length / 3;
+      const ix = inwardX * 0.45;
+      const iz = inwardZ * 0.45;
+      wpos.push(ax, y1, az, bx, y1, bz, bx + ix, y1, bz + iz, ax + ix, y1, az + iz);
+      wcol.push(...top, ...top, ...top, ...top);
+      widx.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
     };
     for (let j = 0; j < pack.gh; j++) {
       for (let i = 0; i < pack.gw; i++) {
@@ -165,7 +276,7 @@ export function buildYughottPaint(tag: Tag) {
       geo.setAttribute("position", new Float32BufferAttribute(wpos, 3));
       geo.setAttribute("color", new Float32BufferAttribute(wcol, 3));
       geo.setIndex(widx);
-      const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide });
+      const mat = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide, fog: false });
       const mesh = new Mesh(geo, mat);
       mesh.name = "yug-wall";
       mesh.castShadow = false;
