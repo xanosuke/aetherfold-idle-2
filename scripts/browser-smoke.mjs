@@ -1231,8 +1231,8 @@ async function assertFramePace(browser, url, seated) {
   if (!fort.ok) return fort;
   const grotto = await sample(places.stands[0]);
   if (!grotto.ok) return grotto;
-  if (!(fort.ms > 0) || !(grotto.ms <= fort.ms * 1.5)) {
-    return { ok: false, error: `grotto frame ${grotto.ms.toFixed(2)}ms > 1.5x fort ${fort.ms.toFixed(2)}ms` };
+  if (!(fort.ms > 0) || grotto.ms > fort.ms) {
+    return { ok: false, error: `grotto frame ${grotto.ms.toFixed(2)}ms > fort ${fort.ms.toFixed(2)}ms` };
   }
   return { ok: true, fort: fort.ms, grotto: grotto.ms };
 }
@@ -1272,7 +1272,13 @@ async function assertGrottoWalk(browser, url, seated) {
       if (!still || !gfx || still.pixelRatio !== gfx.pixelRatio || still.castShadow !== gfx.castShadow || still.shadowAuto !== gfx.shadowAuto) {
         return { ok: false, error: `${stand.name} gfx changed ${JSON.stringify(still)} -> ${JSON.stringify(gfx)}` };
       }
-      console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-share ${snap.share.toFixed(2)}`);
+      console.log(`DRAW ${stand.name} calls ${still.calls} tris ${still.triangles} walk-calls ${gfx.calls} walk-tris ${gfx.triangles} walk-share ${snap.share.toFixed(2)}`);
+      if (!(still.calls < 60) || !(still.triangles < 40000)) {
+        return { ok: false, error: `${stand.name} draw ${still.calls} tris ${still.triangles}` };
+      }
+      if (!(gfx.calls < 60) || !(gfx.triangles < 40000)) {
+        return { ok: false, error: `${stand.name} walk draw ${gfx.calls} tris ${gfx.triangles}` };
+      }
       const path = `/workspace/screenshots/grotto-walk-${stand.name}.png`;
       const png = await page.locator("canvas").first().screenshot({ path });
       const { width, height, data } = decodePng(png);

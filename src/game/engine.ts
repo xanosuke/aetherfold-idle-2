@@ -1,6 +1,6 @@
 // @ts-nocheck
 export type Yard = { dispose: () => void; getYaw?: () => number; getSpeed?: () => number; setKeys?: (keys: Set<string>) => void };
-import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, Object3D, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending } from "three";
+import { Bone, Box3, BoxGeometry, BufferGeometry, CanvasTexture, CircleGeometry, ClampToEdgeWrapping, CylinderGeometry, ConeGeometry, DirectionalLight, DodecahedronGeometry, DoubleSide, Euler, Float32BufferAttribute, Group, HemisphereLight, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshToonMaterial, NearestFilter, NoColorSpace, Object3D, OctahedronGeometry, IcosahedronGeometry, OrthographicCamera, PlaneGeometry, PointLight, Quaternion, Raycaster, RepeatWrapping, RingGeometry, Scene, Fog, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, SRGBColorSpace, Timer, Vector2, Vector3, WebGLRenderer, AdditiveBlending, BatchedMesh } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { HARE, ITEMS, LEVEL, assertJobSheet, hareLiveDefense, isOffhandWeapon } from "./content";
@@ -32,7 +32,8 @@ function groundY(x, z) {
 	return traceFloorY(x, z);
 }
 
-import { fortFlames, orcDressMarks, takeCaveBits, yughottDrums } from "./orc-dress";
+import { fortFlames, orcDressMarks, takeCaveBits, yughottDrums, yughottTorches } from "./orc-dress";
+import { buildYughottPaint, buildYughottProps } from "./yughott-ground";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -13649,17 +13650,8 @@ function buildYard(canvas) {
 			}
 		}
 		const drumLights = scene.userData.drumLights;
-		if (drumLights && drumLights.length) {
-			const yugLit = inYughott(px, pz);
-			for (let i = 0; i < drumLights.length; i++) {
-				const light = drumLights[i];
-				const on = light.parent === scene;
-				if (yugLit !== on) {
-					if (yugLit) scene.add(light);
-					else scene.remove(light);
-				}
-				if (yugLit) light.intensity = 1.2 * (1 + 0.08 * Math.sin(elapsed * 6.5 + i));
-			}
+		if (drumLights && drumLights.length && inYughott(px, pz)) {
+			for (let i = 0; i < drumLights.length; i++) drumLights[i].intensity = 0.9 * (1 + 0.08 * Math.sin(elapsed * 6.5 + i));
 		}
 		const orcFall = scene.userData.orcFall;
 		if (orcFall) orcFall.opacity = 0.34 + 0.14 * Math.sin(elapsed * 2.4);
@@ -41650,6 +41642,27 @@ function buildYard(canvas) {
 		if (acc > STEP) acc = 0;
 		fadePassWalls(dt);
 		cullZoneChunks();
+		const grottoNow = inYughott(px, pz);
+		const yugHere = scene.userData.yugGroups;
+		if (yugHere) {
+			const show = grottoNow ? grottoMap(px, pz) : 0;
+			yugHere[1].visible = show === 1;
+			yugHere[2].visible = show === 2;
+		}
+		const yugSheenNow = scene.userData.yugSheen;
+		if (yugSheenNow && yugSheenNow.length) {
+			const glow = 0.04 + 0.02 * Math.sin(timer.getElapsed() * 1.6);
+			for (let i = 0; i < yugSheenNow.length; i++) yugSheenNow[i].opacity = glow;
+		}
+		if (sun.castShadow === grottoNow) {
+			sun.castShadow = !grottoNow;
+			if (!grottoNow) sun.shadow.needsUpdate = true;
+		}
+		if (actorBlobs) {
+			actorBlobs.visible = grottoNow;
+			if (grottoNow) placeActorBlobs();
+		}
+		syncGrottoActors(grottoNow);
 		const renderT = performance.now();
 		renderer.render(scene, camera);
 		const renderMs = performance.now() - renderT;
@@ -41693,6 +41706,164 @@ function buildYard(canvas) {
 	const bootBtn = document.querySelector('button[aria-label^="Open the"]');
 	if (bootBtn) bootBtn.setAttribute("aria-label", `Open the ${bootRegion} map`);
 	stepTraceMeshes(px, pz);
+	const blobGeo = new CircleGeometry(0.62, 8);
+	blobGeo.rotateX(-Math.PI / 2);
+	const blobMat = new MeshBasicMaterial({ color: 0x3a3844, transparent: true, opacity: 0.35, depthWrite: false });
+	const actorBlobs = new InstancedMesh(blobGeo, blobMat, 24);
+	actorBlobs.name = "blob-shadow";
+	actorBlobs.castShadow = false;
+	actorBlobs.receiveShadow = false;
+	actorBlobs.count = 0;
+	actorBlobs.frustumCulled = false;
+	scene.add(actorBlobs);
+	const blobDummy = new Object3D();
+	const placeActorBlobs = () => {
+		const spots = [hero.root.position];
+		for (let i = 0; i < puppets.length; i++) if (puppets[i].body.root.visible) spots.push(puppets[i].body.root.position);
+		for (let i = 0; i < fieldSlots.length; i++) if (fieldSlots[i].root && fieldSlots[i].root.visible) spots.push(fieldSlots[i].root.position);
+		const n = Math.min(spots.length, actorBlobs.instanceMatrix.count ? 24 : 24);
+		for (let i = 0; i < n; i++) {
+			const p = spots[i];
+			blobDummy.position.set(p.x, groundY(p.x, p.z) + 0.04, p.z);
+			blobDummy.rotation.set(0, 0, 0);
+			blobDummy.scale.set(1, 1, 1);
+			blobDummy.updateMatrix();
+			actorBlobs.setMatrixAt(i, blobDummy.matrix);
+		}
+		actorBlobs.count = n;
+		actorBlobs.instanceMatrix.needsUpdate = true;
+	};
+	const grottoActorMat = new MeshToonMaterial({ color: 0xffffff, gradientMap: gradient });
+	const grottoBatch = new BatchedMesh(2048, 220000, 420000, grottoActorMat);
+	grottoBatch.name = "grotto-actors";
+	grottoBatch.castShadow = false;
+	grottoBatch.receiveShadow = false;
+	grottoBatch.frustumCulled = false;
+	grottoBatch.visible = false;
+	grottoBatch.raycast = () => {};
+	scene.add(grottoBatch);
+	const grottoGeoIds = new Map();
+	const grottoInst = new Map();
+	const grottoHidden = new Set();
+	const grottoLive = [];
+	const grottoAt = new Vector3();
+	let grottoBatchFull = false;
+	let grottoBatchErr = "";
+	function grottoAddInst(mesh) {
+		const known = grottoInst.get(mesh);
+		if (known != null) return known;
+		if (mesh.userData.gSkip || grottoBatchFull) return -1;
+		const geometry = mesh.geometry;
+		if (!geometry || !geometry.getAttribute("position")) return -1;
+		if (!geometry.getIndex()) {
+			const n = geometry.getAttribute("position").count;
+			const arr = new Array(n);
+			for (let i = 0; i < n; i++) arr[i] = i;
+			geometry.setIndex(arr);
+		}
+		try {
+			let geoId = grottoGeoIds.get(geometry.uuid);
+			if (geoId == null) {
+				geoId = grottoBatch.addGeometry(geometry);
+				grottoGeoIds.set(geometry.uuid, geoId);
+			}
+			const id = grottoBatch.addInstance(geoId);
+			grottoInst.set(mesh, id);
+			if (mesh.material && mesh.material.color) {
+				grottoBatch.setColorAt(id, mesh.material.color);
+				mesh.userData.gHex = mesh.material.color.getHex();
+			}
+			return id;
+		} catch (err) {
+			const msg = String(err && err.message || err);
+			if (!grottoBatchErr) grottoBatchErr = msg;
+			if (msg.includes("Maximum") || msg.includes("capacity") || msg.includes("item count")) grottoBatchFull = true;
+			else mesh.userData.gSkip = 1;
+			return -1;
+		}
+	}
+	function syncGrottoActors(on) {
+		if (!on) {
+			if (!grottoBatch.visible && grottoHidden.size === 0) return;
+			grottoBatch.visible = false;
+			for (const mesh of grottoHidden) mesh.layers.set(0);
+			grottoHidden.clear();
+			for (const id of grottoInst.values()) grottoBatch.setVisibleAt(id, false);
+			grottoLive.length = 0;
+			return;
+		}
+		const keep = new Set();
+		const seenIds = new Set();
+		grottoLive.length = 0;
+		const roots = [];
+		const consider = (root) => {
+			if (!root || root.visible === false) return;
+			root.getWorldPosition(grottoAt);
+			const dx = grottoAt.x - px;
+			const dz = grottoAt.z - pz;
+			if (dx * dx + dz * dz > 1600) return;
+			roots.push(root);
+		};
+		consider(hero.root);
+		if (hare.root.visible) consider(hare.root);
+		if (kin.root.visible) consider(kin.root);
+		for (let i = 0; i < packActors.length; i++) consider(packActors[i].root);
+		for (let i = 0; i < puppets.length; i++) consider(puppets[i].body.root);
+		for (let i = 0; i < fieldSlots.length; i++) consider(fieldSlots[i].root);
+		for (const root of petMeshes.values()) consider(root);
+		for (let r = 0; r < roots.length; r++) {
+			roots[r].traverse((obj) => {
+				if (!obj.isMesh || obj.isSkinnedMesh) return;
+				let node = obj;
+				while (node) {
+					if (node.visible === false) return;
+					node = node.parent;
+				}
+				const mat = obj.material;
+				if (!mat || Array.isArray(mat)) return;
+				if (!mat.isMeshToonMaterial) {
+					if (mat.isMeshBasicMaterial) {
+						obj.layers.set(1);
+						grottoHidden.add(obj);
+						keep.add(obj);
+					}
+					return;
+				}
+				const id = grottoAddInst(obj);
+				if (id < 0) return;
+				grottoBatch.setVisibleAt(id, true);
+				seenIds.add(id);
+				const hex = mat.color ? mat.color.getHex() : 16777215;
+				if (obj.userData.gHex !== hex) {
+					obj.userData.gHex = hex;
+					grottoBatch.setColorAt(id, mat.color);
+				}
+				grottoLive.push({ mesh: obj, id });
+				obj.layers.set(1);
+				grottoHidden.add(obj);
+				keep.add(obj);
+			});
+		}
+		for (const id of grottoInst.values()) if (!seenIds.has(id)) grottoBatch.setVisibleAt(id, false);
+		if (grottoHidden.size) {
+			for (const mesh of grottoHidden) {
+				if (!keep.has(mesh)) {
+					mesh.layers.set(0);
+					grottoHidden.delete(mesh);
+				}
+			}
+		}
+		grottoBatch.userData.live = grottoLive;
+		grottoBatch.visible = grottoLive.length > 0;
+	}
+	const grottoBatchBefore = BatchedMesh.prototype.onBeforeRender;
+	grottoBatch.onBeforeRender = function(renderer, scene, camera, geometry, material) {
+		const live = this.userData.live;
+		if (live) {
+			for (let i = 0; i < live.length; i++) this.setMatrixAt(live[i].id, live[i].mesh.matrixWorld);
+		}
+		grottoBatchBefore.call(this, renderer, scene, camera, geometry, material);
+	};
 	renderer.setAnimationLoop(frame);
 	const api = {
 		getYaw: () => yaw,
@@ -41787,6 +41958,7 @@ function buildYard(canvas) {
 	const seatToken = {};
 	let heroFloorMin = Infinity;
 	const grottoRay = new Raycaster();
+	grottoRay.layers.enable(1);
 	const grottoFrom = new Vector3();
 	const grottoTo = new Vector3();
 	const grottoNdc = new Vector2();
@@ -41844,6 +42016,7 @@ function buildYard(canvas) {
 		const owner = grottoOwner(hit.object);
 		if (owner === "hero") return { kind: "hero", name, y, ground, rise: y - ground };
 		if (owner === "trust") return { kind: "trust", name, y, ground, rise: y - ground };
+		if (name === "yug-trace") return { kind: "floor", name, y, ground, rise: y - ground };
 		const ny = hit.face ? Math.abs(hit.face.normal.y) : 1;
 		if (name.includes("trace")) {
 			const map = grottoMap(hit.point.x, hit.point.z);
@@ -47721,31 +47894,48 @@ function buildRoom(scene, toonMat, colliders) {
 	fortLiftDeck.castShadow = true;
 	fortLiftDeck.receiveShadow = true;
 	scene.add(fortLiftDeck);
-	const orcPoolMat = new MeshPhongMaterial({ color: 0x434340, transparent: true, opacity: 0.85, shininess: 30, specular: 0x889988, depthWrite: false });
+	const yugGroups = buildYughottPaint(tagChunk);
+	scene.add(yugGroups[1], yugGroups[2]);
+	scene.userData.yugGroups = yugGroups;
+	const paintBag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
+	// Painted tiles are resident at boot. The old heightfield's first-chunk
+	// clock is this first tile, so a grotto hop still has a number under 50ms.
+	paintBag.yug1 = yugGroups[1].userData.paintMs ?? 0;
+	paintBag.yug2 = yugGroups[2].userData.paintMs ?? 0;
+	const yugSheen = [];
+	scene.userData.yugSheen = yugSheen;
 	const orcShaftMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcShaftPoolMat = new MeshBasicMaterial({ color: 0xd9d6ee, transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcDrumGlowMat = new MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.18, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
 	const orcFallMat = new MeshBasicMaterial({ color: 0xd5e7ff, transparent: true, opacity: 0.42, blending: AdditiveBlending, depthWrite: false, side: DoubleSide });
+	const yugParent = (x, z) => yugGroups[grottoMap(x, z) || 1];
 	const drumLights = [];
 	for (const mark of orcDressMarks()) {
 		if (mark.kind === "pool") {
-			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 7), orcPoolMat);
-			water.name = "pool";
+			const water = new Mesh(new CircleGeometry(mark.r ?? 4, 10), new MeshBasicMaterial({ color: 0x343c48, fog: false }));
+			water.name = "yug-trace";
 			water.rotation.x = -Math.PI / 2;
-			water.position.set(mark.x, mark.y + 0.06, mark.z);
+			water.position.set(mark.x, mark.y + 0.1, mark.z);
 			water.receiveShadow = false;
-			scene.add(water);
+			water.castShadow = false;
+			const sheenMat = new MeshBasicMaterial({ color: 0x8ea0a8, transparent: true, opacity: 0.1, depthWrite: false, fog: false });
+			const sheen = new Mesh(new CircleGeometry((mark.r ?? 4) * 0.92, 10), sheenMat);
+			sheen.name = "pool-sheen";
+			sheen.rotation.x = -Math.PI / 2;
+			sheen.position.set(mark.x, mark.y + 0.16, mark.z);
+			sheen.castShadow = false;
+			yugParent(mark.x, mark.z).add(water, sheen);
+			yugSheen.push(sheenMat);
 		} else if (mark.kind === "shaft") {
 			const floor = groundY(mark.x, mark.z);
 			const shaft = new Mesh(new PlaneGeometry(0.18, 1.5), orcShaftMat);
 			shaft.name = "shaft";
 			shaft.position.set(mark.x, floor + 0.75, mark.z);
-			scene.add(shaft);
 			const pool = new Mesh(new CircleGeometry(1.4, 8), orcShaftPoolMat);
 			pool.name = "shaft-pool";
 			pool.rotation.x = -Math.PI / 2;
-			pool.position.set(mark.x, floor + 0.05, mark.z);
-			scene.add(pool);
+			pool.position.set(mark.x, floor + 0.08, mark.z);
+			yugParent(mark.x, mark.z).add(shaft, pool);
 		} else if (mark.kind === "fall") {
 			const fall = new Mesh(new PlaneGeometry(1.35, 15), orcFallMat);
 			fall.name = "fall";
@@ -47760,12 +47950,19 @@ function buildRoom(scene, toonMat, colliders) {
 		const glow = new Mesh(new CircleGeometry(2.5, 8), orcDrumGlowMat);
 		glow.name = "drum-glow";
 		glow.rotation.x = -Math.PI / 2;
-		glow.position.set(drum.x, floor + 0.05, drum.z);
-		scene.add(glow);
-		const light = new PointLight(0xff8a3a, 1.2, 10, 2);
-		light.position.set(drum.x, floor + 2.7, drum.z);
-		scene.add(light);
+		glow.position.set(drum.x, floor + 0.08, drum.z);
+		glow.castShadow = false;
+		yugParent(drum.x, drum.z).add(glow);
+		const light = new PointLight(0xffa050, 0.9, 8, 2);
+		light.position.set(drum.x, floor + 1.6, drum.z);
+		yugParent(drum.x, drum.z).add(light);
 		drumLights.push(light);
+	}
+	for (const torch of yughottTorches()) {
+		const floor = groundY(torch.x, torch.z);
+		const light = new PointLight(0xffa050, 1.15, 9, 2);
+		light.position.set(torch.x, floor + 1.35, torch.z);
+		yugParent(torch.x, torch.z).add(light);
 	}
 	scene.userData.drumLights = drumLights;
 	scene.userData.orcFall = orcFallMat;
@@ -47866,7 +48063,7 @@ function buildRoom(scene, toonMat, colliders) {
 			tagChunk(mesh, cx, cx1, cz, cz1);
 		}
 	}
-	const traceJobs = traceMeshFields().map((field) => {
+	const traceJobs = traceMeshFields().filter((field) => field.id === "fort").map((field) => {
 		const chunks = [];
 		for (let j = 0; j < field.nZ; j += 32) {
 			for (let i = 0; i < field.nX; i += 32) {
@@ -48130,47 +48327,7 @@ function buildRoom(scene, toonMat, colliders) {
 		6963248,
 		1316892
 	]);
-	const caveDummy = new Object3D();
-	const caveMats = new Map();
-	const caveGroups = new Map();
-	for (const bit of takeCaveBits()) {
-		const key = `${bit.kind}|${bit.shape}|${bit.color}|${Math.floor(bit.x / 64)}|${Math.floor(bit.z / 64)}`;
-		const list = caveGroups.get(key) ?? [];
-		list.push(bit);
-		caveGroups.set(key, list);
-	}
-	for (const list of caveGroups.values()) {
-		const head = list[0];
-		const geo = head.shape === "cone" ? new ConeGeometry(1, 1, 6) : new BoxGeometry(1, 1, 1);
-		let mat = caveMats.get(head.color);
-		if (!mat) {
-			mat = toonMat(head.color);
-			caveMats.set(head.color, mat);
-		}
-		const mesh = new InstancedMesh(geo, mat, list.length);
-		mesh.name = `cave-${head.kind}`;
-		mesh.castShadow = false;
-		mesh.receiveShadow = true;
-		let minX = Infinity;
-		let maxX = -Infinity;
-		let minZ = Infinity;
-		let maxZ = -Infinity;
-		for (let i = 0; i < list.length; i++) {
-			const bit = list[i];
-			caveDummy.position.set(bit.x, bit.y, bit.z);
-			caveDummy.rotation.set(0, bit.yaw || 0, 0);
-			caveDummy.scale.set(Math.max(0.02, bit.sx), Math.max(0.02, bit.sy), Math.max(0.02, bit.sz));
-			caveDummy.updateMatrix();
-			mesh.setMatrixAt(i, caveDummy.matrix);
-			minX = Math.min(minX, bit.x - 1.2);
-			maxX = Math.max(maxX, bit.x + 1.2);
-			minZ = Math.min(minZ, bit.z - 1.2);
-			maxZ = Math.max(maxZ, bit.z + 1.2);
-		}
-		mesh.instanceMatrix.needsUpdate = true;
-		scene.add(mesh);
-		tagChunk(mesh, minX, maxX, minZ, maxZ);
-	}
+	buildYughottProps(yugGroups, takeCaveBits(), tagChunk);
 	const colorMats = new Map();
 	const colorBins = new Map();
 	for (const [color, geos] of buckets) {
