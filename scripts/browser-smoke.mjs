@@ -1760,6 +1760,66 @@ async function checkGhelsba(browser, url) {
   return { ok: true, nodes: places.nodes, shots: [...shots, ...(seat.shots || []), ...trace.shots] };
 }
 
+async function checkSanDoria(browser, url) {
+  const live = JSON.parse(readFileSync("/workspace/data/yard-save.json", "utf8"));
+  const seated = (position) => {
+    const save = structuredClone(live);
+    save.position = position;
+    save.engaged = false;
+    save.ko = false;
+    save.log = [];
+    if (save.gambits?.player) save.gambits.player.on = false;
+    return JSON.stringify(save);
+  };
+  const stands = [
+    { name: "fountain", x: 0, z: -4.2, square: "F-8", region: "Southern San d'Oria" },
+    { name: "north", x: 0, z: -300, square: "F-7", region: "Northern San d'Oria" },
+    { name: "port", x: 0, z: -420, square: "G-7", region: "Port San d'Oria" },
+  ];
+  const view = { name: "portrait", width: 390, height: 844, mobile: true };
+  for (const stand of stands) {
+    const boot = await bootStand(browser, url, seated, stand, view);
+    try {
+      await boot.page.waitForTimeout(4500);
+      if (boot.errors.length) return { ok: false, error: `${stand.name} ${boot.errors[0]}` };
+      const body = await boot.page.locator("body").innerText();
+      if (!body.includes(stand.square) || !body.includes(stand.region)) {
+        return { ok: false, error: `${stand.name} label missing ${stand.square}` };
+      }
+      await boot.page.evaluate(() => {
+        if (window.__yardGfxReset) window.__yardGfxReset();
+      });
+      await boot.page.waitForFunction(() => window.__yardGfx && window.__yardGfx.renders && window.__yardGfx.renders.length >= 4, null, { timeout: 15000 });
+      const gfx = await boot.page.evaluate(() => window.__yardGfx);
+      const pngB64 = await boot.page.evaluate(() => {
+        const canvas = document.querySelector("canvas");
+        return canvas ? canvas.toDataURL("image/png") : "";
+      });
+      if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
+      const png = Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64");
+      writeFileSync(`/workspace/screenshots/sandoria-${stand.name}.png`, png);
+      const { width, height, data } = decodePng(png);
+      let clear = 0;
+      for (let i = 0; i < width * height; i++) {
+        const r = data[i * 4];
+        const g = data[i * 4 + 1];
+        const b = data[i * 4 + 2];
+        if (r === 21 && g === 20 && b === 28) clear++;
+      }
+      console.log(`CITY ${stand.name} square ${stand.square} scenery ${sceneryCalls(gfx)} tris ${gfx && gfx.triangles} points ${gfx && gfx.yugPoints} clear ${clear}`);
+      if (clear > 0) return { ok: false, error: `${stand.name} clear-colour pixels ${clear}` };
+      if (!gfx || !(sceneryCalls(gfx) <= 37) || !(gfx.triangles < 40000) || gfx.yugPoints) {
+        return { ok: false, error: `${stand.name} draw ${sceneryCalls(gfx)} tris ${gfx && gfx.triangles} points ${gfx && gfx.yugPoints}` };
+      }
+    } catch (err) {
+      return { ok: false, error: `${stand.name} ${err.message}` };
+    } finally {
+      await boot.context.close();
+    }
+  }
+  return { ok: true };
+}
+
 let browser = null;
 try {
   browser = await chromium.launch({
@@ -1820,6 +1880,7 @@ try {
 
   const brandWarnings = computeBrandWarnings({ hasCanvas: viewports.desktop.hasCanvas });
   const ghelsba = await checkGhelsba(browser, url);
+  const city = await checkSanDoria(browser, url);
   // Only a dev server answers /__app-env, so smoking the built output reads as
   // indeterminate — report a divergence, never the absence of an observation.
   const authWarnings = authInvariantWarnings(
@@ -1828,7 +1889,7 @@ try {
       buildAuthEnabled: buildAuthEnabled(),
     }),
   );
-  const verdict = { url, viewports, brandWarnings, authWarnings, ghelsba, verdictFile: outJson };
+  const verdict = { url, viewports, brandWarnings, authWarnings, ghelsba, city, verdictFile: outJson };
   if (baselineRequested) {
     const { divergesFromBaseline, reasons } = compareAgainstBaseline(verdict);
     verdict.divergesFromBaseline = divergesFromBaseline;
@@ -1842,7 +1903,7 @@ try {
   // teardown always runs (agents typically smoke twice per turn; leaking
   // Chromium accumulates across retries).
   process.exitCode = exitCodeFor(viewports);
-  if (!ghelsba?.ok) process.exitCode = 1;
+  if (!ghelsba?.ok || !city?.ok) process.exitCode = 1;
 } catch (err) {
   const failure = { ok: false, url, error: String(err?.message || err) };
   try {

@@ -43,6 +43,7 @@ const probe = spawnSync(
       import { assertPass, sealedGateSpots, passSquare, inPass } from "./src/game/pass.ts";
       import { PASS_GRAPH, gridToWorld, PASS_CELL } from "./src/game/pass-graph.ts";
       import { assertWestGrid } from "./src/game/world.ts";
+      import { campHere, campRefusal } from "./src/game/afk.ts";
       import { assertEast } from "./src/game/east-ronfaure.ts";
       import { assertGhelsba } from "./src/game/ghelsba.ts";
       import { assertFort, assertYughott } from "./src/game/orc-height.ts";
@@ -54,6 +55,10 @@ const probe = spawnSync(
       assertFort();
       assertYughott();
       assertWorldLinks(false);
+      for (const [x, z] of [[0, 0], [-10, -300], [0, -420]]) {
+        if (campHere("battle", x, z)) throw new Error("town camp " + x + "," + z);
+        if (campRefusal("battle", x, z) !== "Towns and instances can't hold a camp.") throw new Error("town refusal");
+      }
       const poi = PASS_GRAPH.pois.find((item) => item.id === "nm_taisaijin");
       const h9 = gridToWorld(poi.gx, poi.gy);
       const gates = sealedGateSpots();
@@ -264,9 +269,9 @@ try {
         const west = zoneArrival("ronfaure-south");
         const tomb = zoneArrival("ranperre");
         const rows = [
-          { id: "south-city", x: 0, z: 0, square: "" },
-          { id: "north-city", x: 0, z: -300, square: "" },
-          { id: "port", x: 0, z: -420, square: "" },
+          { id: "south-city", x: 0, z: 0, square: "F-9" },
+          { id: "north-city", x: 0, z: -300, square: "F-7" },
+          { id: "port", x: 0, z: -420, square: "G-7" },
           { id: "west", x: west.x, z: west.z, square: "GRID" },
           { id: "east", x: east.x, z: east.z, square: "GRID" },
           { id: "tomb", x: tomb.x, z: tomb.z, square: "GRID" },

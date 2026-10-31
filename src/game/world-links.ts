@@ -7,7 +7,7 @@ import { fortSquare, ghelsbaSquare, orcZoneAt, yughottSquare } from "./ghelsba";
 import { glacierSquare, inGlacier } from "./glacier";
 import { inPass, passSquare } from "./pass";
 import { inTomb, tombSquare } from "./tomb";
-import { parseSquare, squareOf, ZONE_GRIDS } from "./zone-grid";
+import { parseSquare, gridAt, squareOf, ZONE_GRIDS } from "./zone-grid";
 import { inNorthCity, inPort, inRonfaure, inSouthCity, zoneArrival, ZONE_GATES, type ZoneGate, type ZoneId } from "./world";
 
 export type LinkEnd = { zone: string; square: string };
@@ -43,12 +43,11 @@ export const WORLD_LINKS: WorldLink[] = [
 ];
 
 const UNBUILT = new Set(["la-theine", "jugner", "batallia", "xarcabard", "feiyin", "east-ronfaure-s", "horlais"]);
-const CITY = new Set(["sandoria-south", "sandoria-north", "sandoria-port"]);
 
 export type LinkRow = { link: string; a: string; b: string };
 
 function hasGrid(zone: string): boolean {
-  if (UNBUILT.has(zone) || CITY.has(zone)) return false;
+  if (UNBUILT.has(zone)) return false;
   return ZONE_GRIDS.some((g) => g.zone === zone);
 }
 
@@ -89,6 +88,10 @@ function squareAt(zone: string, x: number, z: number): string | null {
   if (zone === "ghelsba") return ghelsbaSquare(x, z);
   if (zone === "fort-ghelsba") return fortSquare(x, z);
   if (zone === "yughott") return yughottSquare(x, z);
+  if (zone === "sandoria-south" || zone === "sandoria-north" || zone === "sandoria-port") {
+    const grid = gridAt(zone, x, z);
+    return grid ? squareOf(grid, x, z) : null;
+  }
   return null;
 }
 

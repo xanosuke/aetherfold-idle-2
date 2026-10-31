@@ -7,9 +7,9 @@
  * floor a point is on.
  *
  * TODO: Horlais Peak has no retail grid.
- * TODO: San d'Oria (sandoria-south, sandoria-north, sandoria-port) has no retail grid.
  */
 import { PASS_CELL, PASS_X, PASS_Z } from "./pass-graph";
+import { NORTH_GRID, PORT_GRID, SOUTH_GRID } from "./sandoria-graph";
 
 export type ZoneGrid = {
   zone: string;
@@ -40,6 +40,9 @@ export const ZONE_GRIDS: readonly ZoneGrid[] = [
   { zone: "yughott", map: 1, x0: -1040, z0: 150, cell: GHELSBA_CELL, cols: 12, rows: 12 },
   // Map 2 origin matches ghelsba.ts Y2_X / Y2_Z. J-6 sits just south of map 1's I-9.
   { zone: "yughott", map: 2, x0: -1040 - 32 * 2.05, z0: 217.25 + 4 * 32 * 2.05, cell: GHELSBA_CELL, cols: 12, rows: 12 },
+  { zone: "sandoria-south", x0: SOUTH_GRID.x0, z0: SOUTH_GRID.z0, cell: SOUTH_GRID.cell, cols: SOUTH_GRID.cols, rows: SOUTH_GRID.rows },
+  { zone: "sandoria-north", x0: NORTH_GRID.x0, z0: NORTH_GRID.z0, cell: NORTH_GRID.cell, cols: NORTH_GRID.cols, rows: NORTH_GRID.rows },
+  { zone: "sandoria-port", x0: PORT_GRID.x0, z0: PORT_GRID.z0, cell: PORT_GRID.cell, cols: PORT_GRID.cols, rows: PORT_GRID.rows },
 ];
 
 /** Grotto (and any later multi-map zone) tells gridAt which floor a point is on. */

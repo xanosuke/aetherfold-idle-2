@@ -5,28 +5,8 @@ import { readRadar, type RadarFrame, type RadarKind } from "@/game/radar";
 import { orcLayout, type OrcChart } from "@/game/ghelsba";
 import { MANUAL_EAST_ROAD_X, MANUAL_EAST_ROAD_Z, MANUAL_EAST_X, MANUAL_EAST_Z, MANUAL_OUTPOST_X, MANUAL_OUTPOST_Z, MANUAL_X, MANUAL_Z } from "@/game/fov";
 import {
-  BRIDGE_HALF,
-  BRIDGE_Z0,
-  BRIDGE_Z1,
-  CHATEAU_FOOT,
-  CHOCO_ROAD,
-  EAST_ROAD,
   FISHER,
   JOULET,
-  GATE_HALF,
-  NORTH_AVENUE,
-  NORTH_HARBOR,
-  NORTH_HOUSES,
-  NORTH_LANE,
-  NORTH_LINK,
-  NORTH_ROAD,
-  NORTH_WATCH,
-  NORTH_YARD,
-  PEN_EDGE,
-  PORT_HOUSES,
-  PORT_PIER,
-  PORT_QUAY,
-  PORT_YARD,
   EXITS,
   RAMPART,
   RON_CELL,
@@ -37,18 +17,14 @@ import {
   RON_Z0,
   SAN_NORTH,
   SAN_SOUTH,
-  SOUTH_HOUSES,
-  WARD_NORTH,
-  WARD_SIDE,
   ZONE_GATES,
-  type CityBlock,
-  type CityRect,
 } from "@/game/world";
 import { EAST_CELL, EAST_COAST, EAST_PATHS, EAST_PLACES, EAST_SIZE, EAST_WATER, EAST_X0, EAST_Z0, eastSquare } from "@/game/east-ronfaure";
 import { tombChart, tombSquare } from "@/game/tomb";
 import { PASS_CELL, passChart, passSquare } from "@/game/pass";
 import { glacierChart, glacierSquare } from "@/game/glacier";
 import { squareOf, ZONE_GRIDS } from "@/game/zone-grid";
+import { SAN_PROPS, sanDraw } from "@/game/sandoria-graph";
 import { ghelsbaGridSquare, worldToGrid as ghelsbaToGrid } from "@/game/ghelsba-graph";
 import { fortGridSquare, worldToGrid as fortToGrid } from "@/game/fort-graph";
 import { worldToGrid as yughottToGrid, yughottGridSquare, yughottMapAt } from "@/game/yughott-graph";
@@ -179,12 +155,8 @@ function project(x: number, z: number, c: number, radius: number, ox: number, oz
   };
 }
 
-const YARD = "#ddd0b4";
 const STREET = "#c4b496";
-const HOUSE = "#2a4e86";
 const WATER = "#2f6d86";
-const PIER = "#8d6844";
-const CHOCO = "#d7c27a";
 
 const SHORT_GATE: Record<string, string> = {
   "West Ronfaure": "W. Ronfaure",
@@ -304,6 +276,11 @@ export function zoneSquare(region: string, x: number, z: number): { square: stri
     const map = yughottMapAt(x, z);
     const { gx, gy } = yughottToGrid(x, z, map);
     return known(yughottGridSquare(gx, gy), map);
+  }
+  const cityZone = region === "Southern San d'Oria" ? "sandoria-south" : region === "Northern San d'Oria" ? "sandoria-north" : region === "Port San d'Oria" ? "sandoria-port" : "";
+  if (cityZone) {
+    const grid = ZONE_GRIDS.find((g) => g.zone === cityZone);
+    return grid ? known(squareOf(grid, x, z)) : null;
   }
   return null;
 }
@@ -613,9 +590,11 @@ function publishAudit(labels: PlacedLabel[], frame: Frame, sheet: string) {
   (globalThis as unknown as { __mapAudit?: MapAudit }).__mapAudit = { labels, frame, sheet };
 }
 
-const WARD: CityRect = { minX: -WARD_SIDE, maxX: WARD_SIDE, minZ: WARD_NORTH, maxZ: PEN_EDGE };
-const BRIDGE: CityRect = { minX: -BRIDGE_HALF, maxX: BRIDGE_HALF, minZ: BRIDGE_Z0, maxZ: BRIDGE_Z1 };
-const HARBOR: CityRect = { minX: -28, maxX: 26, minZ: -472, maxZ: -444 };
+function sanId(region: string): "south" | "north" | "port" {
+  if (region === "Northern San d'Oria") return "north";
+  if (region === "Port San d'Oria") return "port";
+  return "south";
+}
 
 function paintTown(
   ctx: CanvasRenderingContext2D,
@@ -623,101 +602,54 @@ function paintTown(
   unit: number,
   region: string,
 ) {
-  const fill = (box: CityRect, color: string) => {
-    const p = at((box.minX + box.maxX) / 2, (box.minZ + box.maxZ) / 2);
-    ctx.fillStyle = color;
-    ctx.fillRect(p.x - ((box.maxX - box.minX) / 2) * unit, p.y - ((box.maxZ - box.minZ) / 2) * unit, (box.maxX - box.minX) * unit, (box.maxZ - box.minZ) * unit);
-  };
-  const stroke = (box: CityRect) => {
-    const a = at(box.minX, box.minZ);
-    const b = at(box.maxX, box.maxZ);
-    ctx.strokeStyle = "#6e5a3e";
-    ctx.lineWidth = Math.max(1.4, unit * 0.55);
-    ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
-  };
-  const opening = (x: number, z: number, w: number, d: number, color: string) => {
-    fill({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 }, color);
-  };
-  const blocks = (rows: readonly CityBlock[]) => {
-    ctx.fillStyle = HOUSE;
-    for (const house of rows) {
-      const p = at(house.x, house.z);
-      ctx.fillRect(p.x - (house.w / 2) * unit, p.y - (house.d / 2) * unit, house.w * unit, house.d * unit);
-    }
-  };
-  if (region === "Northern San d'Oria") {
-    fill(NORTH_YARD, YARD);
-    for (const road of [NORTH_AVENUE, NORTH_WATCH, NORTH_HARBOR, NORTH_LINK, NORTH_LANE]) fill(road, STREET);
-    fill(CHATEAU_FOOT, "#1e355f");
-    fill({ minX: 5.4, maxX: 10.6, minZ: -353.2, maxZ: -344.8 }, "#162848");
-    fill({ minX: -0.4, maxX: 4.6, minZ: -342.2, maxZ: -334.4 }, "#243656");
-    fill({ minX: 11.4, maxX: 16.4, minZ: -342.2, maxZ: -334.4 }, "#243656");
-    fill({ minX: -1.5, maxX: 1.8, minZ: -338.1, maxZ: -334.7 }, "#162848");
-    fill({ minX: 14.2, maxX: 17.5, minZ: -338.1, maxZ: -334.7 }, "#162848");
-    fill({ minX: 1.3, maxX: 5.6, minZ: -336.7, maxZ: -332.3 }, "#162848");
-    fill({ minX: 10.4, maxX: 14.7, minZ: -336.7, maxZ: -332.3 }, "#162848");
-    fill({ minX: 6.2, maxX: 9.8, minZ: -333.6, maxZ: -332.4 }, "#8d6844");
-    fill({ minX: 4.6, maxX: 11.4, minZ: -332.2, maxZ: -329.8 }, "#e7dcc4");
-    blocks(NORTH_HOUSES);
-    const basin = at(18, -290);
-    ctx.fillStyle = WATER;
+  const id = sanId(region);
+  const draw = sanDraw(id);
+  ctx.fillStyle = id === "port" ? "#d9c7a2" : "#e4d3b0";
+  for (const area of draw.areas) {
+    if (area.length < 3) continue;
     ctx.beginPath();
-    ctx.arc(basin.x, basin.y, Math.max(2, 1.1 * unit), 0, Math.PI * 2);
+    area.forEach((p, i) => {
+      const q = at(p.x, p.z);
+      if (i === 0) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    });
+    ctx.closePath();
     ctx.fill();
-    stroke(NORTH_YARD);
-    opening(6, NORTH_YARD.maxZ, 8, 2.2, STREET);
-    opening(-39.2, -304, 2.2, 7, STREET);
-    opening(-16, NORTH_YARD.minZ, 8, 2.2, STREET);
-    opening(-39.4, -328, 2.2, 4, YARD);
-  } else if (region === "Port San d'Oria") {
-    fill(HARBOR, WATER);
-    fill(PORT_YARD, YARD);
-    fill(PORT_QUAY, STREET);
-    fill(PORT_PIER, PIER);
+  }
+  ctx.strokeStyle = STREET;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const span of draw.spans) {
+    const a = at(span.ax, span.az);
+    const b = at(span.bx, span.bz);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineWidth = Math.max(1.4, span.width * unit);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#e7dcc4";
+  for (const bit of SAN_PROPS[id]) {
+    if (bit.sy < 1.2 && bit.shape !== "cyl") continue;
+    const p = at(bit.x, bit.z);
+    if (bit.shape === "cyl") {
+      ctx.beginPath();
+      ctx.fillStyle = bit.id.includes("water") || bit.id.includes("fountain") ? WATER : "#e7dcc4";
+      ctx.arc(p.x, p.y, Math.max(2, (bit.sx / 2) * unit), 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
+    ctx.fillStyle = "#e7dcc4";
+    ctx.fillRect(p.x - (bit.sx / 2) * unit, p.y - (bit.sz / 2) * unit, bit.sx * unit, bit.sz * unit);
+  }
+  if (id === "port") {
     const fisher = at(FISHER.x, FISHER.z);
     const joulet = at(JOULET.x, JOULET.z);
     ctx.fillStyle = "#e3c57a";
     ctx.fillRect(fisher.x - Math.max(2, unit * 0.35), fisher.y - Math.max(2, unit * 0.35), Math.max(4, unit * 0.7), Math.max(4, unit * 0.7));
     ctx.fillRect(joulet.x - Math.max(2, unit * 0.35), joulet.y - Math.max(2, unit * 0.35), Math.max(4, unit * 0.7), Math.max(4, unit * 0.7));
-    blocks(PORT_HOUSES);
-    stroke(PORT_YARD);
-    opening(-8, PORT_YARD.maxZ, 8, 2.2, STREET);
-    opening(2, PORT_YARD.minZ, 8, 2.2, PIER);
-  } else {
-    fill(WARD, YARD);
-    fill(NORTH_ROAD, STREET);
-    fill(EAST_ROAD, STREET);
-    fill(CHOCO_ROAD, CHOCO);
-    fill(BRIDGE, "#b7a58c");
-    const keep = at(0, -12.15);
-    ctx.fillStyle = HOUSE;
-    ctx.fillRect(keep.x - 5.6 * unit, keep.y - 2.75 * unit, 11.2 * unit, 5.5 * unit);
-    blocks(SOUTH_HOUSES);
-    const fountain = at(0, -6.3);
-    ctx.fillStyle = "#8ec8ef";
-    ctx.beginPath();
-    ctx.arc(fountain.x, fountain.y, Math.max(2, 1.15 * unit), 0, Math.PI * 2);
-    ctx.fill();
-    stroke(WARD);
-    stroke(NORTH_ROAD);
-    stroke(EAST_ROAD);
-    stroke(CHOCO_ROAD);
-    opening(12, WARD_NORTH, 14, 2.4, STREET);
-    opening(WARD_SIDE, 3, 2.4, 11, STREET);
-    opening(0, PEN_EDGE, GATE_HALF * 2 + 0.8, 2.2, "#b7a58c");
-    opening(20.6, 7.2, 8, 2.4, CHOCO);
-    opening(12, NORTH_ROAD.minZ, 8, 2.2, STREET);
-    opening(EAST_ROAD.maxX, 2.8, 2.2, 6, STREET);
-    opening(20.6, CHOCO_ROAD.maxZ, 6, 2.2, CHOCO);
-    ctx.fillStyle = "#1f6a38";
-    for (const [x, z] of [[-9, 20], [9, 20], [-16, 25], [15, 25]] as const) {
-      const p = at(x, z);
-      const s = Math.max(1.5, 1.2 * unit);
-      ctx.fillRect(p.x - s, p.y - s, s * 2, s * 2);
-    }
   }
 }
-
 function fillRect(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => Pt, box: { minX: number; maxX: number; minZ: number; maxZ: number }, color: string) {
   const p = at((box.minX + box.maxX) / 2, (box.minZ + box.maxZ) / 2);
   const unitX = at(box.maxX, box.minZ).x - at(box.minX, box.minZ).x;
@@ -848,6 +780,10 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
     ctx.fillRect(0, 0, size, size);
     paintOrc(ctx, at, chart, snap.region, dpr);
   } else {
+    if (snap.region !== "Port San d'Oria") {
+      ctx.fillStyle = "#3c6b3a";
+      ctx.fillRect(0, 0, size, size);
+    }
     paintTown(ctx, at, radius / view, snap.region);
   }
   for (const blip of snap.blips) {
@@ -920,6 +856,11 @@ function drawYou(ctx: CanvasRenderingContext2D, self: Pt, yaw: number, dpr: numb
 }
 
 function gridSheet(region: string, chart: { grid?: { x0: number; z0: number; cell: number } | null } | null) {
+  const cityZone = region === "Southern San d'Oria" ? "sandoria-south" : region === "Northern San d'Oria" ? "sandoria-north" : region === "Port San d'Oria" ? "sandoria-port" : "";
+  if (cityZone) {
+    const grid = ZONE_GRIDS.find((g) => g.zone === cityZone);
+    return grid ? { x0: grid.x0, z0: grid.z0, cell: grid.cell, cols: grid.cols, rows: grid.rows } : null;
+  }
   if (region === "West Ronfaure") return { x0: RON_X0, z0: RON_Z0, cell: RON_CELL, cols: 12, rows: 12 };
   if (region === "East Ronfaure") return { x0: EAST_X0, z0: EAST_Z0, cell: EAST_CELL, cols: 12, rows: 12 };
   if (!chart?.grid) return null;
@@ -959,8 +900,8 @@ function atlasWorldMarks(snap: RadarFrame, chart: { marks?: readonly WorldMark[]
       ? ["port-to-north"]
       : ["city-south", "city-east", "city-chocobo", "city-to-north"];
   return ZONE_GATES.filter((gate) => ids.includes(gate.id)).map((gate) => ({
-    x: gate.id === "north-chateau" ? 9 : gate.x,
-    z: gate.id === "north-chateau" ? -349 : gate.z,
+    x: gate.id === "north-chateau" ? 9 : gate.id === "city-chocobo" ? 34 : gate.x,
+    z: gate.id === "north-chateau" ? -349 : gate.id === "city-chocobo" ? 22 : gate.z,
     name: gate.name,
   }));
 }
@@ -991,10 +932,10 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame, yughottMap: 1 |
       : chart
       ? chart.bounds
       : snap.region === "Northern San d'Oria"
-        ? { minX: -48, maxX: 40, minZ: -370, maxZ: -240 }
+        ? { minX: -62, maxX: 50, minZ: -390, maxZ: -236 }
         : snap.region === "Port San d'Oria"
-          ? { minX: -30, maxX: 28, minZ: -478, maxZ: -370 }
-          : { minX: -22, maxX: 70, minZ: -58, maxZ: 24 };
+          ? { minX: -40, maxX: 34, minZ: -478, maxZ: -352 }
+          : { minX: -36, maxX: 110, minZ: -58, maxZ: 36 };
   const pad = Math.round(28 * dpr);
   const worldW = bounds.maxX - bounds.minX;
   const worldH = bounds.maxZ - bounds.minZ;
@@ -1007,7 +948,8 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame, yughottMap: 1 |
   });
   const nw = at(bounds.minX, bounds.minZ);
   const se = at(bounds.maxX, bounds.maxZ);
-  ctx.fillStyle = chart ? "#241c14" : forest || east ? "#4e463c" : "#1a5678";
+  const townGrass = snap.region === "Southern San d'Oria" || snap.region === "Northern San d'Oria";
+  ctx.fillStyle = chart ? "#241c14" : forest || east ? "#4e463c" : townGrass ? "#2c5a34" : "#1a5678";
   ctx.fillRect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
 
   if (forest) {
@@ -1055,6 +997,29 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame, yughottMap: 1 |
     ctx.rect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
     ctx.clip();
     paintTown(ctx, at, scale, snap.region);
+    const lines = gridSheet(snap.region, null);
+    if (lines) {
+      ctx.strokeStyle = "rgba(227, 197, 122, 0.28)";
+      ctx.lineWidth = Math.max(1, dpr);
+      ctx.beginPath();
+      for (let i = 0; i <= lines.cols; i++) {
+        const x = lines.x0 + i * lines.cell;
+        if (x < bounds.minX || x > bounds.maxX) continue;
+        const top = at(x, bounds.minZ);
+        const bot = at(x, bounds.maxZ);
+        ctx.moveTo(top.x, top.y);
+        ctx.lineTo(bot.x, bot.y);
+      }
+      for (let i = 0; i <= lines.rows; i++) {
+        const z = lines.z0 + i * lines.cell;
+        if (z < bounds.minZ || z > bounds.maxZ) continue;
+        const left = at(bounds.minX, z);
+        const right = at(bounds.maxX, z);
+        ctx.moveTo(left.x, left.y);
+        ctx.lineTo(right.x, right.y);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

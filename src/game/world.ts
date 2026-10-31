@@ -12,6 +12,7 @@ import { assertPass, clampPass, inPass, PASS_ARRIVE, PASS_FROM_GLACIER, PASS_GAT
 import { assertGlacier, clampGlacier, glacierChart, GLACIER_ARRIVE, GLACIER_GATES, inGlacier, type GlacierGate } from "./glacier";
 import { assertWorldLinks } from "./world-links";
 import { squareCenter, squareOf, ZONE_GRIDS } from "./zone-grid";
+import { assertSanGraph, clampNorthGraph, clampPortGraph, clampSouthGraph, inNorthGraph, inPortGraph, inSouthGraph } from "./sandoria-graph";
 
 /** How far the old training fence sat from the yard center. The south gate still uses it. */
 export const PEN_EDGE = 8.55;
@@ -92,7 +93,7 @@ export type CityRect = { minX: number; maxX: number; minZ: number; maxZ: number 
  * end of that same south side (L-10). The Chocobo Circuit is just south of
  * the square (H-11). Northern San d'Oria is the north street (I-7).
  */
-export const EAST_ROAD: CityRect = { minX: 13.2, maxX: 66, minZ: -2.6, maxZ: 8.4 };
+export const EAST_ROAD: CityRect = { minX: 52, maxX: 68, minZ: 10, maxZ: 18 };
 export const NORTH_ROAD: CityRect = { minX: 2, maxX: 26, minZ: -52, maxZ: -11.5 };
 export const CHOCO_ROAD: CityRect = { minX: 16.6, maxX: 25.2, minZ: 5.8, maxZ: 17.2 };
 
@@ -119,9 +120,9 @@ export function fishCast(x: number, z: number): { x: number; z: number; yaw: num
 export type CityBlock = { x: number; z: number; w: number; d: number };
 
 /** Northern streets. Each one runs into a gate. The chateau sits north of them, with the door in front. */
-export const NORTH_AVENUE: CityRect = { minX: 0, maxX: 14, minZ: -336, maxZ: -252 };
-export const NORTH_WATCH: CityRect = { minX: -42, maxX: 14, minZ: -308, maxZ: -298 };
-export const NORTH_HARBOR: CityRect = { minX: -22, maxX: -6, minZ: -356, maxZ: -344 };
+export const NORTH_AVENUE: CityRect = { minX: 28, maxX: 38, minZ: -282, maxZ: -262 };
+export const NORTH_WATCH: CityRect = { minX: -44, maxX: -26, minZ: -310, maxZ: -286 };
+export const NORTH_HARBOR: CityRect = { minX: -20, maxX: 2, minZ: -358, maxZ: -338 };
 export const NORTH_LINK: CityRect = { minX: -14, maxX: -4, minZ: -348, maxZ: -322 };
 export const NORTH_LANE: CityRect = { minX: -42, maxX: 14, minZ: -332, maxZ: -324 };
 export const CHATEAU_FOOT: CityRect = { minX: -2, maxX: 20, minZ: -358, maxZ: -340 };
@@ -396,36 +397,36 @@ function orcZoneGate(gate: OrcGate): ZoneGate {
 
 export const ZONE_GATES: readonly ZoneGate[] = [
   { id: "city-south", name: "West Ronfaure", x: 0, z: BRIDGE_Z1 - 0.35, hx: 1.5, hz: 0.85, to: "ronfaure-south" },
-  { id: "city-east", name: "East Ronfaure", x: 60.4, z: 2.8, hx: 2.4, hz: 2.2, to: "east-ronfaure", arrive: EAST_STAND.sandoria },
+  { id: "city-east", name: "East Ronfaure", x: 72, z: 14, hx: 2.2, hz: 2.0, to: "east-ronfaure", arrive: EAST_STAND.sandoria },
   { id: "city-chocobo", name: "Chocobo Circuit", x: 20.6, z: 14.6, hx: 2.3, hz: 1.6, to: "closed", retreat: { x: 20.6, z: 9.2 } },
   {
     id: "city-to-north",
     name: "Northern San d'Oria",
-    x: 12,
-    z: -46.2,
-    hx: 4.2,
-    hz: 1.8,
+    x: 36,
+    z: -22,
+    hx: 3.2,
+    hz: 1.6,
     to: "sandoria-north",
-    arrive: { x: 6, z: -262, yaw: 0, log: "Northern San d'Oria." },
+    arrive: { x: 32, z: -276, yaw: 0, log: "Northern San d'Oria." },
   },
   {
     id: "north-to-south",
     name: "Southern San d'Oria",
-    x: 6,
-    z: -256,
-    hx: 3.4,
-    hz: 1.7,
+    x: 32,
+    z: -268,
+    hx: 3.2,
+    hz: 1.6,
     to: "sandoria-south",
-    arrive: { x: 12, z: -40, yaw: 0, log: "Southern San d'Oria." },
+    arrive: { x: 36, z: -10, yaw: 0, log: "Southern San d'Oria." },
   },
-  { id: "north-west", name: "West Ronfaure", x: -39.2, z: -304, hx: 1.7, hz: 3.3, to: "ronfaure-north" },
+  { id: "north-west", name: "West Ronfaure", x: -39.2, z: -292, hx: 1.7, hz: 2.4, to: "ronfaure-north" },
   {
     id: "north-port",
     name: "Port San d'Oria",
-    x: -16,
-    z: -352.4,
-    hx: 3.4,
-    hz: 1.7,
+    x: -4,
+    z: -352,
+    hx: 2.8,
+    hz: 1.6,
     to: "sandoria-port",
     arrive: { x: -8, z: -396, yaw: 0, log: "Port San d'Oria." },
   },
@@ -456,7 +457,7 @@ export const ZONE_GATES: readonly ZoneGate[] = [
     hx: EAST_MOUTH.sandoria.hx,
     hz: EAST_MOUTH.sandoria.hz,
     to: "sandoria-south",
-    arrive: { x: 52, z: 2.8, yaw: 0, log: "Southern San d'Oria." },
+    arrive: { x: 60, z: 14, yaw: 0, log: "Southern San d'Oria." },
   },
   {
     id: "east-west-a",
@@ -611,17 +612,15 @@ function inside(x: number, z: number, r: number, box: CityRect): boolean {
 }
 
 export function inSouthCity(x: number, z: number, radius = 0): boolean {
-  const r = Math.max(0, radius);
-  return inWard(x, z, r) || onBridge(x, z, r) || inside(x, z, r, EAST_ROAD) || inside(x, z, r, NORTH_ROAD) || inside(x, z, r, CHOCO_ROAD);
+  return inSouthGraph(x, z, Math.max(0, radius));
 }
 
 export function inNorthCity(x: number, z: number, radius = 0): boolean {
-  return inside(x, z, Math.max(0, radius), NORTH_YARD);
+  return inNorthGraph(x, z, Math.max(0, radius));
 }
 
 export function inPort(x: number, z: number, radius = 0): boolean {
-  const r = Math.max(0, radius);
-  return inside(x, z, r, PORT_YARD) || inside(x, z, r, PORT_PIER);
+  return inPortGraph(x, z, Math.max(0, radius));
 }
 
 export function inRonfaure(x: number, z: number, radius = 0): boolean {
@@ -729,9 +728,9 @@ export function clampWorld(x: number, z: number, radius = 0): { x: number; z: nu
   const south = Math.hypot(x - 12, z);
   const north = Math.hypot(x, z + 300);
   const port = Math.hypot(x, z + 420);
-  if (port < south && port < north) return clampInto(x, z, r, PORT_PARTS);
-  if (north < south) return clampInto(x, z, r, NORTH_PARTS);
-  return clampInto(x, z, r, SOUTH_PARTS);
+  if (port < south && port < north) return clampPortGraph(x, z, r);
+  if (north < south) return clampNorthGraph(x, z, r);
+  return clampSouthGraph(x, z, r);
 }
 
 export function regionName(x: number, z: number): string {
@@ -795,7 +794,7 @@ export function assertWorld(): void {
   const cliffed = clampWorld(111, 320, 0.36);
   if (!inRonfaure(cliffed.x, cliffed.z, 0.2)) throw new Error("cliff clamp");
   if (inRonfaure(-146, 330)) throw new Error("west stream is cliff");
-  const cityEast = zoneTouch(60.4, 2.8);
+  const cityEast = zoneTouch(72, 14);
   if (!cityEast || cityEast.id !== "city-east" || cityEast.to !== "east-ronfaure" || !cityEast.arrive) throw new Error("east ronfaure gate");
   if (!inEast(cityEast.arrive.x, cityEast.arrive.z, 0.36) || zoneTouch(cityEast.arrive.x, cityEast.arrive.z)) throw new Error("east arrival from the city");
   if (regionName(cityEast.arrive.x, cityEast.arrive.z) !== "East Ronfaure") throw new Error("east name");
@@ -869,17 +868,17 @@ export function assertWorld(): void {
   if (inTomb(EAST_MOUTH.tombJ.x, EAST_MOUTH.tombJ.z)) throw new Error("J-11 opens into the tomb");
   const chocobo = zoneTouch(20.6, 14.6);
   if (!chocobo || chocobo.to !== "closed" || chocobo.name !== "Chocobo Circuit") throw new Error("chocobo gate");
-  const toNorth = zoneTouch(12, -46.2);
+  const toNorth = zoneTouch(36, -22);
   if (!toNorth || toNorth.to !== "sandoria-north" || !toNorth.arrive) throw new Error("south to north");
   if (!inNorthCity(toNorth.arrive.x, toNorth.arrive.z, 0.3) || zoneTouch(toNorth.arrive.x, toNorth.arrive.z)) throw new Error("north arrival from south");
-  const toSouth = zoneTouch(6, -256);
+  const toSouth = zoneTouch(32, -268);
   if (!toSouth || toSouth.to !== "sandoria-south" || !toSouth.arrive) throw new Error("north to south");
   if (!inSouthCity(toSouth.arrive.x, toSouth.arrive.z, 0.3) || zoneTouch(toSouth.arrive.x, toSouth.arrive.z)) throw new Error("south arrival from north");
-  const west = zoneTouch(-39.2, -304);
+  const west = zoneTouch(-39.2, -292);
   if (!west || west.to !== "ronfaure-north") throw new Error("northern west gate");
   const fromWest = zoneArrival("sandoria-north");
   if (!inNorthCity(fromWest.x, fromWest.z, 0.3) || zoneTouch(fromWest.x, fromWest.z)) throw new Error("west gate arrival");
-  const toPort = zoneTouch(-16, -352.4);
+  const toPort = zoneTouch(-4, -352);
   if (!toPort || toPort.to !== "sandoria-port" || !toPort.arrive) throw new Error("port gate");
   if (!inPort(toPort.arrive.x, toPort.arrive.z, 0.3) || zoneTouch(toPort.arrive.x, toPort.arrive.z)) throw new Error("port arrival");
   const fromPort = zoneTouch(-8, -386);
@@ -945,12 +944,13 @@ export function assertWorld(): void {
   }
   for (const house of PORT_HOUSES) if (blocksStreet(house, [PORT_QUAY, PORT_PIER])) throw new Error(`port house ${house.x},${house.z} blocks the quay`);
   const on = (box: CityRect, x: number, z: number) => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
-  if (!on(NORTH_AVENUE, 6, -256) || !on(NORTH_AVENUE, 6, -262)) throw new Error("avenue misses the south gate");
-  if (!on(NORTH_WATCH, -39.2, -304) || !on(NORTH_WATCH, -30, -304)) throw new Error("watch road misses the west gate");
-  if (!on(NORTH_HARBOR, -16, -352.4) || !on(NORTH_HARBOR, -16, -344)) throw new Error("harbor road misses the port gate");
+  if (!on(NORTH_AVENUE, 32, -268) || !on(NORTH_AVENUE, 32, -276)) throw new Error("avenue misses the south gate");
+  if (!on(NORTH_WATCH, -39.2, -292) || !on(NORTH_WATCH, -30, -304)) throw new Error("watch road misses the west gate");
+  if (!on(NORTH_HARBOR, -4, -352) || !on(NORTH_HARBOR, -16, -344)) throw new Error("harbor road misses the port gate");
   if (!on(NORTH_LANE, -39.4, -328) || !on(NORTH_LANE, -32, -328) || !on(NORTH_LANE, 8, -332)) throw new Error("lane misses the landing or the chateau door");
   if (!on(PORT_QUAY, -8, -386) || !on(PORT_QUAY, 2, -446)) throw new Error("quay misses the dock");
   if (on(CHATEAU_FOOT, 8, -332)) throw new Error("chateau covers its own door");
+  assertSanGraph();
   assertWorldLinks();
   assertWorldLinks(false);
 }

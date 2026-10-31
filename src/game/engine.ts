@@ -25,7 +25,7 @@ import { assertGambits, GAMBIT_MEMBER } from "./gambits";
 import { assertParty, TRUSTS, TRUST_FOLLOW_DELAY, TRUST_FOLLOW_LEASH, stepTrustFollow, trustGearOf, trustItemId, trustTwoHand } from "./party";
 import { assertSkillchain, chainLevel, chainboundActive, takeChainBloom } from "./skillchain";
 import { assertSave, HOME_POINTS, homeStand, nearHomeCrystal, placeGeneration, readPlace, writePlace } from "./save";
-import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inRonfaure, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_HOUSES, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_HOUSES, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, SOUTH_HOUSES, WARD_NORTH, WARD_SIDE, zoneArrival, zoneTouch, assertWorld } from "./world";
+import { BRIDGE_HALF, BRIDGE_Z0, BRIDGE_Z1, CHOCO_ROAD, clampWorld, EAST_ROAD, EXITS, FISHER, JOULET, fishCast, FOREST_NORTH, GATE_HALF, inNorthCity, inPort, inRonfaure, inSouthCity, inWorld, NORTH_AVENUE, NORTH_HARBOR, NORTH_LANE, NORTH_LINK, NORTH_ROAD, NORTH_WATCH, NORTH_YARD, onCoast, PEN_EDGE, PEN_ROOM, PORT_PIER, PORT_QUAY, PORT_YARD, RAMPART, regionName, RON_COAST, RON_MARKS, RON_SIZE, RON_X0, RON_Z0, SAN_NORTH, SAN_SOUTH, WARD_NORTH, WARD_SIDE, ZONE_GATES, zoneArrival, zoneTouch, assertWorld } from "./world";
 import { buildOrcLands, orcFog, HUT_ROOF, underHutRoof, inGhelsba, inFort, inYughott, inOrc, ORC_FIRES, orcZoneAt, seatGhelsbaSave, ghelsbaTerrainSample, GHELSBA_TERRAIN, GHELSBA_FOG, FORT_FOG, takeFortDomes, grottoMap } from "./ghelsba";
 import { fortLift, traceFloorY, traceMeshFields, yughottClaimsMesh, yughottFloorY, yughottTerraceY } from "./orc-height";
 function groundY(x, z) {
@@ -34,6 +34,8 @@ function groundY(x, z) {
 
 import { BRAZIER_FLAME_H, campProps, fortFlames, inYughottPool, orcDressMarks, poolRadiusAt, takeCaveBits, yughottDrums, yughottTorches } from "./orc-dress";
 import { buildYughottPaint, buildYughottProps } from "./yughott-ground";
+import { mountSanDoria } from "./sandoria-ground";
+import { campHere, campRefusal } from "./afk";
 import { buildEastRonfaure, inEast } from "./east-ronfaure";
 import { buildTomb, inTomb } from "./tomb";
 import { buildPass, inPass, oneWayBlocks, PASS_NPCS, seatPassSave } from "./pass";
@@ -58,6 +60,10 @@ function queueYardAsserts() {
 	runYardAsserts = () => {
 		try {
 			assertWorld();
+			for (const spot of [[0, 0], [-10, -300], [0, -420]]) {
+				if (campHere("battle", spot[0], spot[1])) throw new Error("town camp");
+				if (campRefusal("battle", spot[0], spot[1]) !== "Towns and instances can't hold a camp.") throw new Error("town refusal");
+			}
 			assertFormulas();
 			assertStats();
 			assertWar();
@@ -41713,7 +41719,7 @@ function buildYard(canvas) {
 			wadeRipples.visible = grottoNow;
 			if (grottoNow) placeActorBlobs();
 		}
-		syncGrottoActors(grottoNow);
+		syncGrottoActors(grottoNow, !grottoNow && (inSouthCity(px, pz) || inNorthCity(px, pz) || inPort(px, pz)));
 		tagSpellFx();
 		globalThis.__yardSpellFxDraws = 0;
 		const renderT = performance.now();
@@ -41873,9 +41879,11 @@ function buildYard(canvas) {
 			return -1;
 		}
 	}
-	function syncGrottoActors(on) {
-		if (!on) {
+	function syncGrottoActors(on, town) {
+		if (!on && !town) {
 			if (!grottoBatch.visible && grottoHidden.size === 0) return;
+			grottoBatch.castShadow = false;
+			grottoBatch.receiveShadow = false;
 			grottoBatch.visible = false;
 			for (const mesh of grottoHidden) mesh.layers.set(0);
 			grottoHidden.clear();
@@ -41887,12 +41895,13 @@ function buildYard(canvas) {
 		const seenIds = new Set();
 		grottoLive.length = 0;
 		const roots = [];
+		const reach2 = on ? 1600 : 57600;
 		const consider = (root) => {
 			if (!root || root.visible === false) return;
 			root.getWorldPosition(grottoAt);
 			const dx = grottoAt.x - px;
 			const dz = grottoAt.z - pz;
-			if (dx * dx + dz * dz > 1600) return;
+			if (dx * dx + dz * dz > reach2) return;
 			roots.push(root);
 		};
 		consider(hero.root);
@@ -41913,7 +41922,7 @@ function buildYard(canvas) {
 				const mat = obj.material;
 				if (!mat || Array.isArray(mat)) return;
 				if (!mat.isMeshToonMaterial) {
-					if (mat.isMeshBasicMaterial) {
+					if (mat.isMeshBasicMaterial && (on || (mat.side === BackSide && !mat.transparent))) {
 						obj.layers.set(1);
 						grottoHidden.add(obj);
 						keep.add(obj);
@@ -47266,16 +47275,37 @@ function buildGoblin(toon) {
 	put(new BoxGeometry(.06, .28, .04), 12963286, .16, .5, .08);
 	return root;
 }
+function paintPart(geo, color, x, y, z, rotZ) {
+	const r = ((color >> 16) & 255) / 255;
+	const g = ((color >> 8) & 255) / 255;
+	const b = (color & 255) / 255;
+	const n = geo.getAttribute("position").count;
+	const colors = new Float32Array(n * 3);
+	for (let i = 0; i < n; i++) {
+		colors[i * 3] = r;
+		colors[i * 3 + 1] = g;
+		colors[i * 3 + 2] = b;
+	}
+	geo.setAttribute("color", new Float32BufferAttribute(colors, 3));
+	if (rotZ) geo.rotateZ(rotZ);
+	geo.translate(x, groundY(x, z) + y, z);
+	return geo;
+}
+function oneBody(toon, geos) {
+	const merged = mergeGeometries(geos);
+	const mat = toon(16777215);
+	mat.vertexColors = true;
+	const mesh = new Mesh(merged, mat);
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
+	return mesh;
+}
 function buildSanGuard(toon) {
 	const root = new Group();
 	root.name = "san-guard";
-	const put = (geo, color, x, y, z) => {
-		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, groundY(x, z) + (y), z);
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
-		root.add(mesh);
-		return mesh;
+	const geos = [];
+	const put = (geo, color, x, y, z, rotZ) => {
+		geos.push(paintPart(geo, color, x, y, z, rotZ));
 	};
 	put(new BoxGeometry(.18, .16, .28), 6964012, -.12, .1, 0);
 	put(new BoxGeometry(.18, .16, .28), 6964012, .12, .1, 0);
@@ -47298,10 +47328,9 @@ function buildSanGuard(toon) {
 	put(new BoxGeometry(.3, .08, .08), 12963286, 0, 1.48, .16);
 	put(new BoxGeometry(.06, .05, .04), 1840658, -.08, 1.52, .16);
 	put(new BoxGeometry(.06, .05, .04), 1840658, .08, 1.52, .16);
-	const pole = put(new CylinderGeometry(.04, .04, 1.85, 6), 6964012, -.46, 1.2, 0);
-	pole.rotation.z = .12;
-	const tip = put(new ConeGeometry(.08, .32, 6), 12963286, -.54, 2.18, 0);
-	tip.rotation.z = .12;
+	put(new CylinderGeometry(.04, .04, 1.85, 6), 6964012, -.46, 1.2, 0, .12);
+	put(new ConeGeometry(.08, .32, 6), 12963286, -.54, 2.18, 0, .12);
+	root.add(oneBody(toon, geos));
 	return root;
 }
 function talkFisher(who, s) {
@@ -47338,13 +47367,11 @@ function fisherTally(state, who) {
 }
 function buildAngler(toon, tunic = 1841186) {
 	const root = new Group();
-	const put = (geo, color, x, y, z) => {
-		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, groundY(x, z) + (y), z);
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
-		root.add(mesh);
-		return mesh;
+	const geos = [];
+	const put = (geo, color, x, y, z, rotX) => {
+		const part = paintPart(geo, color, x, y, z, 0);
+		if (rotX) part.rotateX(rotX);
+		geos.push(part);
 	};
 	put(new BoxGeometry(.16, .14, .26), 6964012, -.1, .08, 0);
 	put(new BoxGeometry(.16, .14, .26), 6964012, .1, .08, 0);
@@ -47357,11 +47384,13 @@ function buildAngler(toon, tunic = 1841186) {
 	put(new BoxGeometry(.08, .16, .08), 2763308, 0, 1.54, 0);
 	put(new BoxGeometry(.05, .04, .04), 1840658, -.06, 1.3, .12);
 	put(new BoxGeometry(.05, .04, .04), 1840658, .06, 1.3, .12);
-	const rod = put(new CylinderGeometry(.025, .03, 2.4, 6), 6964012, .22, .88, 1.05);
-	rod.rotation.x = 2.05;
-	const bob = put(new SphereGeometry(.07, 6, 5), 14927226, .22, .07, 2.28);
-	bob.name = "bobber";
-	bob.userData.npcBobber = true;
+	const rod = new CylinderGeometry(.025, .03, 2.4, 6);
+	rod.rotateX(2.05);
+	geos.push(paintPart(rod, 6964012, .22, .88, 1.05, 0));
+	const bob = new SphereGeometry(.07, 6, 5);
+	paintPart(bob, 14927226, .22, .07, 2.28, 0);
+	geos.push(bob);
+	root.add(oneBody(toon, geos));
 	return root;
 }
 const fortNight = { value: 0 };
@@ -47960,182 +47989,8 @@ function buildRoom(scene, toonMat, colliders) {
 	scene.userData.passTorches = passTorches;
 	scene.userData.passLights = passLights;
 	scene.userData.passFlames = passFlame;
-	const sand = 14272417;
-	const sandDark = 12035468;
-	const mortar = 9204560;
-	const cobble = 13351058;
-	const plaza = 14536884;
-	const street = 11049080;
-	const blue = 1986442;
-	const gold = 14927226;
-	const southZ = PEN_EDGE;
-	const northZ = WARD_NORTH - .85;
-	const sideX = WARD_SIDE + .9;
-	const wallH = 2.45;
-	const wallT = .78;
-	const spanX = sideX * 2;
-	const spanZ = southZ - northZ;
-	const floorZ = (southZ + northZ) / 2;
-	add(cobble, spanX + 1.4, .24, spanZ + 1.2, 0, -.12, floorZ);
-	add(plaza, 9.4, .05, 8.6, 0, .02, -1.4);
-	add(street, 3.6, .045, 12, 0, .028, 1.6);
-	add(street, spanX * .62, .045, 2.4, 0, .03, -3.6);
-	const gate = GATE_HALF + .15;
-	const southSpan = (spanX - gate * 2) / 2;
-	const southX = gate + southSpan / 2;
-	add(sand, southSpan, wallH, wallT, -southX, wallH / 2, southZ);
-	add(sand, southSpan, wallH, wallT, southX, wallH / 2, southZ);
-	const northGap0 = 3.2;
-	const northLeft = northGap0 - -sideX;
-	add(sand, northLeft, wallH, wallT, (-sideX + northGap0) / 2, wallH / 2, northZ);
-	const eastGap0 = -2.2;
-	const eastLen = eastGap0 - northZ;
-	add(sand, wallT, wallH, eastLen, sideX, wallH / 2, (northZ + eastGap0) / 2);
-	add(sand, wallT, wallH, spanZ, -sideX, wallH / 2, floorZ);
-	add(gold, southSpan, .12, .8400000000000001, -southX, 2.35, southZ);
-	add(gold, southSpan, .12, .8400000000000001, southX, 2.35, southZ);
-	add(gold, northLeft, .12, .8400000000000001, (-sideX + northGap0) / 2, 2.35, northZ);
-	add(sand, gate * 2 + 1.5, .55, 1.02, 0, 2.5700000000000003, southZ);
-	add(2772614, gate * 2 + 2.2, .4, 1.4, 0, 2.97, southZ);
-	add(gold, gate * 2 + 2.3, .1, 1.46, 0, 3.2300000000000004, southZ);
-	add(blue, .08, 1.2, .46, -(GATE_HALF + .7), 1.5, southZ - .48);
-	add(gold, .04, .72, .14, -(GATE_HALF + .7), 1.45, southZ - .68);
-	add(blue, .08, 1.2, .46, GATE_HALF + .7, 1.5, southZ - .48);
-	add(gold, .04, .72, .14, GATE_HALF + .7, 1.45, southZ - .68);
-	const merlon = (x, z, alongX) => {
-		if (alongX) add(sandDark, .56, .48, wallT, x, 2.7300000000000004, z);
-		else add(sandDark, wallT, .48, .56, x, 2.7300000000000004, z);
-	};
-	for (let x = -sideX + .9; x <= sideX - .9; x += 1.45) {
-		if (Math.abs(x) < 2.9) continue;
-		merlon(x, southZ, true);
-		if (x < northGap0 - .4) merlon(x, northZ, true);
-	}
-	for (let z = northZ + 1.3; z <= southZ - 1.3; z += 1.45) {
-		if (z < eastGap0 - .4) merlon(sideX, z, false);
-		merlon(-sideX, z, false);
-	}
-	const keepZ = -12.15;
-	const keepD = 5.5;
-	add(sand, 11.2, 3.35, keepD, 0, 1.68, keepZ);
-	add(mortar, 11.4, .16, 5.62, 0, 3.2, keepZ);
-	cityRoof(add, 0, 3.42, keepZ, 11.2, keepD);
-	add(3810332, 1.35, 1.7, .16, 0, .9, -9.38);
-	add(gold, 1.55, .12, .18, 0, 1.86, -9.38);
-	add(9357551, .55, .7, .1, -2.4, 1.7, -9.4 + .04);
-	add(9357551, .55, .7, .1, 2.4, 1.7, -9.4 + .04);
-	add(blue, .1, 1.55, .7, -3.5, 2.35, -10.65);
-	add(gold, .06, .85, .16, -3.5, 2.25, -10.25);
-	add(blue, .1, 1.55, .7, 3.5, 2.35, -10.65);
-	add(gold, .06, .85, .16, 3.5, 2.25, -10.25);
-	colliders.push({
-		minX: -5.7,
-		maxX: 5.7,
-		minZ: keepZ - keepD / 2,
-		maxZ: -9.4
-	});
-	cityHouse(add, colliders, -10.7, -5.6, 4.2, 3.4);
-	cityHouse(add, colliders, -10.7, 1.1, 4.4, 3.5);
-	cityHouse(add, colliders, -10.7, 5.5, 3.8, 3.1);
-	cityHouse(add, colliders, 10.9, -5.8, 4.2, 3.4);
-	cityHouse(add, colliders, 10.9, 1.2, 4.3, 3.5);
-	cityHouse(add, colliders, 10.9, 5.4, 3.9, 3.1);
-	const post = .47000000000000003;
-	colliders.push({
-		minX: -sideX - post,
-		maxX: -(GATE_HALF + .25),
-		minZ: southZ - post,
-		maxZ: southZ + post
-	});
-	colliders.push({
-		minX: GATE_HALF + .25,
-		maxX: sideX + post,
-		minZ: southZ - post,
-		maxZ: southZ + post
-	});
-	colliders.push({
-		minX: -sideX - post,
-		maxX: northGap0,
-		minZ: northZ - post,
-		maxZ: northZ + post
-	});
-	colliders.push({
-		minX: sideX - post,
-		maxX: sideX + post,
-		minZ: northZ,
-		maxZ: eastGap0
-	});
-	colliders.push({
-		minX: -sideX - post,
-		maxX: -sideX + post,
-		minZ: northZ,
-		maxZ: southZ
-	});
-	cityTower(scene, toonMat, colliders, -sideX, northZ, 3.7);
-	cityTower(scene, toonMat, colliders, sideX, northZ, 3.7);
-	cityTower(scene, toonMat, colliders, -sideX, southZ, 3.35);
-	cityTower(scene, toonMat, colliders, sideX, southZ, 3.35);
-	cityTower(scene, toonMat, colliders, -(GATE_HALF + 1.55), southZ, 3.2);
-	cityTower(scene, toonMat, colliders, GATE_HALF + 1.55, southZ, 3.2);
-	const flameMat = new MeshBasicMaterial({ color: 16742954 });
-	for (const [x, z] of [
-		[-6.2, 6.4],
-		[6.2, 6.4],
-		[-6.4, -8.15],
-		[6.4, -8.15]
-	]) {
-		const base = new Mesh(new BoxGeometry(.42, .46, .42), toonMat(4871520));
-		base.position.set(x, groundY(x, z) + (.23), z);
-		base.castShadow = true;
-		const bowl = new Mesh(new BoxGeometry(.28, .12, .28), toonMat(mortar));
-		bowl.position.set(x, groundY(x, z) + (.5), z);
-		const flame = new Mesh(new BoxGeometry(.12, .28, .12), flameMat);
-		flame.position.set(x, groundY(x, z) + (.7), z);
-		scene.add(base, bowl, flame);
-		colliders.push({
-			minX: x - .28,
-			maxX: x + .28,
-			minZ: z - .28,
-			maxZ: z + .28
-		});
-	}
-	const basin = new Mesh(new CylinderGeometry(1.35, 1.55, .32, 12), toonMat(sandDark));
-	basin.position.set(0, .16, -6.3);
-	basin.castShadow = true;
-	basin.receiveShadow = true;
-	const pool = new Mesh(new CylinderGeometry(1.05, 1.05, .1, 12), toonMat(4097712));
-	pool.position.set(0, .3, -6.3);
-	const jet = new Mesh(new CylinderGeometry(.07, .11, .72, 6), toonMat(9357551));
-	jet.position.set(0, .64, -6.3);
-	scene.add(basin, pool, jet);
-	colliders.push({
-		minX: -1.15,
-		maxX: 1.15,
-		minZ: -7.45,
-		maxZ: -5.15
-	});
-	add(3810332, .55, 1.7, .28, -9.7, .85, -12.6);
-	add(3810332, .55, 1.7, .28, -6.7, .85, -12.6);
-	add(14272417, 3.5, .32, .42, -8.2, 1.72, -12.6);
-	add(2772614, 3.8, .22, .55, -8.2, 1.96, -12.6);
-	add(sand, 3.2, 1.7, .42, -8.2, .85, -12.6);
-	colliders.push({
-		minX: -10.05,
-		maxX: -9.35,
-		minZ: -12.95,
-		maxZ: -12.25
-	});
-	colliders.push({
-		minX: -7.05,
-		maxX: -6.35,
-		minZ: -12.95,
-		maxZ: -12.25
-	});
-	moat(scene, toonMat, 84, 7.6, 0, (southZ + FOREST_NORTH) / 2);
-	moat(scene, toonMat, 76, 13, 0, northZ - 6.6);
-	moat(scene, toonMat, 14, spanZ + 4, sideX + 5.6, floorZ);
-	moat(scene, toonMat, 14, spanZ + 4, -sideX - 5.6, floorZ);
 	buildDistricts(add, colliders, scene, toonMat);
+	mountSanDoria(scene, tagChunk, colliders);
 	buildForest(scene, toonMat, colliders, add, buckets, addYaw, addFlag, hangTorch, addSkirt, addStone, addRed, addCue);
 	buildOrcLands(add, colliders);
 	for (const dome of takeFortDomes()) {
@@ -48666,6 +48521,9 @@ function buildRoom(scene, toonMat, colliders) {
 	};
 	bindFieldSolids(footIn);
 	seatField((x, z) => resolve(x, z, .5, colliders));
+	const cobble = 13351058;
+	const plaza = 14536884;
+	const street = 11049080;
 	const ground = /* @__PURE__ */ new Set([
 		cobble,
 		plaza,
@@ -49139,196 +48997,27 @@ function noise(dur, gain) {
 	src.start();
 }
 function buildDistricts(add, colliders, scene, toon) {
+	void toon;
 	const sand = 14272417;
-	const street = 11049080;
-	const plaza = 14536884;
-	const blue = 1986442;
 	const gold = 14927226;
 	const wood = 6964012;
-	const water = 3108230;
-	const wall = (x, z, w, d, h = 2.45) => {
-		add(sand, w, h, d, x, h / 2, z);
-		add(blue, w + .08, .22, d + .08, x, h + .02, z);
-		add(gold, w, .08, d, x, h + .16, z);
-		colliders.push({
-			minX: x - w / 2,
-			maxX: x + w / 2,
-			minZ: z - d / 2,
-			maxZ: z + d / 2
-		});
-	};
-	const floor = (box, color) => {
-		add(color, box.maxX - box.minX, .05, box.maxZ - box.minZ, (box.minX + box.maxX) / 2, .03, (box.minZ + box.maxZ) / 2);
-	};
-	floor(EAST_ROAD, street);
-	floor(NORTH_ROAD, street);
-	floor(CHOCO_ROAD, 12035468);
-	floor(NORTH_YARD, 13351058);
-	floor(PORT_YARD, 13351058);
-	floor(PORT_PIER, wood);
-	const rim = (box, gaps) => {
-		const open = (x, z) => gaps.some((gap) => Math.abs(x - gap.x) < gap.hx + .8 && Math.abs(z - gap.z) < gap.hz + .8);
-		const south = box.maxZ;
-		const north = box.minZ;
-		const west = box.minX;
-		const east = box.maxX;
-		const runX = (z, x0, x1) => {
-			const steps = Math.max(1, Math.round((x1 - x0) / 6));
-			const w = (x1 - x0) / steps;
-			for (let i = 0; i < steps; i++) {
-				const x = x0 + w * (i + .5);
-				if (open(x, z)) continue;
-				wall(x, z, w + .05, .7);
-			}
-		};
-		const runZ = (x, z0, z1) => {
-			const steps = Math.max(1, Math.round((z1 - z0) / 6));
-			const d = (z1 - z0) / steps;
-			for (let i = 0; i < steps; i++) {
-				const z = z0 + d * (i + .5);
-				if (open(x, z)) continue;
-				wall(x, z, .7, d + .05);
-			}
-		};
-		runX(south, west, east);
-		runX(north, west, east);
-		runZ(west, north, south);
-		runZ(east, north, south);
-	};
-	rim(EAST_ROAD, [{ x: 16, z: 3, hx: 4, hz: 6 }, { x: 60.4, z: 2.8, hx: 3, hz: 3 }]);
-	rim(NORTH_ROAD, [{ x: 12, z: -14, hx: 8, hz: 4 }, { x: 12, z: -46.2, hx: 5, hz: 2.4 }]);
-	rim(CHOCO_ROAD, [{ x: 20.6, z: 7, hx: 5, hz: 2.2 }, { x: 20.6, z: 14.6, hx: 3, hz: 2 }]);
-	rim(NORTH_YARD, [
-		{ x: 6, z: -256, hx: 4, hz: 2.2 },
-		{ x: -39.2, z: -304, hx: 2.2, hz: 4 },
-		{ x: -16, z: -352.4, hx: 4, hz: 2.2 },
-		{ x: -39.4, z: -328, hx: 2, hz: 2.4 }
-	]);
-	rim(PORT_YARD, [{ x: -8, z: -386, hx: 4, hz: 2.2 }, { x: 2, z: -446, hx: 4, hz: 2.4 }]);
-	const pave = (box) => add(street, box.maxX - box.minX, .06, box.maxZ - box.minZ, (box.minX + box.maxX) / 2, .05, (box.minZ + box.maxZ) / 2);
-	pave(NORTH_AVENUE);
-	pave(NORTH_WATCH);
-	pave(NORTH_HARBOR);
-	pave(NORTH_LINK);
-	pave(NORTH_LANE);
-	pave(PORT_QUAY);
-	const stone = sand;
-	const stoneDark = 12035468;
-	const roof = 2772614;
-	const roofDeep = 1717084;
-	const doorWood = 3810332;
-	const glass = 9357551;
-	const dress = (geo, color, x, y, z) => {
-		const mesh = new Mesh(geo, toon(color));
-		mesh.position.set(x, groundY(x, z) + (y), z);
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
-		scene.add(mesh);
-		return mesh;
-	};
-	const peak = (radius, height, x, base, z, sides = 8) => {
-		dress(new ConeGeometry(radius, height, sides), roof, x, base + height / 2, z);
-		dress(new ConeGeometry(radius * .46, height * .42, sides), roofDeep, x, base + height * .7, z);
-		dress(new SphereGeometry(Math.max(.16, radius * .12), 8, 6), gold, x, base + height * .92, z);
-		dress(new BoxGeometry(.1, Math.max(.8, height * .32), .1), gold, x, base + height + .55, z);
-	};
-	// Round bastion. The collider is the shaft only, so the blue roof can overhang the court.
-	const bastion = (x, z, radius, shaft, coneH) => {
-		dress(new CylinderGeometry(radius * .92, radius, shaft, 10), stone, x, shaft / 2, z);
-		dress(new CylinderGeometry(radius * 1.04, radius * 1.04, .16, 10), gold, x, shaft * .58, z);
-		dress(new CylinderGeometry(radius * 1.14, radius, .42, 10), stoneDark, x, shaft - .16, z);
-		for (let i = 0; i < 8; i++) {
-			const a = i / 8 * Math.PI * 2;
-			dress(new BoxGeometry(.42, .62, .42), stone, x + Math.cos(a) * radius * .92, shaft + .22, z + Math.sin(a) * radius * .92);
+	const arch = (x, z, hx, hz) => {
+		const tall = 2.05;
+		if (hx >= hz) {
+			add(gold, hx * 2 + 0.55, 0.16, 0.28, x, tall, z);
+			add(sand, 0.32, tall * 0.92, 0.36, x - hx - 0.15, tall * 0.46, z);
+			add(sand, 0.32, tall * 0.92, 0.36, x + hx + 0.15, tall * 0.46, z);
+		} else {
+			add(gold, 0.28, 0.16, hz * 2 + 0.55, x, tall, z);
+			add(sand, 0.36, tall * 0.92, 0.32, x, tall * 0.46, z - hz - 0.15);
+			add(sand, 0.36, tall * 0.92, 0.32, x, tall * 0.46, z + hz + 0.15);
 		}
-		peak(radius * 1.2, coneH, x, shaft + .45, z);
-		add(glass, .2, .62, .08, x, shaft * .4, z + radius + .02);
-		add(glass, .2, .62, .08, x, shaft * .68, z + radius + .02);
-		colliders.push({
-			minX: x - radius,
-			maxX: x + radius,
-			minZ: z - radius,
-			maxZ: z + radius
-		});
 	};
-	// Chateau d'Oraguille, seen from the southern court. The closed door stays at (8, -332).
-	add(plaza, 16, .04, 7.2, 8, .05, -328.6);
-	add(stone, 9.2, .16, 1.35, 8, .08, -330.55);
-	add(stone, 8, .16, 1.15, 8, .24, -331.45);
-	add(stone, 6.6, .16, 1.05, 8, .4, -332.15);
-	bastion(3.45, -334.55, 2.05, 10.2, 5.6);
-	bastion(12.55, -334.55, 2.05, 10.2, 5.6);
-	bastion(.15, -336.4, 1.55, 7.4, 3.8);
-	bastion(15.85, -336.4, 1.55, 7.4, 3.8);
-	add(stone, 3.2, 6.2, 1.55, 1.7, 3.1, -335.6);
-	add(stone, 3.2, 6.2, 1.55, 14.3, 3.1, -335.6);
-	add(roof, 3.5, .45, 1.9, 1.7, 6.45, -335.6);
-	add(roof, 3.5, .45, 1.9, 14.3, 6.45, -335.6);
-	for (const x of [-.15, .7, 1.55, 2.4, 13.15, 14, 14.85, 15.7]) add(stoneDark, .42, .7, .5, x, 6.7, -334.95);
-	add(stone, 4.4, 6.4, 2.5, 8, 3.2, -334.7);
-	add(stoneDark, 4.7, .28, 2.7, 8, 6.5, -334.7);
-	add(gold, 4.9, .12, 2.75, 8, 6.72, -334.7);
-	add(stone, .85, 5.6, 1.45, 6.05, 2.8, -333.35);
-	add(stone, .85, 5.6, 1.45, 9.95, 2.8, -333.35);
-	add(stone, 4.8, 1.15, 1.55, 8, 5.85, -333.35);
-	add(gold, 5, .14, 1.65, 8, 6.5, -333.3);
-	const gable = new ConeGeometry(2.55, 2.15, 4);
-	gable.rotateY(Math.PI / 4);
-	dress(gable, roof, 8, 7.55, -333.35);
-	dress(new BoxGeometry(.12, 1.5, .12), gold, 8, 8.85, -333.35);
-	add(doorWood, 1.45, 4.15, .24, 7.15, 2.12, -332.95);
-	add(doorWood, 1.45, 4.15, .24, 8.85, 2.12, -332.95);
-	add(gold, .1, 3.9, .08, 8, 2.15, -332.8);
-	add(gold, .16, .55, .08, 6.55, 2.5, -332.78);
-	add(gold, .16, .55, .08, 9.45, 2.5, -332.78);
-	add(gold, .22, .22, .08, 7.7, 2.15, -332.78);
-	add(gold, .22, .22, .08, 8.3, 2.15, -332.78);
-	add(blue, 1.7, 1.7, .08, 8, 5.15, -332.72);
-	add(gold, .7, .85, .1, 8, 5.15, -332.64);
-	add(blue, .85, 2.5, .08, 3.45, 6.4, -332.35);
-	add(gold, .9, .12, .1, 3.45, 7.7, -332.3);
-	add(blue, .85, 2.5, .08, 12.55, 6.4, -332.35);
-	add(gold, .9, .12, .1, 12.55, 7.7, -332.3);
-	add(stone, 4.6, 5.6, 7.4, 2.1, 2.8, -338.4);
-	add(stone, 4.6, 5.6, 7.4, 13.9, 2.8, -338.4);
-	add(roof, 5, .5, 7.8, 2.1, 5.8, -338.4);
-	add(roofDeep, 3.2, .4, 5.2, 2.1, 6.2, -338.4);
-	add(roof, 5, .5, 7.8, 13.9, 5.8, -338.4);
-	add(roofDeep, 3.2, .4, 5.2, 13.9, 6.2, -338.4);
-	add(stoneDark, 16.8, .45, 13.8, 8, .22, -349);
-	add(stone, 16, 7.4, 13, 8, 4.05, -349);
-	add(gold, 16.3, .12, 13.3, 8, 7.8, -349);
-	add(roof, 16.6, 1.15, 13.6, 8, 8.4, -349);
-	add(roof, 11.2, 1.35, 9, 8, 9.6, -349);
-	add(roofDeep, 6.6, 1.25, 5.2, 8, 10.85, -349);
-	bastion(8, -349, 2.5, 12.4, 6.2);
-	for (const x of [2.4, 5.2, 10.8, 13.6]) {
-		add(glass, .42, .72, .1, x, 3.6, -342.35);
-		add(glass, .42, .72, .1, x, 5.7, -342.35);
+	for (const gate of ZONE_GATES) {
+		if (gate.id === "north-chateau") continue;
+		if (!gate.id.startsWith("city-") && !gate.id.startsWith("north-") && gate.id !== "port-to-north") continue;
+		arch(gate.x, gate.z, gate.hx, gate.hz);
 	}
-	for (let x = 1.1; x <= 14.9; x += 1.4) add(stoneDark, .46, .62, .46, x, 8.15, -342.55);
-	add(stoneDark, .85, 6.6, 1.2, 1.35, 3.3, -341.7);
-	add(stoneDark, .85, 6.6, 1.2, 14.65, 3.3, -341.7);
-	colliders.push({ minX: -1.2, maxX: 17.2, minZ: -356.2, maxZ: -342.2 });
-	colliders.push({ minX: 5.4, maxX: 10.6, minZ: -336.4, maxZ: -333.6 });
-	colliders.push({ minX: -.4, maxX: 4.5, minZ: -342.2, maxZ: -335.2 });
-	colliders.push({ minX: 11.5, maxX: 16.4, minZ: -342.2, maxZ: -335.2 });
-	for (const house of NORTH_HOUSES) cityHouse(add, colliders, house.x, house.z, house.w, house.d);
-	for (const house of PORT_HOUSES) cityHouse(add, colliders, house.x, house.z, house.w, house.d);
-	for (const house of SOUTH_HOUSES) {
-		if (Math.abs(house.x) < 12 && house.z > -8) continue;
-		if (house.z < -20 || house.x > 40) cityHouse(add, colliders, house.x, house.z, house.w, house.d);
-	}
-	add(water, 2.4, .35, 2.4, 18, .2, -290);
-	add(water, 56, .08, 70, 1, -.05, -479);
-	add(wood, .32, 1.2, .32, -1.15, .15, -456.8);
-	add(wood, .32, 1.2, .32, 5.25, .15, -456.8);
-	add(gold, 4.6, .35, .7, 60.4, 2.7, 2.8);
-	add(gold, .7, .35, 3.4, 12, 2.7, -46.2);
-	add(gold, 3.2, .35, .7, 6, 2.7, -256);
-	add(gold, .7, .35, 3.2, -39.2, 2.7, -304);
-	add(gold, 3.2, .35, .7, -16, 2.7, -352.4);
-	add(gold, 3.2, .35, .7, -8, 2.7, -386);
-	add(gold, 2.4, .3, .55, 20.6, 2.3, 14.6);
-	add(wood, .35, 2.1, 2.2, -42.6, 1.05, -328);
+	add(wood, .32, 1.2, .32, -1.15, .6, -456.8);
+	add(wood, .32, 1.2, .32, 5.25, .6, -456.8);
 }
