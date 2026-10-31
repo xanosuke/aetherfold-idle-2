@@ -93,7 +93,9 @@ function wallRgb(hex: number) {
   return [c.r, c.g, c.b];
 }
 
-const WALL_SIDE = wallRgb(0x332e39);
+const WALL_BASE = wallRgb(0x14121a);
+const WALL_BANDS = [wallRgb(0x2a2631), wallRgb(0x332e39), wallRgb(0x3c3644)];
+const WALL_TOPS = [wallRgb(0x34303a), wallRgb(0x3a3542), wallRgb(0x3c3644)];
 const WALL_LIP = wallRgb(0x3d3846);
 const WALL_ROCK = wallRgb(0x1c1a22);
 const LIP_W = 0.3;
@@ -266,6 +268,7 @@ export function buildYughottPaint(tag: Tag) {
         area += ax * bz - bx * az;
       }
       const ccw = area >= 0;
+      let arc = 0;
       for (let i = 0; i < n; i++) {
         const ax = flat[i * 2];
         const az = flat[i * 2 + 1];
@@ -275,6 +278,7 @@ export function buildYughottPaint(tag: Tag) {
         const dz = bz - az;
         const len = Math.hypot(dx, dz);
         if (len < 0.05) continue;
+        arc += len;
         let ox = dz / len;
         let oz = -dx / len;
         if (!ccw) {
@@ -286,12 +290,22 @@ export function buildYughottPaint(tag: Tag) {
         const mz = (az + bz) * 0.5 - oz * 0.25;
         const y0 = paintY(map, mx, mz);
         const y1 = y0 + h;
+        const band = Math.floor(arc / 2.2) % 3;
+        const mid = WALL_BANDS[band];
+        const top = WALL_TOPS[band];
+        const yBase = y0 + h * 0.2;
+        const yMid = y0 + h * 0.58;
         const bucket = take((ax + bx) * 0.5, (az + bz) * 0.5);
         const { pos: wpos, col: wcol, idx: widx } = bucket;
-        const base = wpos.length / 3;
-        wpos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
-        wcol.push(...WALL_SIDE, ...WALL_SIDE, ...WALL_SIDE, ...WALL_SIDE);
-        widx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        const pushBand = (yLo: number, yHi: number, cLo: number[], cHi: number[]) => {
+          const base = wpos.length / 3;
+          wpos.push(ax, yLo, az, bx, yLo, bz, bx, yHi, bz, ax, yHi, az);
+          wcol.push(...cLo, ...cLo, ...cHi, ...cHi);
+          widx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        };
+        pushBand(y0, yBase, WALL_BASE, WALL_BASE);
+        pushBand(yBase, yMid, mid, mid);
+        pushBand(yMid, y1, top, top);
         const cap = wpos.length / 3;
         wpos.push(ax, y1, az, bx, y1, bz, bx + ox * LIP_W, y1, bz + oz * LIP_W, ax + ox * LIP_W, y1, az + oz * LIP_W);
         wcol.push(...WALL_LIP, ...WALL_LIP, ...WALL_ROCK, ...WALL_ROCK);

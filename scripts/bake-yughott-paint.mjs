@@ -26,10 +26,21 @@ function rimKind(x, z) {
     const sector = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 11);
     const width = 0.4 + ((sector * 5) % 4) * 0.1;
     const t = dist - edge;
-    if (t >= 0 && t < 0.12) return "lip";
-    if (t >= 0.12 && t < width) return "stone";
+    const jag = shoreJag(ang, edge);
+    const lipOuter = Math.max(0.05, 0.14 + jag);
+    const stoneOuter = Math.max(lipOuter + 0.16, width + jag);
+    if (t >= 0 && t < lipOuter) return "lip";
+    if (t >= lipOuter && t < stoneOuter) return "stone";
   }
   return "";
+}
+
+function shoreJag(ang, radius) {
+  const arc = ang * Math.max(1, radius);
+  const wave = 1.7 + 1.1 * (0.5 + 0.5 * Math.sin(arc * 0.23));
+  const amp = 0.32 + 0.24 * (0.5 + 0.5 * Math.sin(arc * 0.41 + 1.3));
+  const jag = Math.sin((arc / wave) * Math.PI * 2) * 0.72 + Math.sin((arc / (wave * 1.37 + 0.4)) * Math.PI * 2 + 0.6) * 0.28;
+  return jag * amp;
 }
 
 function shadowSpots() {
@@ -269,56 +280,9 @@ function floorColor(i, j, distOut) {
   let r = 0x3e;
   let g = 0x39;
   let b = 0x3f;
-  const damp = 26 * RES;
-  const dx = (i / damp) | 0;
-  const dy = (j / damp) | 0;
-  if (hash2(dx * 2.2 + 1, dy * 1.7) > 0.55) {
-    const lx = ((i % damp) / damp) - 0.5;
-    const ly = ((j % damp) / damp) - 0.48;
-    const edge = 0.28 + hash2(dx + 3, dy) * 0.16;
-    if (lx * lx * 1.2 + ly * ly < edge * edge) {
-      r = 0x2c;
-      g = 0x28;
-      b = 0x32;
-    }
-  }
-  const moss = 34 * RES;
-  const mx = (i / moss) | 0;
-  const my = (j / moss) | 0;
-  if (hash2(mx * 4.1 + 8, my * 2.4) > 0.72) {
-    const lx = ((i % moss) / moss) - 0.38;
-    const ly = ((j % moss) / moss) - 0.62;
-    const clump = lx * lx * 1.4 + ly * ly;
-    if (clump < 0.02) {
-      r = 0x29;
-      g = 0x3e;
-      b = 0x26;
-    } else if (clump < 0.045) {
-      r = 0x24;
-      g = 0x38;
-      b = 0x28;
-    }
-  }
-  const crackCell = 36 * RES;
-  const bx = (i / crackCell) | 0;
-  const by = (j / crackCell) | 0;
-  const qx = i % crackCell;
-  const qy = j % crackCell;
-  const tilt = hash2(bx + 1, by) > 0.5 ? 0.35 : 1.15;
-  const shift = (hash2(bx, by + 3) - 0.5) * crackCell * 0.55;
-  const diag = Math.abs(qx - qy * tilt - crackCell * 0.12 - shift);
-  const branchAt = (0.3 + hash2(bx + 5, by) * 0.45) * crackCell;
-  const branch = Math.abs(qy - branchAt);
-  const crackOn = (diag < RES * 1.5 && qx > RES * 3 && qx < crackCell - RES * 3)
-    || (branch < RES * 1.15 && qx > crackCell * 0.18 && qx < crackCell * 0.78);
-  if (crackOn) {
-    r = 0x22;
-    g = 0x1e;
-    b = 0x26;
-  }
   if (distOut < 3 * RES) {
     const t = 1 - distOut / (3 * RES);
-    const dark = t * t * 0.18;
+    const dark = t * t * 0.08;
     r *= 1 - dark;
     g *= 1 - dark;
     b *= 1 - dark;
@@ -326,24 +290,112 @@ function floorColor(i, j, distOut) {
   return avoidClear(r, g, b);
 }
 
-function rockColor(distPx, i, j) {
+function ellipseSeed(W, H, cell, gate, radiusOf) {
+  const mask = new Uint8Array(W * H);
+  const cols = Math.ceil(W / cell);
+  const rows = Math.ceil(H / cell);
+  for (let my = 0; my < rows; my++) {
+    for (let mx = 0; mx < cols; mx++) {
+      if (hash2(mx * gate.x + gate.bx, my * gate.y + gate.by) <= gate.min) continue;
+      const cx = (mx + 0.5 + (hash2(mx + 3, my) - 0.5) * 0.16) * cell;
+      const cy = (my + 0.48 + (hash2(mx, my + 3) - 0.5) * 0.16) * cell;
+      const rad = radiusOf(mx, my, cell);
+      const rx = rad.rx;
+      const ry = rad.ry;
+      const i0 = Math.max(0, Math.floor(cx - rx - 1));
+      const i1 = Math.min(W - 1, Math.ceil(cx + rx + 1));
+      const j0 = Math.max(0, Math.floor(cy - ry - 1));
+      const j1 = Math.min(H - 1, Math.ceil(cy + ry + 1));
+      const rx2 = rx * rx || 1;
+      const ry2 = ry * ry || 1;
+      for (let j = j0; j <= j1; j++) {
+        const dy = j - cy;
+        const row = j * W;
+        for (let i = i0; i <= i1; i++) {
+          const dx = i - cx;
+          if ((dx * dx) / rx2 + (dy * dy) / ry2 <= 1) mask[row + i] = 1;
+        }
+      }
+    }
+  }
+  return mask;
+}
+
+function strokeSeg(mask, W, H, x0, y0, x1, y1, rad) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+  const r2 = rad * rad;
+  const ri = Math.ceil(rad);
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const x = x0 + (x1 - x0) * t;
+    const y = y0 + (y1 - y0) * t;
+    const i0 = Math.max(0, Math.floor(x - ri));
+    const i1 = Math.min(W - 1, Math.ceil(x + ri));
+    const j0 = Math.max(0, Math.floor(y - ri));
+    const j1 = Math.min(H - 1, Math.ceil(y + ri));
+    for (let j = j0; j <= j1; j++) {
+      const row = j * W;
+      const dy = j - y;
+      for (let i = i0; i <= i1; i++) {
+        const dx = i - x;
+        if (dx * dx + dy * dy <= r2) mask[row + i] = 1;
+      }
+    }
+  }
+}
+
+function crackSeed(W, H, cell, salt) {
+  const mask = new Uint8Array(W * H);
+  const cols = Math.ceil(W / cell);
+  const rows = Math.ceil(H / cell);
+  const rad = 2.4;
+  for (let by = 0; by < rows; by++) {
+    for (let bx = 0; bx < cols; bx++) {
+      if (hash2(bx + salt, by + 4) <= 0.42) continue;
+      const x0 = bx * cell;
+      const y0 = by * cell;
+      const tilt = hash2(bx + 1, by + salt) > 0.5 ? 0.35 : 1.15;
+      const shift = (hash2(bx, by + 3 + salt) - 0.5) * cell * 0.45;
+      const yAt = (x) => y0 + (x - x0) * tilt + cell * 0.12 + shift;
+      const inset = cell * 0.12;
+      strokeSeg(mask, W, H, x0 + inset, yAt(x0 + inset), x0 + cell - inset, yAt(x0 + cell - inset), rad);
+      const branchAt = y0 + (0.3 + hash2(bx + 5, by + salt) * 0.4) * cell;
+      strokeSeg(mask, W, H, x0 + cell * 0.2, branchAt, x0 + cell * 0.78, branchAt, rad);
+    }
+  }
+  return mask;
+}
+
+function contourFeature(mask, W, H) {
+  let on = 0;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) on++;
+  if (!on) return mask;
+  const raw = marchLoops(mask, W, H);
+  const loops = [];
+  for (const loop of raw) {
+    if (loopLength(loop) < 3 * RES) continue;
+    let pts = loop;
+    for (let pass = 0; pass < 3; pass++) pts = chaikin(pts);
+    pts = resample(pts, 0.55 * RES);
+    pts = displaceEdge(pts, mask, W, H, 0.15);
+    pts = resample(pts, 0.95 * RES);
+    pts = sealAxisRuns(pts, mask, W, H, 2.4);
+    if (pts.length < 6) continue;
+    loops.push(pts);
+  }
+  const filled = fillLoops(loops, W, H);
+  let kept = 0;
+  for (let i = 0; i < filled.length; i++) if (filled[i]) kept++;
+  console.log(`tone contour in ${on} out ${kept} loops ${loops.length}`);
+  return filled;
+}
+
+function rockColor(distPx) {
   const yalms = Math.max(0, distPx) / RES;
   const t = Math.max(0, Math.min(1, yalms / 22));
-  let r = 0x1c + (0x1a - 0x1c) * t;
-  let g = 0x1a + (0x18 - 0x1a) * t;
-  let b = 0x22 + (0x20 - 0x22) * t;
-  const crackCell = 48 * RES;
-  const bx = (i / crackCell) | 0;
-  const by = (j / crackCell) | 0;
-  const qx = i % crackCell;
-  const qy = j % crackCell;
-  const shift = (hash2(bx + 2, by) - 0.5) * crackCell * 0.35;
-  const diag = Math.abs(qx * 0.55 - qy - shift);
-  if (diag < RES * 1.1 && hash2(bx, by + 4) > 0.42 && yalms > 1.2 && yalms < 16) {
-    r = 0x14;
-    g = 0x12;
-    b = 0x18;
-  }
+  const r = 0x1c + (0x1a - 0x1c) * t;
+  const g = 0x1a + (0x18 - 0x1a) * t;
+  const b = 0x22 + (0x20 - 0x22) * t;
   return avoidClear(r, g, b);
 }
 
@@ -496,7 +548,7 @@ function outsideScore(mask, W, H, x, y, nx, ny) {
   return score;
 }
 
-function displaceEdge(loop, mask, W, H) {
+function displaceEdge(loop, mask, W, H, bias) {
   const n = loop.length;
   const out = new Array(n);
   let arc = 0;
@@ -516,7 +568,7 @@ function displaceEdge(loop, mask, W, H) {
     const wave = 1.7 + 1.1 * (0.5 + 0.5 * Math.sin(arc * 0.23));
     const amp = 0.32 + 0.24 * (0.5 + 0.5 * Math.sin(arc * 0.41 + 1.3));
     const jag = Math.sin((arc / wave) * Math.PI * 2) * 0.72 + Math.sin((arc / (wave * 1.37 + 0.4)) * Math.PI * 2 + 0.6) * 0.28;
-    const push = jag * amp * RES;
+    const push = (jag + (bias || 0)) * amp * RES;
     out[i] = { x: p.x + pick.x * push, y: p.y + pick.y * push, nx: pick.x, ny: pick.y };
   }
   return out;
@@ -583,9 +635,9 @@ function worstAxis(loop, slack) {
   return worst;
 }
 
-function sealAxisRuns(loop, mask, W, H) {
+function sealAxisRuns(loop, mask, W, H, limitPx) {
   let pts = loop;
-  const limit = 1.45 * RES;
+  const limit = limitPx == null ? 1.45 * RES : limitPx;
   for (let pass = 0; pass < 8; pass++) {
     if (worstAxis(pts, 0.18) <= limit) break;
     const n = pts.length;
@@ -799,6 +851,20 @@ function bakeMap(map) {
   if (floor2 < floorPx * 0.55) throw new Error(`map ${map} contour fill collapsed ${floor2}/${floorPx}`);
   mask.set(walked.mask);
   const hash = edgeHash(walked.loops, W, H);
+  const damp = contourFeature(ellipseSeed(W, H, 26 * RES, { x: 2.2, y: 1.7, bx: 1, by: 0, min: 0.55 }, (mx, my, cell) => {
+    const edge = (0.2 + hash2(mx + 3, my) * 0.07) * cell;
+    return { rx: edge * 0.92, ry: edge };
+  }), W, H);
+  const floorCrack = contourFeature(crackSeed(W, H, 36 * RES, 1), W, H);
+  const rockCrack = contourFeature(crackSeed(W, H, 48 * RES, 9), W, H);
+  const moss = ellipseSeed(W, H, 8 * RES, { x: 5.1, y: 3.4, bx: 11, by: 6, min: 0.8 }, (mx, my) => {
+    const rx = Math.min(0.72 * RES, (0.28 + hash2(mx + 2, my + 8) * 0.42) * RES);
+    const ry = Math.min(0.72 * RES, (0.24 + hash2(mx + 6, my + 1) * 0.4) * RES);
+    return { rx, ry };
+  });
+  const mossSpan = maxPatchYalms(moss, W, H);
+  console.log(`map ${map} moss span ${mossSpan.toFixed(2)} yalms`);
+  if (mossSpan > 1.5) throw new Error(`map ${map} moss patch ${mossSpan.toFixed(2)} yalms`);
   const distOut = chamfer((i) => {
     if (!mask[i]) return false;
     const x = i % W;
@@ -807,6 +873,14 @@ function bakeMap(map) {
     return !mask[i - 1] || !mask[i + 1] || !mask[i - W] || !mask[i + W];
   }, W, H);
   const distIn = chamfer((i) => mask[i] === 1, W, H);
+  const rockSeed = new Uint8Array(W * H);
+  const rockReach = 12 * RES;
+  for (let i = 0; i < rockSeed.length; i++) {
+    if (mask[i]) continue;
+    const d = distIn[i];
+    if (d > 0.5 && d < rockReach) rockSeed[i] = 1;
+  }
+  const rockTop = contourFeature(rockSeed, W, H);
   const gw = Math.ceil(span / STEP);
   const gh = Math.ceil(span / STEP);
   const bits = Buffer.alloc(Math.ceil((gw * gh) / 8));
@@ -839,6 +913,9 @@ function bakeMap(map) {
   }
   const tilesX = Math.ceil(span / TILE);
   const tiles = [];
+  const toneMap = new Uint16Array(W * H);
+  const frame = Buffer.alloc(W * H * 4, 255);
+  const watch = map === 1 ? [{ name: "h8", x: -577.8, z: 658.9 }, { name: "g8", x: -590.64, z: 658.4 }, { name: "f9", x: -682.48, z: 707.6 }] : [];
   for (let iz = 0; iz < tilesX; iz++) {
     for (let ix = 0; ix < tilesX; ix++) {
       const x = ox + ix * TILE;
@@ -847,9 +924,10 @@ function bakeMap(map) {
       const dY = Math.min(TILE, oz + span - z);
       const pw = Math.max(1, Math.round(wY * RES));
       const ph = Math.max(1, Math.round(dY * RES));
-      const rgba = Buffer.alloc(pw * ph * 4);
       const i0 = Math.round((x - ox) * RES);
       const j0 = Math.round((z - oz) * RES);
+      let floorN = 0;
+      let mossN = 0;
       for (let row = 0; row < ph; row++) {
         const srcJ = Math.max(0, Math.min(H - 1, j0 + row));
         for (let col = 0; col < pw; col++) {
@@ -863,10 +941,34 @@ function bakeMap(map) {
           }
           const cover = signed <= -1.15 ? 0 : signed >= 1.15 ? 1 : (signed + 1.15) / 2.3;
           const floor = floorColor(srcI, srcJ, Math.max(0, signed));
-          const rock = rockColor(Math.max(0, -signed), srcI, srcJ);
-          let r = mixByte(rock[0], floor[0], cover);
-          let g = mixByte(rock[1], floor[1], cover);
-          let b = mixByte(rock[2], floor[2], cover);
+          const nearRock = [0x1c, 0x1a, 0x22];
+          const voidRock = [0x1a, 0x18, 0x20];
+          const shelf = !inside && rockTop[src] ? nearRock : voidRock;
+          let r = mixByte(shelf[0], floor[0], cover);
+          let g = mixByte(shelf[1], floor[1], cover);
+          let b = mixByte(shelf[2], floor[2], cover);
+          if (inside && damp[src]) {
+            r = 0x2c;
+            g = 0x28;
+            b = 0x32;
+          }
+          if (inside && floorCrack[src]) {
+            r = 0x22;
+            g = 0x1e;
+            b = 0x26;
+          }
+          if (inside && moss[src] && !damp[src] && !floorCrack[src]) {
+            r = 0x3c;
+            g = 0x3e;
+            b = 0x3b;
+            mossN++;
+          }
+          if (inside) floorN++;
+          if (!inside && rockCrack[src] && (rockTop[src] || cover > 0.2)) {
+            r = 0x14;
+            g = 0x12;
+            b = 0x18;
+          }
           if (cover > 0.65 && map === 1) {
             const wx = ox + (srcI + 0.5) / RES;
             const wz = oz + (srcJ + 0.5) / RES;
@@ -881,19 +983,61 @@ function bakeMap(map) {
               b = 0x42;
             }
           }
-          const p = (row * pw + col) * 4;
-          rgba[p] = r;
-          rgba[p + 1] = g;
-          rgba[p + 2] = b;
-          rgba[p + 3] = 255;
+          const p = src * 4;
+          frame[p] = r;
+          frame[p + 1] = g;
+          frame[p + 2] = b;
         }
       }
-      stampShadows(rgba, pw, ph, x, z, map);
+      if (floorN > 0 && mossN / floorN > 0.15) throw new Error(`map ${map} tile ${ix},${iz} moss ${(mossN / floorN).toFixed(3)}`);
+    }
+  }
+  stampShadows(frame, W, H, ox, oz, map);
+  serrate(frame, W, H, 0, 0);
+  serrate(frame, W, H, 0, 0);
+  nickToneRuns(frame, W, H);
+  const classRun = jagClassRuns(frame, W, H);
+  console.log(`map ${map} class axis ${classRun}px`);
+  if (classRun >= 4) throw new Error(`map ${map} tone class stair ${classRun}px`);
+  for (let iz = 0; iz < tilesX; iz++) {
+    for (let ix = 0; ix < tilesX; ix++) {
+      const x = ox + ix * TILE;
+      const z = oz + iz * TILE;
+      const wY = Math.min(TILE, ox + span - x);
+      const dY = Math.min(TILE, oz + span - z);
+      const pw = Math.max(1, Math.round(wY * RES));
+      const ph = Math.max(1, Math.round(dY * RES));
+      const i0 = Math.round((x - ox) * RES);
+      const j0 = Math.round((z - oz) * RES);
+      const rgba = Buffer.alloc(pw * ph * 4);
+      for (let row = 0; row < ph; row++) {
+        const srcJ = Math.max(0, Math.min(H - 1, j0 + row));
+        for (let col = 0; col < pw; col++) {
+          const srcI = Math.max(0, Math.min(W - 1, i0 + col));
+          const s = (srcJ * W + srcI) * 4;
+          const p = (row * pw + col) * 4;
+          rgba[p] = frame[s];
+          rgba[p + 1] = frame[s + 1];
+          rgba[p + 2] = frame[s + 2];
+          rgba[p + 3] = 255;
+          toneMap[srcJ * W + srcI] = ((rgba[p] >> 3) << 10) | ((rgba[p + 1] >> 3) << 5) | (rgba[p + 2] >> 3);
+        }
+      }
+      for (const spot of watch) {
+        const col = Math.round((spot.x - x) * RES - 0.5);
+        const row = Math.round((spot.z - z) * RES - 0.5);
+        if (col >= 0 && row >= 0 && col < pw && row < ph) {
+          const p = (row * pw + col) * 4;
+          console.log(`${spot.name} paint ${rgba[p]},${rgba[p + 1]},${rgba[p + 2]}`);
+        }
+      }
       const file = `m${map}-${ix}-${iz}.png`;
       writePng(resolve(pub, file), pw, ph, rgba);
       tiles.push({ ix, iz, x, z, w: wY, d: dY, src: `/yughott/${file}` });
     }
   }
+  const tone = worstToneRun(toneMap, W, H);
+  console.log(`map ${map} tone axis ${tone.yalms.toFixed(2)} yalms (${tone.px}px) ${tone.at ? `${tone.at.dir}@${tone.at.x},${tone.at.y}` : ""}`);
   console.log(`map ${map} floorPx ${floorPx} cells ${cells} tiles ${tiles.length} ${W}x${H}`);
   const loops = walked.loops.map((loop) => {
     const flat = [];
@@ -903,7 +1047,400 @@ function bakeMap(map) {
     }
     return flat;
   });
-  return { ox, oz, span, gw, gh, cells: bits.toString("base64"), tiles, loops };
+  return { ox, oz, span, gw, gh, cells: bits.toString("base64"), tiles, loops, toneAxis: Math.round(tone.yalms * 100) / 100 };
+}
+
+function maxPatchYalms(mask, W, H) {
+  const seen = new Uint8Array(mask.length);
+  const stack = [];
+  let worst = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i] || seen[i]) continue;
+    let minX = W;
+    let maxX = 0;
+    let minY = H;
+    let maxY = 0;
+    stack.push(i);
+    seen[i] = 1;
+    while (stack.length) {
+      const p = stack.pop();
+      const x = p % W;
+      const y = (p / W) | 0;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      const push = (q) => {
+        if (mask[q] && !seen[q]) {
+          seen[q] = 1;
+          stack.push(q);
+        }
+      };
+      if (x > 0) push(p - 1);
+      if (x + 1 < W) push(p + 1);
+      if (y > 0) push(p - W);
+      if (y + 1 < H) push(p + W);
+    }
+    const span = Math.max(maxX - minX + 1, maxY - minY + 1) / RES;
+    if (span > worst) worst = span;
+  }
+  return worst;
+}
+
+function paintClass(r, g, b) {
+  const rock = (r - 28) * (r - 28) + (g - 26) * (g - 26) + (b - 34) * (b - 34);
+  const voidC = (r - 26) * (r - 26) + (g - 24) * (g - 24) + (b - 32) * (b - 32);
+  const damp = (r - 44) * (r - 44) + (g - 40) * (g - 40) + (b - 50) * (b - 50);
+  let best = rock;
+  let id = 1;
+  if (voidC < best) {
+    best = voidC;
+    id = 2;
+  }
+  if (damp < best) {
+    best = damp;
+    id = 3;
+  }
+  return best <= 12 ? id : 0;
+}
+
+function jagClassRuns(rgba, w, h) {
+  const cls = new Uint8Array(w * h);
+  const paintFrom = (buf, x, y, sx, sy) => {
+    const d = (y * w + x) * 4;
+    const s = (sy * w + sx) * 4;
+    rgba[d] = buf[s];
+    rgba[d + 1] = buf[s + 1];
+    rgba[d + 2] = buf[s + 2];
+  };
+  const rebuild = (buf) => {
+    for (let i = 0; i < w * h; i++) {
+      const p = i * 4;
+      cls[i] = paintClass(buf[p], buf[p + 1], buf[p + 2]);
+    }
+  };
+  const at = (x, y) => cls[y * w + x];
+  for (let pass = 0; pass < 5; pass++) {
+    const src = Buffer.from(rgba);
+    rebuild(src);
+    let n = 0;
+    for (let y = 1; y < h - 2; y++) {
+      let x = 0;
+      while (x < w) {
+        const a = at(x, y);
+        const b = at(x, y + 1);
+        if (!a || !b || a === b) {
+          x++;
+          continue;
+        }
+        let x1 = x + 1;
+        while (x1 < w && at(x1, y) === a && at(x1, y + 1) === b) x1++;
+        if (x1 - x >= 4) {
+          for (let k = x; k < x1; k++) {
+            const shift = Math.round(Math.sin((k / (1.6 * RES)) * Math.PI * 2) * 2);
+            const nick = shift === 0 && (k - x) % 2 === 1 ? -1 : shift;
+            if (nick > 0) {
+              for (let s = 1; s <= nick && y + s < h; s++) paintFrom(src, k, y + s, k, y);
+            } else if (nick < 0) {
+              for (let s = 0; s < -nick && y - s >= 0; s++) paintFrom(src, k, y - s, k, y + 1);
+            }
+            n++;
+          }
+        }
+        x = x1;
+      }
+    }
+    const mid = Buffer.from(rgba);
+    rebuild(mid);
+    for (let x = 1; x < w - 2; x++) {
+      let y = 0;
+      while (y < h) {
+        const a = at(x, y);
+        const b = at(x + 1, y);
+        if (!a || !b || a === b) {
+          y++;
+          continue;
+        }
+        let y1 = y + 1;
+        while (y1 < h && at(x, y1) === a && at(x + 1, y1) === b) y1++;
+        if (y1 - y >= 4) {
+          for (let k = y; k < y1; k++) {
+            const shift = Math.round(Math.sin((k / (1.6 * RES)) * Math.PI * 2) * 2);
+            const nick = shift === 0 && (k - y) % 2 === 1 ? -1 : shift;
+            if (nick > 0) {
+              for (let s = 1; s <= nick && x + s < w; s++) paintFrom(mid, x + s, k, x, k);
+            } else if (nick < 0) {
+              for (let s = 0; s < -nick && x - s >= 0; s++) paintFrom(mid, x - s, k, x + 1, k);
+            }
+            n++;
+          }
+        }
+        y = y1;
+      }
+    }
+    if (!n) break;
+  }
+  rebuild(rgba);
+  let worst = 0;
+  for (let y = 0; y < h - 1; y++) {
+    let run = 0;
+    let prevA = 0;
+    let prevB = 0;
+    for (let x = 0; x < w; x++) {
+      const a = at(x, y);
+      const b = at(x, y + 1);
+      if (a && b && a !== b) {
+        if (a === prevA && b === prevB) run++;
+        else {
+          run = 1;
+          prevA = a;
+          prevB = b;
+        }
+        if (run > worst) worst = run;
+      } else {
+        run = 0;
+        prevA = 0;
+        prevB = 0;
+      }
+    }
+  }
+  for (let x = 0; x < w - 1; x++) {
+    let run = 0;
+    let prevA = 0;
+    let prevB = 0;
+    for (let y = 0; y < h; y++) {
+      const a = at(x, y);
+      const b = at(x + 1, y);
+      if (a && b && a !== b) {
+        if (a === prevA && b === prevB) run++;
+        else {
+          run = 1;
+          prevA = a;
+          prevB = b;
+        }
+        if (run > worst) worst = run;
+      } else {
+        run = 0;
+        prevA = 0;
+        prevB = 0;
+      }
+    }
+  }
+  return worst;
+}
+
+function toneOf(r, g, b) {
+  return ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+}
+
+function serrate(rgba, w, h, ox, oy) {
+  const src = Buffer.from(rgba);
+  const tone = (x, y) => {
+    const p = (y * w + x) * 4;
+    return toneOf(src[p], src[p + 1], src[p + 2]);
+  };
+  const wave = 1.8 * RES;
+  const amp = 2;
+  const paint = (x, y, sx, sy) => {
+    const d = (y * w + x) * 4;
+    const s = (sy * w + sx) * 4;
+    rgba[d] = src[s];
+    rgba[d + 1] = src[s + 1];
+    rgba[d + 2] = src[s + 2];
+  };
+  for (let y = amp; y < h - amp - 1; y++) {
+    let x = 0;
+    while (x < w) {
+      const a = tone(x, y);
+      const b = tone(x, y + 1);
+      if (a === b) {
+        x++;
+        continue;
+      }
+      let x1 = x + 1;
+      while (x1 < w && tone(x1, y) === a && tone(x1, y + 1) === b) x1++;
+      if (x1 - x > 6) {
+        for (let k = x; k < x1; k++) {
+          let solid = true;
+          for (let s = 1; s <= amp; s++) {
+            if (tone(k, y - s) !== a || tone(k, y + 1 + s) !== b) solid = false;
+          }
+          const shift = Math.round(Math.sin(((ox + k) / wave) * Math.PI * 2) * amp);
+          if (!solid) {
+            if (shift > 0) paint(k, y + 1, k, y);
+            else if (shift < 0) paint(k, y, k, y + 1);
+            continue;
+          }
+          if (shift > 0) {
+            for (let s = 1; s <= shift; s++) paint(k, y + s, k, y);
+          } else if (shift < 0) {
+            for (let s = 0; s < -shift; s++) paint(k, y - s, k, y + 1);
+          }
+        }
+      }
+      x = x1;
+    }
+  }
+  src.set(rgba);
+  for (let x = amp; x < w - amp - 1; x++) {
+    let y = 0;
+    while (y < h) {
+      const a = tone(x, y);
+      const b = tone(x + 1, y);
+      if (a === b) {
+        y++;
+        continue;
+      }
+      let y1 = y + 1;
+      while (y1 < h && tone(x, y1) === a && tone(x + 1, y1) === b) y1++;
+      if (y1 - y > 6) {
+        for (let k = y; k < y1; k++) {
+          let solid = true;
+          for (let s = 1; s <= amp; s++) {
+            if (tone(x - s, k) !== a || tone(x + 1 + s, k) !== b) solid = false;
+          }
+          const shift = Math.round(Math.sin(((oy + k) / wave) * Math.PI * 2) * amp);
+          if (!solid) {
+            if (shift > 0) paint(x + 1, k, x, k);
+            else if (shift < 0) paint(x, k, x + 1, k);
+            continue;
+          }
+          if (shift > 0) {
+            for (let s = 1; s <= shift; s++) paint(x + s, k, x, k);
+          } else if (shift < 0) {
+            for (let s = 0; s < -shift; s++) paint(x - s, k, x + 1, k);
+          }
+        }
+      }
+      y = y1;
+    }
+  }
+}
+
+function nickToneRuns(rgba, w, h) {
+  const toneAt = (buf, x, y) => {
+    const p = (y * w + x) * 4;
+    return toneOf(buf[p], buf[p + 1], buf[p + 2]);
+  };
+  const paintFrom = (buf, x, y, sx, sy) => {
+    const d = (y * w + x) * 4;
+    const s = (sy * w + sx) * 4;
+    rgba[d] = buf[s];
+    rgba[d + 1] = buf[s + 1];
+    rgba[d + 2] = buf[s + 2];
+  };
+  const nickH = (buf) => {
+    let n = 0;
+    for (let y = 0; y < h - 1; y++) {
+      let x = 0;
+      while (x < w) {
+        const a = toneAt(buf, x, y);
+        const b = toneAt(buf, x, y + 1);
+        if (a === b) {
+          x++;
+          continue;
+        }
+        let x1 = x + 1;
+        while (x1 < w && toneAt(buf, x1, y) === a && toneAt(buf, x1, y + 1) === b) x1++;
+        if (x1 - x >= 4) {
+          for (let k = x + 1; k < x1; k += 2) {
+            paintFrom(buf, k, y, k, y + 1);
+            n++;
+          }
+        }
+        x = x1;
+      }
+    }
+    return n;
+  };
+  const nickV = (buf) => {
+    let n = 0;
+    for (let x = 0; x < w - 1; x++) {
+      let y = 0;
+      while (y < h) {
+        const a = toneAt(buf, x, y);
+        const b = toneAt(buf, x + 1, y);
+        if (a === b) {
+          y++;
+          continue;
+        }
+        let y1 = y + 1;
+        while (y1 < h && toneAt(buf, x, y1) === a && toneAt(buf, x + 1, y1) === b) y1++;
+        if (y1 - y >= 4) {
+          for (let k = y + 1; k < y1; k += 2) {
+            paintFrom(buf, x, k, x + 1, k);
+            n++;
+          }
+        }
+        y = y1;
+      }
+    }
+    return n;
+  };
+  for (let pass = 0; pass < 6; pass++) {
+    const src = Buffer.from(rgba);
+    const n = nickH(src) + nickV(src);
+    if (!n) break;
+  }
+}
+
+function worstToneRun(tones, W, H) {
+  let worst = 0;
+  let at = null;
+  const note = (run, x, y, a, b, dir) => {
+    if (run > worst) {
+      worst = run;
+      at = { x, y, a, b, dir };
+    }
+  };
+  for (let y = 0; y < H - 1; y++) {
+    let run = 0;
+    let prevA = -1;
+    let prevB = -1;
+    const row = y * W;
+    const next = row + W;
+    for (let x = 0; x < W; x++) {
+      const a = tones[row + x];
+      const b = tones[next + x];
+      if (a !== b) {
+        if (a === prevA && b === prevB) run++;
+        else {
+          run = 1;
+          prevA = a;
+          prevB = b;
+        }
+        note(run, x, y, a, b, "h");
+      } else {
+        run = 0;
+        prevA = -1;
+        prevB = -1;
+      }
+    }
+  }
+  for (let x = 0; x < W - 1; x++) {
+    let run = 0;
+    let prevA = -1;
+    let prevB = -1;
+    for (let y = 0; y < H; y++) {
+      const i = y * W + x;
+      const a = tones[i];
+      const b = tones[i + 1];
+      if (a !== b) {
+        if (a === prevA && b === prevB) run++;
+        else {
+          run = 1;
+          prevA = a;
+          prevB = b;
+        }
+        note(run, x, y, a, b, "v");
+      } else {
+        run = 0;
+        prevA = -1;
+        prevB = -1;
+      }
+    }
+  }
+  return { yalms: worst / RES, px: worst, at };
 }
 
 mkdirSync(pub, { recursive: true });
@@ -1001,6 +1538,16 @@ for (const [name, x, z] of stands) {
 }
 if (edgeBad) {
   console.error("axis runs still over 2 yalms");
+  process.exit(1);
+}
+let toneBad = false;
+for (const map of MAPS) {
+  const run = maps[map].toneAxis;
+  console.log(`map ${map} baked tone axis ${run}`);
+  if (!(run < 1)) toneBad = true;
+}
+if (toneBad) {
+  console.error("tone boundary axis runs still 4px or longer");
   process.exit(1);
 }
 

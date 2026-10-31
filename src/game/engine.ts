@@ -33425,14 +33425,14 @@ function buildYard(canvas) {
 		column.userData.peak = .7;
 		g.add(column);
 		for (let i = 0; i < 3; i++) {
-			const band = new Mesh(new TorusGeometry(.95 + i * .16, .035, 8, 28), new MeshBasicMaterial({
+			const band = new Mesh(new TorusGeometry(.22 + i * .05, .02, 8, 20), new MeshBasicMaterial({
 				color: i === 1 ? accent : color,
 				transparent: true,
 				opacity: .95,
 				depthWrite: false,
 				toneMapped: false
 			}));
-			band.position.y = .42 + i * .48;
+			band.position.y = .7 + i * .28;
 			band.rotation.x = Math.PI / 2;
 			band.userData.ownGeo = true;
 			band.userData.peak = .95;
@@ -33449,7 +33449,7 @@ function buildYard(canvas) {
 			closeTo: .82,
 			spin: bar.status ? .35 : .7
 		});
-		const seal = new Mesh(new RingGeometry(.55, .95, 36), new MeshBasicMaterial({
+		const seal = new Mesh(new RingGeometry(.18, .32, 24), new MeshBasicMaterial({
 			color,
 			transparent: true,
 			opacity: .95,
@@ -33595,14 +33595,14 @@ function buildYard(canvas) {
 			g.add(dome);
 			const bands = 3 + Math.min(2, tier - 1);
 			for (let i = 0; i < bands; i++) {
-				const ring = new Mesh(new TorusGeometry(.4 + i * .09, .014, 6, 28), new MeshBasicMaterial({
+				const ring = new Mesh(new TorusGeometry(.16 + i * .035, .014, 6, 28), new MeshBasicMaterial({
 					color: i % 2 ? film : color,
 					transparent: true,
 					opacity: .9,
 					depthWrite: false,
 					toneMapped: false
 				}));
-				ring.position.y = .46 + i * .2;
+				ring.position.y = .9 + i * .12;
 				ring.rotation.x = Math.PI / 2;
 				ring.userData.ownGeo = true;
 				ring.userData.peak = .9;
@@ -42023,6 +42023,7 @@ function buildYard(canvas) {
 			if (window.__yardStep) delete window.__yardStep;
 			if (window.__yardGfx) delete window.__yardGfx;
 			if (window.__yardGfxReset) delete window.__yardGfxReset;
+			if (window.__floorCover) delete window.__floorCover;
 			if (window.__seatAudit && window.__seatAudit.token === seatToken) delete window.__seatAudit;
 		}
 	};
@@ -42083,6 +42084,59 @@ function buildYard(canvas) {
 		for (let i = ringAt; i < rings.length; i++) spellFxRows(rings[i].g, rows);
 		rows.sort();
 		return rows;
+	};
+	const floorCoverBox = new Box3();
+	const floorCoverScale = new Vector3();
+	window.__floorCover = () => {
+		scene.updateMatrixWorld(true);
+		const foot = groundY(px, pz);
+		let worst = 0;
+		let name = "";
+		scene.traverse((obj) => {
+			if (!obj.isMesh || !obj.visible || obj.type === "InstancedMesh") return;
+			let node = obj.parent;
+			while (node) {
+				if (!node.visible) return;
+				node = node.parent;
+			}
+			const mat = obj.material;
+			if (!mat || Array.isArray(mat)) return;
+			const soft = !!(mat.transparent || (mat.opacity != null && mat.opacity < 0.98) || mat.depthWrite === false);
+			if (!soft) return;
+			const geo = obj.geometry;
+			if (!geo) return;
+			if (!geo.boundingBox) geo.computeBoundingBox();
+			if (!geo.boundingBox) return;
+			floorCoverBox.copy(geo.boundingBox).applyMatrix4(obj.matrixWorld);
+			const sx = floorCoverBox.max.x - floorCoverBox.min.x;
+			const sy = floorCoverBox.max.y - floorCoverBox.min.y;
+			const sz = floorCoverBox.max.z - floorCoverBox.min.z;
+			if (floorCoverBox.max.x < px - 14 || floorCoverBox.min.x > px + 14) return;
+			if (floorCoverBox.max.z < pz - 14 || floorCoverBox.min.z > pz + 14) return;
+			if (sy > 0.4 || floorCoverBox.min.y > foot + 1.1) return;
+			obj.getWorldScale(floorCoverScale);
+			const s = Math.max(floorCoverScale.x, floorCoverScale.z);
+			const p = geo.parameters || {};
+			let area = sx * sz;
+			if (geo.type === "RingGeometry" && p.innerRadius != null && p.outerRadius != null) {
+				const outer = p.outerRadius * s;
+				const inner = p.innerRadius * s;
+				if (outer - inner <= 0.2) return;
+				area = Math.PI * (outer * outer - inner * inner);
+			} else if (geo.type === "CircleGeometry") {
+				const radius = (p.radius || 1) * s;
+				area = Math.PI * radius * radius;
+			}
+			if (area > worst) {
+				worst = area;
+				name = obj.name || geo.type;
+			}
+		});
+		return {
+			area: Math.round(worst * 100) / 100,
+			name,
+			log: (useGame.getState().log || []).slice(-8).map((line) => line.text)
+		};
 	};
 	const seatToken = {};
 	let heroFloorMin = Infinity;

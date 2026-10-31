@@ -221,6 +221,33 @@ function floorBand(png) {
   return vals[Math.floor(vals.length * 0.9)];
 }
 
+function floorGreen(png) {
+  const { width, height, data } = decodePng(png);
+  const x0 = Math.floor(width * 0.22);
+  const x1 = Math.floor(width * 0.78);
+  const y0 = Math.floor(height * 0.45);
+  const y1 = Math.floor(height * 0.68);
+  let floor = 0;
+  let green = 0;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      if (L < 0.08 || L > 0.4) continue;
+      const flame = r > 168 && r > g + 18 && r > b + 30;
+      const actor = x >= x0 && x <= x1 && y >= y0 && y <= y1;
+      const water = g > r + 8 && b > r + 4 && r < 90;
+      if (flame || actor || water) continue;
+      floor++;
+      if (g > r + 6 && g > b + 4) green++;
+    }
+  }
+  return floor ? green / floor : 0;
+}
+
 function grottoLum(png) {
   const { width, height, data } = decodePng(png);
   const vals = [];
@@ -1420,6 +1447,97 @@ function allowedFrameMesh(hit) {
   return false;
 }
 
+async function assertH8BuffFloor(browser, url) {
+  const live = JSON.parse(readFileSync("/workspace/data/yard-save.json", "utf8"));
+  const save = structuredClone(live);
+  save.position = { x: -577.8, z: 658.9, yaw: 0 };
+  save.buffs = [];
+  save.log = [];
+  save.engaged = false;
+  save.ko = false;
+  save.hp = save.hp || 1134;
+  if (save.gambits?.player) save.gambits.player.on = false;
+  if (save.party) save.party.summoned = ["kupipi"];
+  const blob = JSON.stringify(save);
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+  });
+  await context.addInitScript(() => {
+    const shift = 1500000;
+    const now = Date.now;
+    Date.now = () => now.call(Date) + shift;
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && !msg.text().includes("ERR_FAILED")) errors.push(msg.text());
+  });
+  page.on("pageerror", (err) => errors.push(String(err?.message || err)));
+  await page.route("**/*", (route) => {
+    if (route.request().url().includes("/_serverFn/")) return route.abort();
+    return route.continue();
+  });
+  await page.addInitScript((text) => localStorage.setItem("aetherfold-idle-save", text), blob);
+  page.__bootAt = Date.now();
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await waitBootLabel(
+      page,
+      () => {
+        const text = document.body?.innerText || "";
+        return text.includes("Yughott") && text.includes("H-8");
+      },
+      [],
+      "h8-buff",
+    );
+    await page.waitForFunction(() => window.__floorCover && window.__yardStep, null, { timeout: 20000 });
+    const shot = await page.evaluate(() => new Promise((resolve) => {
+      let cover = null;
+      let ticks = 0;
+      const step = () => {
+        window.__yardStep(15);
+        ticks += 15;
+        cover = window.__floorCover();
+        const log = (cover.log || []).join("\n");
+        const landed = log.includes("Defense +220") && log.includes("Magic damage cut");
+        if ((landed && ticks > 30) || ticks >= 900) {
+          if (landed) window.__yardStep(50);
+          cover = window.__floorCover();
+          const canvas = document.querySelector("canvas");
+          resolve({
+            cover,
+            landed,
+            ticks,
+            png: canvas ? canvas.toDataURL("image/png") : "",
+          });
+          return;
+        }
+        requestAnimationFrame(step);
+      };
+      step();
+    }));
+    if (errors.length) return { ok: false, error: `h8 buff ${errors[0]}` };
+    if (!shot.landed) return { ok: false, error: `h8 buff spells did not land ${JSON.stringify(shot.cover && shot.cover.log)}` };
+    const area = shot.cover ? shot.cover.area : 99;
+    console.log(`BUFF floor cover ${area} ${shot.cover && shot.cover.name} ticks ${shot.ticks}`);
+    if (!(area <= 1)) return { ok: false, error: `h8 floor cover ${area} ${shot.cover && shot.cover.name}` };
+    if (!shot.png.startsWith("data:image/png;base64,")) return { ok: false, error: "h8 buff no canvas" };
+    const png = Buffer.from(shot.png.slice("data:image/png;base64,".length), "base64");
+    const band = floorBand(png);
+    console.log(`BUFF floor lum ${band.toFixed(3)}`);
+    if (!(band >= 0.12 && band <= 0.24)) return { ok: false, error: `h8 buff floor lum ${band.toFixed(3)}` };
+    writeFileSync("/workspace/screenshots/h8-a4s-buffs.png", png);
+    return { ok: true, area, band };
+  } catch (err) {
+    return { ok: false, error: `h8 buff ${err.message}` };
+  } finally {
+    await context.close();
+  }
+}
+
 async function assertGrottoCover(browser, url, seated) {
   const stands = [
     { name: "h8", x: -561.1, z: 659.6, square: "H-8", region: "Yughott Grotto" },
@@ -1453,12 +1571,14 @@ async function assertGrottoCover(browser, url, seated) {
       if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
       const stats = paintStats(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64"));
       const band = floorBand(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64"));
+      const green = stand.name === "h8" ? floorGreen(Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64")) : 0;
       const edge = await boot.page.evaluate((at) => (window.__yughottEdgeRun ? window.__yughottEdgeRun(at.x, at.z, 30) : null), stand);
-      console.log(`COVER ${stand.name} clear ${stats.clear} bright ${stats.bright} scenery ${sceneryCalls(gfx)} calls ${gfx && gfx.calls} floor ${band.toFixed(3)} edge ${edge} meshes ${cast.meshes.map((hit) => hit.name || "unnamed").join(",")}`);
+      console.log(`COVER ${stand.name} clear ${stats.clear} bright ${stats.bright} scenery ${sceneryCalls(gfx)} calls ${gfx && gfx.calls} floor ${band.toFixed(3)} green ${green.toFixed(3)} edge ${edge} meshes ${cast.meshes.map((hit) => hit.name || "unnamed").join(",")}`);
       if (stats.clear > 0) return { ok: false, error: `${stand.name} clear-colour pixels ${stats.clear}` };
       if (stats.bright > 0) return { ok: false, error: `${stand.name} bright pixels ${stats.bright}` };
       if (!gfx || !(sceneryCalls(gfx) <= 37)) return { ok: false, error: `${stand.name} draw ${sceneryCalls(gfx)}` };
       if (!(band >= 0.12 && band <= 0.24)) return { ok: false, error: `${stand.name} floor lum ${band.toFixed(3)}` };
+      if (stand.name === "h8" && !(green < 0.1)) return { ok: false, error: `${stand.name} green floor ${(green * 100).toFixed(1)}%` };
       if ((stand.name === "h8" || stand.name === "g8" || stand.name === "f9") && !(edge <= 2)) {
         return { ok: false, error: `${stand.name} edge run ${edge}` };
       }
@@ -1625,6 +1745,14 @@ async function checkGhelsba(browser, url) {
   if (!walking.ok) return { ...walking, nodes: places.nodes, shots };
   const cover = await assertGrottoCover(browser, url, seated);
   if (!cover.ok) return { ...cover, nodes: places.nodes, shots };
+  const buff = await assertH8BuffFloor(browser, url);
+  if (!buff.ok) return { ...buff, nodes: places.nodes, shots };
+  const paintSrc = readFileSync("/workspace/src/game/yughott-paint.generated.ts", "utf8");
+  const toneAxes = [...paintSrc.matchAll(/"toneAxis":(\d+(?:\.\d+)?)/g)].map((hit) => Number(hit[1]));
+  if (!toneAxes.length || toneAxes.some((run) => !(run <= 2))) {
+    return { ok: false, error: `tone axis ${toneAxes.join(",") || "missing"}`, nodes: places.nodes, shots };
+  }
+  console.log(`TONE axis ${toneAxes.join(",")}`);
   const parity = await assertFxParity(browser, url, seated);
   if (!parity.ok) return { ...parity, nodes: places.nodes, shots };
   const trace = await orcTrace(browser, url, seated);
