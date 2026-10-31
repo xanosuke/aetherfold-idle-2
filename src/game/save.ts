@@ -769,7 +769,7 @@ const CAM_YAW = 0.62;
 /** Southern San d'Oria, in the yard. Port San d'Oria, on the quay east of the pier. */
 export const HOME_POINTS = {
   crystal: { x: 3.5, z: -4.4 },
-  port: { x: 5.2, z: -443.2 },
+  port: { x: 5.184, z: -897.184 },
 } as const;
 
 /** Where Return and Warp stand you. The field manual still uses the southern crystal. */

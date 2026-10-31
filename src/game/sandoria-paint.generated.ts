@@ -2,29 +2,32 @@
 export const SAN_PAINT = {
   "south": {
     "url": "/sandoria/south.png",
-    "minX": -24,
-    "maxX": 86,
-    "minZ": -48,
-    "maxZ": 22,
-    "w": 220,
-    "h": 140
+    "minX": -250,
+    "maxX": 420,
+    "minZ": -340,
+    "maxZ": 210,
+    "w": 2680,
+    "h": 2200,
+    "lum": 0.362
   },
   "north": {
     "url": "/sandoria/north.png",
-    "minX": -50,
-    "maxX": 42,
-    "minZ": -366,
-    "maxZ": -244,
-    "w": 184,
-    "h": 244
+    "minX": -220,
+    "maxX": 400,
+    "minZ": -760,
+    "maxZ": -300,
+    "w": 2480,
+    "h": 1840,
+    "lum": 0.362
   },
   "port": {
     "url": "/sandoria/port.png",
-    "minX": -30,
-    "maxX": 26,
-    "minZ": -462,
-    "maxZ": -374,
-    "w": 112,
-    "h": 176
+    "minX": -90,
+    "maxX": 90,
+    "minZ": -1060,
+    "maxZ": -680,
+    "w": 720,
+    "h": 1520,
+    "lum": 0.362
   }
 } as const;

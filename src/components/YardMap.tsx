@@ -155,8 +155,10 @@ function project(x: number, z: number, c: number, radius: number, ox: number, oz
   };
 }
 
-const STREET = "#c4b496";
+const STREET = "#8d6a45";
 const WATER = "#2f6d86";
+const PARCHMENT = "#d4c4a0";
+const PLAZA = "#efe2c4";
 
 const SHORT_GATE: Record<string, string> = {
   "West Ronfaure": "W. Ronfaure",
@@ -604,7 +606,7 @@ function paintTown(
 ) {
   const id = sanId(region);
   const draw = sanDraw(id);
-  ctx.fillStyle = id === "port" ? "#d9c7a2" : "#e4d3b0";
+  ctx.fillStyle = PLAZA;
   for (const area of draw.areas) {
     if (area.length < 3) continue;
     ctx.beginPath();
@@ -742,7 +744,8 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
   const east = snap.region === "East Ronfaure";
   const pass = snap.region === "Ranguemont Pass" && chart;
   const span = pass ? Math.max(chart.bounds.maxX - chart.bounds.minX, chart.bounds.maxZ - chart.bounds.minZ) : 0;
-  const view = forest || east ? 340 : pass ? span * 0.56 : chart ? 78 : VIEW;
+  const city = snap.region === "Southern San d'Oria" || snap.region === "Northern San d'Oria" || snap.region === "Port San d'Oria";
+  const view = forest || east ? 340 : pass ? span * 0.56 : chart ? 78 : city ? 150 : VIEW;
   const ox = forest ? RON_X0 + RON_SIZE / 2 : east ? EAST_X0 + EAST_SIZE / 2 : pass ? (chart.bounds.minX + chart.bounds.maxX) / 2 : snap.x;
   const oz = forest ? RON_Z0 + RON_SIZE / 2 : east ? EAST_Z0 + EAST_SIZE / 2 : pass ? (chart.bounds.minZ + chart.bounds.maxZ) / 2 : snap.z;
   const at = (x: number, z: number) => project(x, z, c, radius, ox, oz, view);
@@ -780,10 +783,8 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
     ctx.fillRect(0, 0, size, size);
     paintOrc(ctx, at, chart, snap.region, dpr);
   } else {
-    if (snap.region !== "Port San d'Oria") {
-      ctx.fillStyle = "#3c6b3a";
-      ctx.fillRect(0, 0, size, size);
-    }
+    ctx.fillStyle = PARCHMENT;
+    ctx.fillRect(0, 0, size, size);
     paintTown(ctx, at, radius / view, snap.region);
   }
   for (const blip of snap.blips) {
@@ -895,13 +896,13 @@ function atlasWorldMarks(snap: RadarFrame, chart: { marks?: readonly WorldMark[]
   }
   if (chart?.marks) return chart.marks.map((mark) => ({ x: mark.x, z: mark.z, name: mark.name, role: mark.role }));
   const ids = snap.region === "Northern San d'Oria"
-    ? ["north-to-south", "north-west", "north-port", "north-chateau", "north-landing"]
+    ? ["north-to-south", "north-west", "north-west-d7", "north-port", "north-chateau", "north-landing"]
     : snap.region === "Port San d'Oria"
       ? ["port-to-north"]
       : ["city-south", "city-east", "city-chocobo", "city-to-north"];
   return ZONE_GATES.filter((gate) => ids.includes(gate.id)).map((gate) => ({
-    x: gate.id === "north-chateau" ? 9 : gate.id === "city-chocobo" ? 34 : gate.x,
-    z: gate.id === "north-chateau" ? -349 : gate.id === "city-chocobo" ? 22 : gate.z,
+    x: gate.x,
+    z: gate.z,
     name: gate.name,
   }));
 }
@@ -925,17 +926,16 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame, yughottMap: 1 |
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#0c1b38";
   ctx.fillRect(0, 0, w, h);
+  const citySheet = gridSheet(snap.region, null);
   const bounds = forest
     ? { minX: RON_X0, maxX: RON_X0 + RON_SIZE, minZ: RON_Z0, maxZ: RON_Z0 + RON_SIZE }
     : east
       ? { minX: EAST_X0, maxX: EAST_X0 + EAST_SIZE, minZ: EAST_Z0, maxZ: EAST_Z0 + EAST_SIZE }
       : chart
       ? chart.bounds
-      : snap.region === "Northern San d'Oria"
-        ? { minX: -62, maxX: 50, minZ: -390, maxZ: -236 }
-        : snap.region === "Port San d'Oria"
-          ? { minX: -40, maxX: 34, minZ: -478, maxZ: -352 }
-          : { minX: -36, maxX: 110, minZ: -58, maxZ: 36 };
+      : citySheet
+        ? { minX: citySheet.x0, maxX: citySheet.x0 + citySheet.cols * citySheet.cell, minZ: citySheet.z0, maxZ: citySheet.z0 + citySheet.rows * citySheet.cell }
+        : { minX: -36, maxX: 110, minZ: -58, maxZ: 36 };
   const pad = Math.round(28 * dpr);
   const worldW = bounds.maxX - bounds.minX;
   const worldH = bounds.maxZ - bounds.minZ;
@@ -948,8 +948,8 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame, yughottMap: 1 |
   });
   const nw = at(bounds.minX, bounds.minZ);
   const se = at(bounds.maxX, bounds.maxZ);
-  const townGrass = snap.region === "Southern San d'Oria" || snap.region === "Northern San d'Oria";
-  ctx.fillStyle = chart ? "#241c14" : forest || east ? "#4e463c" : townGrass ? "#2c5a34" : "#1a5678";
+  const townParchment = snap.region === "Southern San d'Oria" || snap.region === "Northern San d'Oria" || snap.region === "Port San d'Oria";
+  ctx.fillStyle = chart ? "#241c14" : forest || east ? "#4e463c" : townParchment ? "#d9c7a0" : "#1a5678";
   ctx.fillRect(nw.x, nw.y, se.x - nw.x, se.y - nw.y);
 
   if (forest) {

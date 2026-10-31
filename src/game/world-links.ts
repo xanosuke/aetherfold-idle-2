@@ -16,7 +16,7 @@ export type WorldLink = { a: LinkEnd; b: LinkEnd; oneWay?: "a->b"; closed?: bool
 export const WORLD_LINKS: WorldLink[] = [
   { a: { zone: "ronfaure-south", square: "I-6" }, b: { zone: "sandoria-south", square: "F-10" } },
   { a: { zone: "ronfaure-north", square: "I-5" }, b: { zone: "sandoria-north", square: "C-8" } },
-  { a: { zone: "ronfaure-north", square: "I-5" }, b: { zone: "sandoria-north", square: "D-7" }, note: "second gate, not built yet" },
+  { a: { zone: "ronfaure-north", square: "I-5" }, b: { zone: "sandoria-north", square: "D-7" } },
   { a: { zone: "ronfaure-south", square: "J-7" }, b: { zone: "east-ronfaure", square: "F-7" } },
   { a: { zone: "ronfaure-south", square: "J-9" }, b: { zone: "east-ronfaure", square: "F-9" } },
   { a: { zone: "ronfaure-south", square: "E-4" }, b: { zone: "ghelsba", square: "J-11" } },
@@ -220,7 +220,6 @@ export function assertWorldLinks(report = true): LinkRow[] {
     }
     const bad = rows.filter((row, index) => {
       const link = WORLD_LINKS[index];
-      if (link.note?.includes("second gate, not built yet")) return false;
       if (!hasGrid(link.a.zone) || !hasGrid(link.b.zone)) return false;
       return row.a.startsWith("WRONG") || row.b.startsWith("WRONG");
     });

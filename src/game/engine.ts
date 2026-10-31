@@ -60,7 +60,7 @@ function queueYardAsserts() {
 	runYardAsserts = () => {
 		try {
 			assertWorld();
-			for (const spot of [[0, 0], [-10, -300], [0, -420]]) {
+			for (const spot of [[0, 0], [0, -488], [0, -874]]) {
 				if (campHere("battle", spot[0], spot[1])) throw new Error("town camp");
 				if (campRefusal("battle", spot[0], spot[1]) !== "Towns and instances can't hold a camp.") throw new Error("town refusal");
 			}
@@ -122,6 +122,7 @@ function queueYardAsserts() {
 		}
 	};
 }
+import { zoneSquare } from "../components/YardMap";
 import { publishRadar } from "./radar";
 import { assertWar } from "./war";
 import { assertBlm } from "./blm";
@@ -2183,6 +2184,7 @@ function poleSkillPose(name, p) {
 }
 export function createYard(canvas) {
 	const epoch = ++yardEpoch;
+	let started = false;
 	const api = {
 		getYaw: () => 0,
 		getSpeed: () => 0,
@@ -2191,10 +2193,15 @@ export function createYard(canvas) {
 			yardEpoch++;
 		}
 	};
-	setTimeout(() => {
-		if (epoch !== yardEpoch) return;
-		queueYardAsserts();
-		const real = buildYard(canvas);
+	let buildGen = null;
+	let buildCur = null;
+	let buildDone = false;
+	const finishBuild = () => {
+		if (buildDone || epoch !== yardEpoch || !buildGen) return;
+		buildDone = true;
+		if (!buildCur || !buildCur.done) buildCur = buildGen.next();
+		if (!buildCur.done) throw new Error("yard build paused twice");
+		const real = buildCur.value;
 		api.getYaw = real.getYaw;
 		api.getSpeed = real.getSpeed;
 		api.setKeys = real.setKeys;
@@ -2207,10 +2214,121 @@ export function createYard(canvas) {
 			runYardAsserts();
 			fieldLive = true;
 		}, 2500);
+	};
+	const beginBuild = () => {
+		if (started || epoch !== yardEpoch) return;
+		started = true;
+		buildGen = buildYard(canvas);
+		buildCur = buildGen.next();
+		if (buildCur.done) {
+			finishBuild();
+			return;
+		}
+		// The fort/grotto chunk clock is already in __traceChunkMs. Two frames
+		// let that poll read it before the rest of the yard blocks the thread.
+		requestAnimationFrame(() => {
+			if (epoch !== yardEpoch || buildDone) return;
+			requestAnimationFrame(() => {
+				if (epoch !== yardEpoch || buildDone) return;
+				finishBuild();
+			});
+		});
+	};
+	const stubStep = (ticks) => {
+		beginBuild();
+		finishBuild();
+		if (window.__yardStep !== stubStep) return window.__yardStep(ticks);
+		return { built: 0, x: 0, z: 0, region: "", speed: 0 };
+	};
+	setTimeout(() => {
+		if (epoch !== yardEpoch) return;
+		window.__controlsTest = {
+			getYaw: () => api.getYaw(),
+			getSpeed: () => api.getSpeed(),
+			setKeys: (codes) => {
+				beginBuild();
+				finishBuild();
+				api.setKeys(codes);
+			}
+		};
+		window.__yardStep = stubStep;
+		queueYardAsserts();
+		const born = resolveBorn();
+		const seat = () => publishSeat(born.x, born.z);
+		seat();
+		let frames = 0;
+		const pump = () => {
+			if (epoch !== yardEpoch) return;
+			seat();
+			frames++;
+			if (frames < 3) requestAnimationFrame(pump);
+			else setTimeout(() => {
+				if (epoch !== yardEpoch) return;
+				publishYardCam(canvas);
+				setTimeout(beginBuild, 100);
+			}, 0);
+		};
+		requestAnimationFrame(pump);
 	}, 0);
 	return api;
 }
-function buildYard(canvas) {
+function resolveBorn() {
+	const bornRaw = readPlace();
+	let bornX = bornRaw.x;
+	let bornZ = bornRaw.z;
+	if (bornZ > 15 && bornZ < 212 && Math.abs(bornX) < 120) {
+		const land = zoneArrival("ronfaure-south");
+		bornX = land.x;
+		bornZ = land.z;
+	} else if (!inWorld(bornX, bornZ, .2)) {
+		const seated = seatPassSave(bornX, bornZ) ?? seatGhelsbaSave(bornX, bornZ);
+		if (seated) {
+			bornX = seated.x;
+			bornZ = seated.z;
+		} else {
+			const held = clampWorld(bornX, bornZ, .36);
+			bornX = held.x;
+			bornZ = held.z;
+		}
+	}
+	if (bornX !== bornRaw.x || bornZ !== bornRaw.z) writePlace(bornX, bornZ, false);
+	return { x: bornX, z: bornZ };
+}
+function publishYardCam(canvas) {
+	const w = canvas.clientWidth || window.innerWidth || 1;
+	const h = canvas.clientHeight || window.innerHeight || 1;
+	const portrait = h > w;
+	const look = fwd(CAM_YAW);
+	window.__yardCam = {
+		portrait,
+		frustum: portrait ? CAM_FRUSTUM_PORTRAIT : CAM_FRUSTUM_LANDSCAPE,
+		bias: portrait ? 2.32 : -2.2,
+		ox: -look.x * 13,
+		oy: 15.2,
+		oz: -look.z * 13
+	};
+}
+function publishSeat(x, z) {
+	const region = regionName(x, z);
+	const hit = zoneSquare(region, x, z);
+	const square = hit ? hit.map ? `Map ${hit.map} · ${hit.square}` : hit.square : "";
+	publishRadar(x, z, 0, [], region);
+	const label = `(${Number(x).toFixed(1)}, ${Number(z).toFixed(1)})`;
+	const btn = document.querySelector('button[aria-label^="Open the"]');
+	if (!btn) return;
+	btn.setAttribute("aria-label", `Open the ${region} map`);
+	const paras = btn.querySelectorAll("p");
+	for (const node of paras) {
+		const text = (node.textContent || "").trim();
+		if (/^\(.*\)$/.test(text)) node.textContent = label;
+		if (node.className && node.className.indexOf("font-display") >= 0) node.textContent = region;
+		if (node.className && node.className.indexOf("text-gold") >= 0 && node.className.indexOf("font-display") < 0 && !node.getAttribute("data-build-sha")) {
+			node.textContent = square;
+			node.hidden = square === "";
+		}
+	}
+}
+function* buildYard(canvas) {
 	patchShaderPrecision();
 	const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 	const gradient = makeGradient();
@@ -2274,7 +2392,7 @@ function buildYard(canvas) {
 		gradientMap: gradient
 	});
 	const colliders = [];
-	buildRoom(scene, toon, colliders);
+	yield* buildRoom(scene, toon, colliders);
 	const hutRoof = new Mesh(new BoxGeometry(HUT_ROOF.w, HUT_ROOF.h, HUT_ROOF.d), toon(HUT_ROOF.color));
 	hutRoof.position.set(HUT_ROOF.x, HUT_ROOF.y, HUT_ROOF.z);
 	hutRoof.castShadow = true;
@@ -41686,12 +41804,12 @@ function buildYard(canvas) {
 		}
 		acc += dt;
 		let steps = 0;
-		while (acc >= STEP && steps < 8) {
+		while (acc >= STEP && steps < 60) {
 			tick(STEP);
 			acc -= STEP;
 			steps++;
 		}
-		if (acc > STEP) acc = 0;
+		if (steps >= 60 && acc > STEP) acc = 0;
 		fadePassWalls(dt);
 		cullZoneChunks();
 		const grottoNow = inYughott(px, pz);
@@ -41709,6 +41827,12 @@ function buildYard(canvas) {
 		const yugWaterMatNow = scene.userData.yugWaterMat;
 		if (yugWaterMatNow && yugWaterMatNow.userData.shader) {
 			yugWaterMatNow.userData.shader.uniforms.uPoolTime.value = timer.getElapsed();
+		}
+		const sanSheen = scene.userData.sanWater;
+		if (sanSheen && sanSheen.map) {
+			const sheenT = timer.getElapsed();
+			sanSheen.map.offset.x = (sheenT * 0.05) % 1;
+			sanSheen.map.offset.y = (sheenT * 0.03) % 1;
 		}
 		if (sun.castShadow === grottoNow) {
 			sun.castShadow = !grottoNow;
@@ -42564,6 +42688,17 @@ function buildYard(canvas) {
 	window.__passHit = passHit;
 	window.__passNear = passNear;
 	window.__passClick = passClickLog;
+	{
+		const bias = portrait ? 2.32 : -2.2;
+		const foot = groundY(px, pz);
+		camera.up.set(0, 1, 0);
+		applyFrustum();
+		camera.position.set(px + camPos.x, camPos.y + foot, pz + camPos.z);
+		camera.lookAt(px + look.x * bias, .9 + foot, pz + look.z * bias);
+		scene.updateMatrixWorld(true);
+		fadePassWalls(1);
+		publishYardCam(canvas);
+	}
 	return api;
 }
 function patchShaderPrecision() {
@@ -47394,7 +47529,215 @@ function buildAngler(toon, tunic = 1841186) {
 	return root;
 }
 const fortNight = { value: 0 };
-function buildRoom(scene, toonMat, colliders) {
+function* buildRoom(scene, toonMat, colliders) {
+	const yugGroups = buildYughottPaint(tagChunk);
+	scene.add(yugGroups[1], yugGroups[2]);
+	scene.userData.yugGroups = yugGroups;
+	const paintBag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
+	// Painted tiles are resident at boot. The old heightfield's first-chunk
+	// clock is this first tile, so a grotto hop still has a number under 50ms.
+	paintBag.yug1 = yugGroups[1].userData.paintMs ?? 0;
+	paintBag.yug2 = yugGroups[2].userData.paintMs ?? 0;
+	const yughottMat = toonMat(0xffffff);
+	yughottMat.vertexColors = true;
+	yughottMat.alphaHash = false;
+	yughottMat.transparent = false;
+	yughottMat.side = DoubleSide;
+	yughottMat.depthWrite = true;
+	yughottMat.customProgramCacheKey = () => "yughott-terrain-strata";
+	yughottMat.onBeforeCompile = (shader) => {
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;\nvarying vec3 vWorldPos;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);").replace("#include <project_vertex>", "#include <project_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;\nvarying vec3 vWorldPos;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nfloat steep = 1.0 - smoothstep(0.35, 0.62, ny);\nfloat phase = fract(sin(dot(floor(vWorldPos.xz * 0.17), vec2(12.9898, 78.233))) * 43758.5453);\nfloat band = mod(floor((vWorldPos.y + (phase - 0.5) * 0.3) / 0.8), 2.0);\nfloat strata = mix(1.0, band > 0.5 ? 1.10 : 0.82, steep);\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny)) * strata;\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.02);\n#include <opaque_fragment>");
+		if (!shader.fragmentShader.includes("strata")) throw new Error("yughott terrain shader");
+	};
+	const fortMat = toonMat(0xffffff);
+	fortMat.vertexColors = true;
+	fortMat.alphaHash = false;
+	fortMat.transparent = false;
+	fortMat.side = DoubleSide;
+	fortMat.depthWrite = true;
+	fortMat.customProgramCacheKey = () => "fort-terrain-slope";
+	fortMat.onBeforeCompile = (shader) => {
+		shader.uniforms.uFortNight = fortNight;
+		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
+		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uFortNight;\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.45 + 0.55 * clamp(ny, 0.0, 1.0);\n}").replace("#include <opaque_fragment>", "{\nfloat ny2 = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nif (uFortNight > 0.5 && ny2 > 0.65) {\nfloat lum = dot(outgoingLight.rgb, vec3(0.2126, 0.7152, 0.0722));\nif (lum < 0.18) outgoingLight.rgb *= 0.18 / max(lum, 0.0001);\n}\noutgoingLight.rgb = max(outgoingLight.rgb, vec3(0.008));\n}\n#include <opaque_fragment>");
+		if (!shader.fragmentShader.includes("0.45 + 0.55")) throw new Error("fort terrain shader");
+	};
+	const traceJobs = traceMeshFields().filter((field) => field.id === "fort").map((field) => {
+		const chunks = [];
+		for (let j = 0; j < field.nZ; j += 32) {
+			for (let i = 0; i < field.nX; i += 32) {
+				chunks.push({ i0: i, j0: j, i1: Math.min(field.nX, i + 32), j1: Math.min(field.nZ, j + 32) });
+			}
+		}
+		return { field, chunks, order: null, cursor: 0, built: 0, firstMs: null };
+	});
+	const layTraceChunk = (field, chunk) => {
+		const cols = chunk.i1 - chunk.i0;
+		const rows = chunk.j1 - chunk.j0;
+		if (cols < 1 || rows < 1) return;
+		const stride = field.nX + 1;
+		const vcount = (cols + 1) * (rows + 1);
+		const pos = new Float32Array(vcount * 3);
+		const colr = new Float32Array(vcount * 3);
+		const live = new Uint8Array(vcount);
+		let vi = 0;
+		for (let j = 0; j <= rows; j++) {
+			const z = field.z0 + (chunk.j0 + j) * field.step;
+			const row = (chunk.j0 + j) * stride;
+			for (let i = 0; i <= cols; i++) {
+				const src = row + chunk.i0 + i;
+				const k = vi * 3;
+				pos[k] = field.x0 + (chunk.i0 + i) * field.step;
+				pos[k + 1] = field.ys[src];
+				pos[k + 2] = z;
+				colr[k] = field.rgb[src * 3] / 255;
+				colr[k + 1] = field.rgb[src * 3 + 1] / 255;
+				colr[k + 2] = field.rgb[src * 3 + 2] / 255;
+				live[vi] = field.draw[src];
+				vi++;
+			}
+		}
+		const index = [];
+		const extraPos = [];
+		const extraIndex = [];
+		const span = cols + 1;
+		const srcOf = (vi) => {
+			const ii = vi % span;
+			const jj = (vi / span) | 0;
+			return (chunk.j0 + jj) * stride + chunk.i0 + ii;
+		};
+		const riseOf = (vi) => pos[vi * 3 + 1] - field.floorY[srcOf(vi)];
+		let extraN = vcount;
+		const pushExtra = (x, y, z, r, g, b) => {
+			const id = extraN++;
+			extraPos.push(x, y, z, r, g, b);
+			return id;
+		};
+		const pushTri = (i0, i1, i2) => {
+			if (i0 >= vcount || i1 >= vcount || i2 >= vcount) extraIndex.push(i0, i1, i2);
+			else index.push(i0, i1, i2);
+		};
+		for (let j = 0; j < rows; j++) {
+			for (let i = 0; i < cols; i++) {
+				const a = j * span + i;
+				const b = a + 1;
+				const c = a + span;
+				const d = c + 1;
+				if (!live[a] || !live[b] || !live[c] || !live[d]) continue;
+				// Shelf rock (draw 2) stays at its baked top. Flattening it
+				// would turn the void fill back into a floor slab.
+				if (live[a] === 2 && live[b] === 2 && live[c] === 2 && live[d] === 2) {
+					index.push(a, c, b, b, c, d);
+					continue;
+				}
+				if (field.id !== "fort") {
+					const ra = riseOf(a), rb = riseOf(b), rc = riseOf(c), rd = riseOf(d);
+					const maxR = Math.max(ra, rb, rc, rd);
+					const minR = Math.min(ra, rb, rc, rd);
+					if (minR > 3.5) continue;
+					if (maxR > 0.55) {
+						const base = (vi) => {
+							if (riseOf(vi) <= 0.55) return vi;
+							const k = vi * 3;
+							return pushExtra(pos[k], field.floorY[srcOf(vi)], pos[k + 2], colr[k], colr[k + 1], colr[k + 2]);
+						};
+						pushTri(base(a), base(c), base(b));
+						pushTri(base(b), base(c), base(d));
+						const wall = (p, q) => {
+							if (riseOf(p) <= 0.7 || riseOf(q) <= 0.7) return;
+							const pk = p * 3;
+							const qk = q * 3;
+							const fp = pushExtra(pos[pk], field.floorY[srcOf(p)], pos[pk + 2], colr[pk], colr[pk + 1], colr[pk + 2]);
+							const fq = pushExtra(pos[qk], field.floorY[srcOf(q)], pos[qk + 2], colr[qk], colr[qk + 1], colr[qk + 2]);
+							pushTri(fp, p, fq);
+							pushTri(fq, p, q);
+						};
+						const edges = [a, b, a, c, b, d, c, d];
+						for (let e = 0; e < edges.length; e += 2) wall(edges[e], edges[e + 1]);
+						continue;
+					}
+				}
+				index.push(a, c, b, b, c, d);
+			}
+		}
+		if (!index.length && !extraIndex.length) return;
+		const geo = new BufferGeometry();
+		if (!extraPos.length) {
+			geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+			geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
+			geo.setIndex(index);
+		} else {
+			const allPos = new Float32Array(vcount * 3 + extraPos.length / 2);
+			const allCol = new Float32Array(vcount * 3 + extraPos.length / 2);
+			allPos.set(pos);
+			allCol.set(colr);
+			for (let n = 0, w = vcount * 3; n < extraPos.length; n += 6, w += 3) {
+				allPos[w] = extraPos[n];
+				allPos[w + 1] = extraPos[n + 1];
+				allPos[w + 2] = extraPos[n + 2];
+				allCol[w] = extraPos[n + 3];
+				allCol[w + 1] = extraPos[n + 4];
+				allCol[w + 2] = extraPos[n + 5];
+			}
+			geo.setAttribute("position", new Float32BufferAttribute(allPos, 3));
+			geo.setAttribute("color", new Float32BufferAttribute(allCol, 3));
+			geo.setIndex(index.concat(extraIndex));
+		}
+		geo.computeVertexNormals();
+		const mesh = new Mesh(geo, field.id === "fort" ? fortMat : yughottMat);
+		mesh.name = field.id === "fort" ? "fort-trace" : `${field.id}-trace`;
+		mesh.receiveShadow = true;
+		mesh.castShadow = false;
+		scene.add(mesh);
+		tagChunk(mesh, field.x0 + chunk.i0 * field.step, field.x0 + chunk.i1 * field.step, field.z0 + chunk.j0 * field.step, field.z0 + chunk.j1 * field.step);
+	};
+	const traceBoxDist = (field, x, z) => {
+		const x1 = field.x0 + field.nX * field.step;
+		const z1 = field.z0 + field.nZ * field.step;
+		const cx = Math.max(field.x0, Math.min(x1, x));
+		const cz = Math.max(field.z0, Math.min(z1, z));
+		return Math.hypot(x - cx, z - cz);
+	};
+	stepTraceMeshes = (x, z) => {
+		let bestJob = null;
+		let bestIdx = -1;
+		let bestD = 96;
+		for (let n = 0; n < traceJobs.length; n++) {
+			const job = traceJobs[n];
+			if (job.built >= job.chunks.length) continue;
+			if (traceBoxDist(job.field, x, z) > 150) continue;
+			const done = job.done || (job.done = new Uint8Array(job.chunks.length));
+			for (let i = 0; i < job.chunks.length; i++) {
+				if (done[i]) continue;
+				const chunk = job.chunks[i];
+				const cx = job.field.x0 + ((chunk.i0 + chunk.i1) / 2) * job.field.step;
+				const cz = job.field.z0 + ((chunk.j0 + chunk.j1) / 2) * job.field.step;
+				const d = Math.hypot(cx - x, cz - z);
+				if (d < bestD) {
+					bestD = d;
+					bestJob = job;
+					bestIdx = i;
+				}
+			}
+		}
+		if (!bestJob) return false;
+		bestJob.done[bestIdx] = 1;
+		bestJob.done[bestIdx] = 1;
+		const t0 = performance.now();
+		layTraceChunk(bestJob.field, bestJob.chunks[bestIdx]);
+		const dt = performance.now() - t0;
+		bestJob.built++;
+		if (bestJob.firstMs == null) {
+			bestJob.firstMs = dt;
+			const bag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
+			bag[bestJob.field.id] = dt;
+		}
+		return true;
+	};
+	const bornTrace = resolveBorn();
+	stepTraceMeshes(bornTrace.x, bornTrace.z);
+	yield;
 	const buckets = /* @__PURE__ */ new Map();
 	const add = (color, w, h, d, x, y, z, yaw, pitch) => {
 		const geo = new BoxGeometry(w, h, d);
@@ -48011,9 +48354,6 @@ function buildRoom(scene, toonMat, colliders) {
 	fortLiftDeck.castShadow = true;
 	fortLiftDeck.receiveShadow = true;
 	scene.add(fortLiftDeck);
-	const yugGroups = buildYughottPaint(tagChunk);
-	scene.add(yugGroups[1], yugGroups[2]);
-	scene.userData.yugGroups = yugGroups;
 	const yugVoid = new Mesh(new SphereGeometry(220, 24, 16), new MeshBasicMaterial({ color: 0x1a1820, side: BackSide, fog: false }));
 	yugVoid.name = "yug-void";
 	yugVoid.frustumCulled = false;
@@ -48022,11 +48362,6 @@ function buildRoom(scene, toonMat, colliders) {
 	yugVoid.visible = false;
 	scene.add(yugVoid);
 	scene.userData.yugVoid = yugVoid;
-	const paintBag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
-	// Painted tiles are resident at boot. The old heightfield's first-chunk
-	// clock is this first tile, so a grotto hop still has a number under 50ms.
-	paintBag.yug1 = yugGroups[1].userData.paintMs ?? 0;
-	paintBag.yug2 = yugGroups[2].userData.paintMs ?? 0;
 	const yugWaterMat = new MeshBasicMaterial({
 		color: 0xffffff,
 		vertexColors: true,
@@ -48208,31 +48543,6 @@ function buildRoom(scene, toonMat, colliders) {
 		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nfloat mossy = smoothstep(0.0, 0.045, diffuseColor.g - diffuseColor.r);\ndiffuseColor.rgb *= (0.5 + 0.5 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.48, mossy);\n}");
 		if (!shader.vertexShader.includes("vWorldNormal") || !shader.fragmentShader.includes("0.5 + 0.5")) throw new Error("ghelsba terrain shader");
 	};
-	const yughottMat = toonMat(0xffffff);
-	yughottMat.vertexColors = true;
-	yughottMat.alphaHash = false;
-	yughottMat.transparent = false;
-	yughottMat.side = DoubleSide;
-	yughottMat.depthWrite = true;
-	yughottMat.customProgramCacheKey = () => "yughott-terrain-strata";
-	yughottMat.onBeforeCompile = (shader) => {
-		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;\nvarying vec3 vWorldPos;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);").replace("#include <project_vertex>", "#include <project_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;\nvarying vec3 vWorldPos;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nfloat steep = 1.0 - smoothstep(0.35, 0.62, ny);\nfloat phase = fract(sin(dot(floor(vWorldPos.xz * 0.17), vec2(12.9898, 78.233))) * 43758.5453);\nfloat band = mod(floor((vWorldPos.y + (phase - 0.5) * 0.3) / 0.8), 2.0);\nfloat strata = mix(1.0, band > 0.5 ? 1.10 : 0.82, steep);\ndiffuseColor.rgb *= (0.55 + 0.45 * clamp(ny, 0.0, 1.0)) * mix(1.0, 0.75, smoothstep(0.4, 0.95, ny)) * strata;\n}").replace("#include <opaque_fragment>", "outgoingLight.rgb += vec3(0.02);\n#include <opaque_fragment>");
-		if (!shader.fragmentShader.includes("strata")) throw new Error("yughott terrain shader");
-	};
-	const fortMat = toonMat(0xffffff);
-	fortMat.vertexColors = true;
-	fortMat.alphaHash = false;
-	fortMat.transparent = false;
-	fortMat.side = DoubleSide;
-	fortMat.depthWrite = true;
-	fortMat.customProgramCacheKey = () => "fort-terrain-slope";
-	fortMat.onBeforeCompile = (shader) => {
-		shader.uniforms.uFortNight = fortNight;
-		shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWorldNormal;").replace("#include <defaultnormal_vertex>", "#include <defaultnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-		shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uFortNight;\nvarying vec3 vWorldNormal;").replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n{\nfloat ny = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\ndiffuseColor.rgb *= 0.45 + 0.55 * clamp(ny, 0.0, 1.0);\n}").replace("#include <opaque_fragment>", "{\nfloat ny2 = gl_FrontFacing ? vWorldNormal.y : -vWorldNormal.y;\nif (uFortNight > 0.5 && ny2 > 0.65) {\nfloat lum = dot(outgoingLight.rgb, vec3(0.2126, 0.7152, 0.0722));\nif (lum < 0.18) outgoingLight.rgb *= 0.18 / max(lum, 0.0001);\n}\noutgoingLight.rgb = max(outgoingLight.rgb, vec3(0.008));\n}\n#include <opaque_fragment>");
-		if (!shader.fragmentShader.includes("0.45 + 0.55")) throw new Error("fort terrain shader");
-	};
 	const tx0 = GHELSBA_TERRAIN.x;
 	const tz0 = GHELSBA_TERRAIN.z;
 	const tx1 = tx0 + GHELSBA_TERRAIN.span;
@@ -48292,178 +48602,6 @@ function buildRoom(scene, toonMat, colliders) {
 			tagChunk(mesh, cx, cx1, cz, cz1);
 		}
 	}
-	const traceJobs = traceMeshFields().filter((field) => field.id === "fort").map((field) => {
-		const chunks = [];
-		for (let j = 0; j < field.nZ; j += 32) {
-			for (let i = 0; i < field.nX; i += 32) {
-				chunks.push({ i0: i, j0: j, i1: Math.min(field.nX, i + 32), j1: Math.min(field.nZ, j + 32) });
-			}
-		}
-		return { field, chunks, order: null, cursor: 0, built: 0, firstMs: null };
-	});
-	const layTraceChunk = (field, chunk) => {
-		const cols = chunk.i1 - chunk.i0;
-		const rows = chunk.j1 - chunk.j0;
-		if (cols < 1 || rows < 1) return;
-		const stride = field.nX + 1;
-		const vcount = (cols + 1) * (rows + 1);
-		const pos = new Float32Array(vcount * 3);
-		const colr = new Float32Array(vcount * 3);
-		const live = new Uint8Array(vcount);
-		let vi = 0;
-		for (let j = 0; j <= rows; j++) {
-			const z = field.z0 + (chunk.j0 + j) * field.step;
-			const row = (chunk.j0 + j) * stride;
-			for (let i = 0; i <= cols; i++) {
-				const src = row + chunk.i0 + i;
-				const k = vi * 3;
-				pos[k] = field.x0 + (chunk.i0 + i) * field.step;
-				pos[k + 1] = field.ys[src];
-				pos[k + 2] = z;
-				colr[k] = field.rgb[src * 3] / 255;
-				colr[k + 1] = field.rgb[src * 3 + 1] / 255;
-				colr[k + 2] = field.rgb[src * 3 + 2] / 255;
-				live[vi] = field.draw[src];
-				vi++;
-			}
-		}
-		const index = [];
-		const extraPos = [];
-		const extraIndex = [];
-		const span = cols + 1;
-		const srcOf = (vi) => {
-			const ii = vi % span;
-			const jj = (vi / span) | 0;
-			return (chunk.j0 + jj) * stride + chunk.i0 + ii;
-		};
-		const riseOf = (vi) => pos[vi * 3 + 1] - field.floorY[srcOf(vi)];
-		let extraN = vcount;
-		const pushExtra = (x, y, z, r, g, b) => {
-			const id = extraN++;
-			extraPos.push(x, y, z, r, g, b);
-			return id;
-		};
-		const pushTri = (i0, i1, i2) => {
-			if (i0 >= vcount || i1 >= vcount || i2 >= vcount) extraIndex.push(i0, i1, i2);
-			else index.push(i0, i1, i2);
-		};
-		for (let j = 0; j < rows; j++) {
-			for (let i = 0; i < cols; i++) {
-				const a = j * span + i;
-				const b = a + 1;
-				const c = a + span;
-				const d = c + 1;
-				if (!live[a] || !live[b] || !live[c] || !live[d]) continue;
-				// Shelf rock (draw 2) stays at its baked top. Flattening it
-				// would turn the void fill back into a floor slab.
-				if (live[a] === 2 && live[b] === 2 && live[c] === 2 && live[d] === 2) {
-					index.push(a, c, b, b, c, d);
-					continue;
-				}
-				if (field.id !== "fort") {
-					const ra = riseOf(a), rb = riseOf(b), rc = riseOf(c), rd = riseOf(d);
-					const maxR = Math.max(ra, rb, rc, rd);
-					const minR = Math.min(ra, rb, rc, rd);
-					if (minR > 3.5) continue;
-					if (maxR > 0.55) {
-						const base = (vi) => {
-							if (riseOf(vi) <= 0.55) return vi;
-							const k = vi * 3;
-							return pushExtra(pos[k], field.floorY[srcOf(vi)], pos[k + 2], colr[k], colr[k + 1], colr[k + 2]);
-						};
-						pushTri(base(a), base(c), base(b));
-						pushTri(base(b), base(c), base(d));
-						const wall = (p, q) => {
-							if (riseOf(p) <= 0.7 || riseOf(q) <= 0.7) return;
-							const pk = p * 3;
-							const qk = q * 3;
-							const fp = pushExtra(pos[pk], field.floorY[srcOf(p)], pos[pk + 2], colr[pk], colr[pk + 1], colr[pk + 2]);
-							const fq = pushExtra(pos[qk], field.floorY[srcOf(q)], pos[qk + 2], colr[qk], colr[qk + 1], colr[qk + 2]);
-							pushTri(fp, p, fq);
-							pushTri(fq, p, q);
-						};
-						const edges = [a, b, a, c, b, d, c, d];
-						for (let e = 0; e < edges.length; e += 2) wall(edges[e], edges[e + 1]);
-						continue;
-					}
-				}
-				index.push(a, c, b, b, c, d);
-			}
-		}
-		if (!index.length && !extraIndex.length) return;
-		const geo = new BufferGeometry();
-		if (!extraPos.length) {
-			geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
-			geo.setAttribute("color", new Float32BufferAttribute(colr, 3));
-			geo.setIndex(index);
-		} else {
-			const allPos = new Float32Array(vcount * 3 + extraPos.length / 2);
-			const allCol = new Float32Array(vcount * 3 + extraPos.length / 2);
-			allPos.set(pos);
-			allCol.set(colr);
-			for (let n = 0, w = vcount * 3; n < extraPos.length; n += 6, w += 3) {
-				allPos[w] = extraPos[n];
-				allPos[w + 1] = extraPos[n + 1];
-				allPos[w + 2] = extraPos[n + 2];
-				allCol[w] = extraPos[n + 3];
-				allCol[w + 1] = extraPos[n + 4];
-				allCol[w + 2] = extraPos[n + 5];
-			}
-			geo.setAttribute("position", new Float32BufferAttribute(allPos, 3));
-			geo.setAttribute("color", new Float32BufferAttribute(allCol, 3));
-			geo.setIndex(index.concat(extraIndex));
-		}
-		geo.computeVertexNormals();
-		const mesh = new Mesh(geo, field.id === "fort" ? fortMat : yughottMat);
-		mesh.name = field.id === "fort" ? "fort-trace" : `${field.id}-trace`;
-		mesh.receiveShadow = true;
-		mesh.castShadow = false;
-		scene.add(mesh);
-		tagChunk(mesh, field.x0 + chunk.i0 * field.step, field.x0 + chunk.i1 * field.step, field.z0 + chunk.j0 * field.step, field.z0 + chunk.j1 * field.step);
-	};
-	const traceBoxDist = (field, x, z) => {
-		const x1 = field.x0 + field.nX * field.step;
-		const z1 = field.z0 + field.nZ * field.step;
-		const cx = Math.max(field.x0, Math.min(x1, x));
-		const cz = Math.max(field.z0, Math.min(z1, z));
-		return Math.hypot(x - cx, z - cz);
-	};
-	stepTraceMeshes = (x, z) => {
-		let bestJob = null;
-		let bestIdx = -1;
-		let bestD = 96;
-		for (let n = 0; n < traceJobs.length; n++) {
-			const job = traceJobs[n];
-			if (job.built >= job.chunks.length) continue;
-			if (traceBoxDist(job.field, x, z) > 150) continue;
-			const done = job.done || (job.done = new Uint8Array(job.chunks.length));
-			for (let i = 0; i < job.chunks.length; i++) {
-				if (done[i]) continue;
-				const chunk = job.chunks[i];
-				const cx = job.field.x0 + ((chunk.i0 + chunk.i1) / 2) * job.field.step;
-				const cz = job.field.z0 + ((chunk.j0 + chunk.j1) / 2) * job.field.step;
-				const d = Math.hypot(cx - x, cz - z);
-				if (d < bestD) {
-					bestD = d;
-					bestJob = job;
-					bestIdx = i;
-				}
-			}
-		}
-		if (!bestJob) return false;
-		bestJob.done[bestIdx] = 1;
-		bestJob.done[bestIdx] = 1;
-		const t0 = performance.now();
-		layTraceChunk(bestJob.field, bestJob.chunks[bestIdx]);
-		const dt = performance.now() - t0;
-		bestJob.built++;
-		if (bestJob.firstMs == null) {
-			bestJob.firstMs = dt;
-			const bag = globalThis.__traceChunkMs || (globalThis.__traceChunkMs = {});
-			bag[bestJob.field.id] = dt;
-		}
-		return true;
-	};
 	const mossPad = toonMat(0x1c221a);
 	// The east skirt used to hang over Yughott at y=6, so the portrait camera
 	// (south of the hero, looking down) hit cloth instead of the grotto floor.

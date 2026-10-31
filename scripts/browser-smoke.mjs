@@ -1772,9 +1772,10 @@ async function checkSanDoria(browser, url) {
     return JSON.stringify(save);
   };
   const stands = [
-    { name: "fountain", x: 0, z: -4.2, square: "F-8", region: "Southern San d'Oria" },
-    { name: "north", x: 0, z: -300, square: "F-7", region: "Northern San d'Oria" },
-    { name: "port", x: 0, z: -420, square: "G-7", region: "Port San d'Oria" },
+    { name: "fountain", x: 0, z: -38, square: "F-8", region: "Southern San d'Oria" },
+    { name: "avenue", x: 0, z: 0, square: "F-9", region: "Southern San d'Oria" },
+    { name: "north", x: 0, z: -488, square: "F-7", region: "Northern San d'Oria" },
+    { name: "port", x: 0, z: -874, square: "G-7", region: "Port San d'Oria" },
   ];
   const view = { name: "portrait", width: 390, height: 844, mobile: true };
   for (const stand of stands) {
@@ -1798,16 +1799,35 @@ async function checkSanDoria(browser, url) {
       if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
       const png = Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64");
       writeFileSync(`/workspace/screenshots/sandoria-${stand.name}.png`, png);
+      if (stand.name === "fountain") {
+        await boot.page.getByRole("button", { name: /Open the .* map/ }).click();
+        await boot.page.getByRole("dialog", { name: "Zone map" }).waitFor({ timeout: 8000 });
+        await boot.page.waitForTimeout(500);
+        const mapPng = await boot.page.screenshot({ type: "png" });
+        writeFileSync("/workspace/screenshots/sandoria-map.png", mapPng);
+      }
       const { width, height, data } = decodePng(png);
       let clear = 0;
-      for (let i = 0; i < width * height; i++) {
-        const r = data[i * 4];
-        const g = data[i * 4 + 1];
-        const b = data[i * 4 + 2];
-        if (r === 21 && g === 20 && b === 28) clear++;
+      const stone = [];
+      for (let y = 0; y < height; y += 3) {
+        for (let x = 0; x < width; x += 3) {
+          const i = (y * width + x) * 4;
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          if (r === 21 && g === 20 && b === 28) clear++;
+          if (x > width * 0.3 && x < width * 0.7 && y > height * 0.4 && y < height * 0.7) continue;
+          if (r < 90 || r > 170 || g < 70 || g > 140 || b < 50 || b > 120) continue;
+          stone.push((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255);
+        }
       }
-      console.log(`CITY ${stand.name} square ${stand.square} scenery ${sceneryCalls(gfx)} tris ${gfx && gfx.triangles} points ${gfx && gfx.yugPoints} clear ${clear}`);
+      stone.sort((a, b) => a - b);
+      const floorLum = stone.length ? stone[Math.floor(stone.length / 2)] : 0;
+      console.log(`CITY ${stand.name} square ${stand.square} scenery ${sceneryCalls(gfx)} tris ${gfx && gfx.triangles} points ${gfx && gfx.yugPoints} clear ${clear} floor ${floorLum.toFixed(3)} n ${stone.length}`);
       if (clear > 0) return { ok: false, error: `${stand.name} clear-colour pixels ${clear}` };
+      if (stone.length < 40 || !(floorLum >= 0.3 && floorLum <= 0.45)) {
+        return { ok: false, error: `${stand.name} floor lum ${floorLum.toFixed(3)} n ${stone.length}` };
+      }
       if (!gfx || !(sceneryCalls(gfx) <= 37) || !(gfx.triangles < 40000) || gfx.yugPoints) {
         return { ok: false, error: `${stand.name} draw ${sceneryCalls(gfx)} tris ${gfx && gfx.triangles} points ${gfx && gfx.yugPoints}` };
       }

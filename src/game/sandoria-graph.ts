@@ -1,14 +1,17 @@
 /**
- * San d'Oria districts, traced in the Ranguemont graph format.
+ * San d'Oria districts, traced from the retail Vana'diel atlas.
  * Grid units: gx 0 = column A, gy 0 = row 1, +gx east, +gy south.
- * World: x = x0 + gx * cell, z = z0 + gy * cell. Cell is 12 yalms.
+ * World: x = x0 + gx * cell, z = z0 + gy * cell. Cell is 48 yalms.
+ * (0,0) stays F-9 Southern. Northern F-7 is (0,-488). Port G-7 is (0,-874).
  * Walk = plaza polygons + street polylines. Not rectangle rooms.
  */
-export const SAN_CELL = 12;
+import { SAN_PAINT } from "./sandoria-paint.generated.ts";
 
-export const SOUTH_GRID = { zone: "sandoria-south", x0: -66, z0: -100, cell: SAN_CELL, cols: 12, rows: 12 } as const;
-export const NORTH_GRID = { zone: "sandoria-north", x0: -70, z0: -382, cell: SAN_CELL, cols: 12, rows: 12 } as const;
-export const PORT_GRID = { zone: "sandoria-port", x0: -74, z0: -500, cell: SAN_CELL, cols: 12, rows: 12 } as const;
+export const SAN_CELL = 48;
+
+export const SOUTH_GRID = { zone: "sandoria-south", x0: -264, z0: -408, cell: SAN_CELL, cols: 15, rows: 15 } as const;
+export const NORTH_GRID = { zone: "sandoria-north", x0: -264, z0: -800, cell: SAN_CELL, cols: 15, rows: 15 } as const;
+export const PORT_GRID = { zone: "sandoria-port", x0: -312, z0: -1186, cell: SAN_CELL, cols: 15, rows: 15 } as const;
 
 export type SanGrid = { zone: string; x0: number; z0: number; cell: number; cols: number; rows: number };
 export type SanNodeKind = "exit" | "junction" | "plaza" | "closed";
@@ -17,36 +20,67 @@ export type SanEdge = { id: string; from: string; to: string; width?: number; pt
 export type SanArea = { id: string; kind: "plaza" | "court" | "quay"; grid: string; pts: [number, number][] };
 export type SanGraph = { id: "south" | "north" | "port"; nodes: SanNode[]; edges: SanEdge[]; areas: SanArea[] };
 
+function cell(square: string): [number, number] {
+  const col = square.charCodeAt(0) - 65;
+  const row = Number(square.split("-")[1]) - 1;
+  return [col + 0.5, row + 0.5];
+}
+
+function chain(id: string, width: number, squares: string[]): SanEdge {
+  return { id, from: id, to: id, width, pts: squares.map(cell) };
+}
+
+/** Hand trace of the atlas streets. Not derived from the polylines below. */
+export const SOUTH_RETAIL = [
+  "B-5", "C-4", "C-5", "C-6", "C-7", "D-4", "D-5", "D-6", "D-7", "D-8",
+  "E-6", "E-7", "E-8", "E-9", "F-5", "F-6", "F-7", "F-8", "F-9", "F-10", "F-11",
+  "G-4", "G-5", "G-7", "G-8", "G-10", "G-11", "G-12",
+  "H-3", "H-4", "H-5", "H-6", "H-7", "H-8", "H-10", "H-11",
+  "I-3", "I-4", "I-6", "I-7", "I-9",
+  "J-8", "J-9", "K-8", "K-9", "K-10", "L-6", "L-7", "L-8", "L-10",
+  "M-4", "M-5", "M-6", "M-7", "N-4", "N-5",
+] as const;
+
+export const NORTH_RETAIL = [
+  "C-4", "C-5", "C-6", "C-7", "C-8", "D-5", "D-6", "D-7", "D-8",
+  "E-4", "E-5", "E-7", "E-8", "F-3", "F-4", "F-5", "F-7", "F-8",
+  "G-6", "G-7", "G-8", "G-9", "H-5", "H-6", "H-7", "H-8", "H-9",
+  "I-5", "I-6", "I-7", "I-8", "I-9", "I-10",
+  "J-7", "J-8", "K-7", "K-8", "L-7", "L-8", "M-7", "M-8", "N-8",
+] as const;
+
+export const PORT_RETAIL = ["F-7", "F-8", "F-9", "F-10", "G-4", "G-5", "G-6", "G-7", "G-8", "G-9", "H-7"] as const;
+
 export const SOUTH_GRAPH: SanGraph = {
   id: "south",
   nodes: [
-    { id: "plaza", gx: 5.5, gy: 8.333, grid: "F-9", kind: "plaza", r: 0.35 },
-    { id: "exit_ronfaure", gx: 5.5, gy: 9.521, grid: "F-10", kind: "exit", to: "ronfaure-south" },
-    { id: "exit_east", gx: 11.5, gy: 9.5, grid: "L-10", kind: "exit", to: "east-ronfaure" },
-    { id: "exit_north", gx: 8.5, gy: 6.5, grid: "I-7", kind: "exit", to: "sandoria-north" },
-    { id: "chocobo", gx: 7.217, gy: 9.55, grid: "H-10", kind: "closed", r: 0.16 },
+    { id: "fountain", gx: 5.5, gy: 7.5, grid: "F-8", kind: "plaza", r: 0.22 },
+    { id: "exit_ronfaure", gx: 5.5, gy: 9.5, grid: "F-10", kind: "exit", to: "ronfaure-south", r: 0.16 },
+    { id: "exit_east", gx: 11.5, gy: 9.5, grid: "L-10", kind: "exit", to: "east-ronfaure", r: 0.16 },
+    { id: "exit_north", gx: 8.5, gy: 6.5, grid: "I-7", kind: "exit", to: "sandoria-north", r: 0.16 },
+    { id: "chocobo", gx: 7.5, gy: 10.5, grid: "H-11", kind: "closed", r: 0.14 },
   ],
   edges: [
-    { id: "bridge", from: "plaza", to: "exit_ronfaure", width: 0.26, pts: [[5.5, 8.92], [5.5, 9.56]] },
-    { id: "east_road", from: "plaza", to: "exit_east", width: 0.42, pts: [[6.7, 8.55], [8.1, 8.75], [9.55, 9.2], [10.5, 9.5], [11.55, 9.52]] },
-    { id: "north_street", from: "plaza", to: "exit_north", width: 0.42, pts: [[6.15, 7.2], [6.55, 6.35], [6.5, 5.0], [6.5, 6.5], [8.5, 6.5], [8.5, 7.55]] },
-    { id: "chocobo_spur", from: "plaza", to: "chocobo", width: 0.36, pts: [[6.35, 8.75], [7.217, 9.12], [7.217, 9.56]] },
+    chain("west_spine", 0.52, ["F-8", "F-9", "F-10", "F-11"]),
+    chain("watchdog", 0.34, ["G-8", "G-7", "H-7", "H-6"]),
+    { id: "watch_link", from: "watchdog", to: "exit_north", width: 0.12, pts: [cell("H-6"), cell("I-6"), [8.5, 5.82]] },
+    { id: "watch_gate", from: "watchdog", to: "exit_north", width: 0.48, pts: [[8.5, 5.82], cell("I-7")] },
+    chain("west_shops", 0.32, ["B-5", "C-5", "C-4", "D-4", "D-5", "D-6", "C-6", "C-7", "D-7", "E-7", "E-6", "D-8", "E-8", "E-9", "F-9"]),
+    chain("north_shops", 0.32, ["F-8", "F-7", "F-6", "F-5", "G-5", "G-4", "H-4", "H-5", "H-3", "I-3", "I-4"]),
+    chain("cavalry", 0.48, ["H-8", "H-9", "I-9", "J-9", "K-9", "K-10", "L-10"]),
+    chain("lion_square", 0.32, ["J-8", "K-8", "L-8", "L-7", "M-7", "L-6", "M-6", "M-5", "N-5", "N-4", "M-4"]),
+    chain("chocobo_road", 0.46, ["F-11", "G-11", "G-10", "H-10", "H-11", "G-12"]),
   ],
   areas: [
     {
-      id: "lion_square",
+      id: "victory",
       kind: "plaza",
-      grid: "F-9",
+      grid: "F-8",
       pts: [
-        [4.167, 7.333],
-        [5.167, 7.0],
-        [6.667, 7.167],
-        [6.833, 8.0],
-        [6.75, 8.833],
-        [6.167, 9.1],
-        [5.667, 9.083],
-        [4.333, 9.0],
-        [4.167, 8.333],
+        [5.22, 7.28],
+        [7.78, 7.28],
+        [7.78, 7.74],
+        [5.22, 7.74],
       ],
     },
   ],
@@ -55,34 +89,35 @@ export const SOUTH_GRAPH: SanGraph = {
 export const NORTH_GRAPH: SanGraph = {
   id: "north",
   nodes: [
-    { id: "court", gx: 5.4, gy: 6.9, grid: "F-7", kind: "plaza", r: 0.4 },
-    { id: "exit_south", gx: 8.5, gy: 9.5, grid: "I-10", kind: "exit", to: "sandoria-south" },
-    { id: "exit_west", gx: 2.567, gy: 7.5, grid: "C-8", kind: "exit", to: "ronfaure-north" },
-    { id: "exit_port", gx: 5.5, gy: 2.5, grid: "F-3", kind: "exit", to: "sandoria-port" },
-    { id: "chateau", gx: 6.5, gy: 4.167, grid: "G-5", kind: "closed", r: 0.14 },
-    { id: "landing", gx: 2.55, gy: 4.5, grid: "C-5", kind: "closed", r: 0.14 },
+    { id: "court", gx: 5.5, gy: 6.5, grid: "F-7", kind: "plaza", r: 0.28 },
+    { id: "exit_south", gx: 8.5, gy: 9.5, grid: "I-10", kind: "exit", to: "sandoria-south", r: 0.08 },
+    { id: "exit_west", gx: 2.5, gy: 7.5, grid: "C-8", kind: "exit", to: "ronfaure-north", r: 0.16 },
+    { id: "exit_d7", gx: 3.5, gy: 6.5, grid: "D-7", kind: "exit", to: "ronfaure-north", r: 0.16 },
+    { id: "exit_port", gx: 5.5, gy: 2.5, grid: "F-3", kind: "exit", to: "sandoria-port", r: 0.16 },
+    { id: "chateau", gx: 8.5, gy: 5.5, grid: "I-6", kind: "closed", r: 0.12 },
+    { id: "landing", gx: 5.5, gy: 4.5, grid: "F-5", kind: "closed", r: 0.12 },
   ],
   edges: [
-    { id: "to_south", from: "court", to: "exit_south", width: 0.4, pts: [[7.2, 8.15], [8.5, 8.833], [8.5, 9.55]] },
-    { id: "to_west", from: "court", to: "exit_west", width: 0.4, pts: [[4.2, 7.05], [3.333, 6.5], [2.567, 7.5]] },
-    { id: "to_port", from: "court", to: "exit_port", width: 0.4, pts: [[5.55, 5.7], [5.5, 3.2], [4.5, 3.167], [5.5, 3.2], [5.5, 2.45]] },
-    { id: "to_chateau", from: "court", to: "chateau", width: 0.34, pts: [[6.35, 5.75], [6.5, 4.833], [6.5, 4.12]] },
-    { id: "to_landing", from: "court", to: "landing", width: 0.32, pts: [[4.15, 7.35], [3.4, 6.1], [3.167, 4.5], [2.55, 4.5]] },
+    chain("west_row", 0.52, ["C-8", "D-8", "E-8", "F-8", "G-8", "H-8"]),
+    chain("row_seven", 0.56, ["D-7", "E-7", "F-7", "G-7", "H-7"]),
+    chain("d7_jog", 0.4, ["D-8", "D-7"]),
+    chain("guilds", 0.32, ["C-8", "C-7", "C-6", "C-5", "C-4", "D-5", "D-6"]),
+    chain("to_port", 0.48, ["E-5", "F-5", "E-4", "F-4", "F-3"]),
+    chain("chateau_way", 0.46, ["G-7", "G-6", "H-6", "I-6", "H-5", "I-5", "I-7", "I-8"]),
+    chain("to_south", 0.24, ["H-8", "H-9", "G-9", "I-9", "I-10"]),
+    chain("residential", 0.32, ["I-8", "J-8", "K-8", "L-8", "L-7", "M-7", "M-8", "N-8", "K-7", "J-7"]),
   ],
   areas: [
     {
-      id: "watch_court",
+      id: "parade",
       kind: "court",
-      grid: "F-7",
+      grid: "G-8",
       pts: [
-        [4.0, 5.833],
-        [5.333, 5.333],
-        [6.667, 5.833],
-        [7.833, 7.0],
-        [7.667, 8.333],
-        [6.5, 8.833],
-        [5.167, 8.667],
-        [4.167, 7.667],
+        [5.15, 6.15],
+        [7.85, 6.15],
+        [7.85, 8.35],
+        [6.2, 8.7],
+        [5.15, 8.2],
       ],
     },
   ],
@@ -91,16 +126,16 @@ export const NORTH_GRAPH: SanGraph = {
 export const PORT_GRAPH: SanGraph = {
   id: "port",
   nodes: [
-    { id: "quay", gx: 6.15, gy: 6.7, grid: "G-7", kind: "plaza", r: 0.35 },
-    { id: "exit_north", gx: 5.5, gy: 9.5, grid: "F-10", kind: "exit", to: "sandoria-north" },
-    { id: "pier_end", gx: 6.333, gy: 3.82, grid: "G-4", kind: "junction", r: 0.08 },
-    { id: "fisher", gx: 6.575, gy: 3.817, grid: "G-4", kind: "junction", r: 0.08 },
-    { id: "joulet", gx: 6.108, gy: 3.817, grid: "G-4", kind: "junction", r: 0.06 },
+    { id: "quay", gx: 6.5, gy: 6.5, grid: "G-7", kind: "plaza", r: 0.2 },
+    { id: "exit_north", gx: 5.5, gy: 9.5, grid: "F-10", kind: "exit", to: "sandoria-north", r: 0.16 },
+    { id: "pier_end", gx: 6.5, gy: 3.5, grid: "G-4", kind: "junction", r: 0.12 },
+    { id: "fisher", gx: 6.62, gy: 3.38, grid: "G-4", kind: "junction", r: 0.08 },
+    { id: "joulet", gx: 6.38, gy: 3.38, grid: "G-4", kind: "junction", r: 0.08 },
   ],
   edges: [
-    { id: "to_north", from: "quay", to: "exit_north", width: 0.42, pts: [[5.7, 8.4], [5.5, 8.55], [5.5, 9.55]] },
-    { id: "pier_deck", from: "quay", to: "pier_end", width: 0.7, pts: [[6.25, 5.2], [6.29, 4.35]] },
-    { id: "pier_tip", from: "quay", to: "pier_end", width: 0.5, pts: [[6.333, 4.5], [6.333, 3.82]] },
+    chain("to_gate", 0.48, ["G-7", "G-8", "G-9", "F-9", "F-10"]),
+    chain("side_lane", 0.32, ["F-8", "F-7", "G-7", "H-7"]),
+    chain("pier", 0.28, ["G-7", "G-6", "G-5", "G-4"]),
   ],
   areas: [
     {
@@ -108,54 +143,62 @@ export const PORT_GRAPH: SanGraph = {
       kind: "quay",
       grid: "G-7",
       pts: [
-        [4.833, 8.333],
-        [5.0, 5.833],
-        [5.667, 4.833],
-        [6.833, 5.0],
-        [7.167, 6.667],
-        [7.0, 8.5],
-        [6.167, 9.167],
-        [5.167, 9.0],
+        [6.05, 5.92],
+        [6.95, 5.92],
+        [6.95, 7.15],
+        [6.05, 7.15],
       ],
     },
   ],
 };
 
-export type SanProp = { id: string; shape: "box" | "cyl"; color: number; x: number; z: number; sx: number; sy: number; sz: number; y: number };
+export type SanProp = {
+  id: string;
+  shape: "box" | "cyl";
+  color: number;
+  roof?: number;
+  x: number;
+  z: number;
+  sx: number;
+  sy: number;
+  sz: number;
+  y: number;
+};
 
-/** Outlined landmarks. Few per district, off the street center. South faces stay about one yalm. */
+const CREAM = 0xb08960;
+const SLATE = 0xd5dee8;
+
+/** Outlined landmarks. South faces stay about one yalm so the camera can see over them.
+ * Portrait only shows about ±5 yalms of east-west, so the cluster sits on the street edge of that window. */
 export const SAN_PROPS: Record<"south" | "north" | "port", SanProp[]> = {
   south: [
-    { id: "west-row", shape: "box", color: 0xd8c7a4, x: -4.6, z: -9.2, sx: 2.2, sy: 2.15, sz: 3.4, y: 1.12 },
-    { id: "east-row", shape: "box", color: 0xcbb892, x: 4.4, z: -10.4, sx: 2.1, sy: 2.05, sz: 2.8, y: 1.08 },
-    { id: "north-shop", shape: "box", color: 0xe4d3b0, x: 0.2, z: -13.6, sx: 4.6, sy: 2.25, sz: 1.15, y: 1.16 },
-    { id: "south-stall", shape: "box", color: 0xc4b496, x: -4.4, z: 2.2, sx: 2.2, sy: 1.02, sz: 1.35, y: 0.55 },
-    { id: "fountain", shape: "cyl", color: 0xb7a48a, x: 0, z: -6.3, sx: 2.5, sy: 0.38, sz: 2.5, y: 0.24 },
-    { id: "fountain-water", shape: "cyl", color: 0x6aa4c8, x: 0, z: -6.3, sx: 1.7, sy: 0.12, sz: 1.7, y: 0.42 },
-    { id: "brazier", shape: "box", color: 0x4a4038, x: -3.1, z: -4.6, sx: 0.42, sy: 0.55, sz: 0.42, y: 0.32 },
-    { id: "cart", shape: "box", color: 0x6a4428, x: 3.15, z: -2.35, sx: 1.55, sy: 0.62, sz: 0.95, y: 0.38 },
-    { id: "crate-a", shape: "box", color: 0x8a6844, x: 3.55, z: -1.35, sx: 0.48, sy: 0.44, sz: 0.48, y: 0.26 },
-    { id: "crate-b", shape: "box", color: 0x7a5a38, x: 2.55, z: -1.55, sx: 0.4, sy: 0.36, sz: 0.4, y: 0.22 },
+    { id: "fountain", shape: "cyl", color: 0xc4b496, x: 0, z: -48, sx: 12, sy: 0.7, sz: 12, y: 0.4 },
+    { id: "nw-shop", shape: "box", color: CREAM, roof: SLATE, x: -4.2, z: -60, sx: 3.4, sy: 6.6, sz: 3.2, y: 3.3 },
+    { id: "ne-shop", shape: "box", color: CREAM, roof: SLATE, x: 4.2, z: -60, sx: 3.2, sy: 6.0, sz: 3.0, y: 3.0 },
+    { id: "west-hall", shape: "box", color: CREAM, roof: SLATE, x: -4.4, z: -8, sx: 2.8, sy: 6.2, sz: 3.6, y: 3.1 },
+    { id: "ave-east", shape: "box", color: CREAM, roof: SLATE, x: 4.4, z: -6, sx: 2.6, sy: 5.6, sz: 3.4, y: 2.8 },
+    { id: "sw-facade", shape: "box", color: CREAM, roof: SLATE, x: -3.4, z: -36, sx: 3.0, sy: 1.08, sz: 2.2, y: 0.56 },
+    { id: "se-facade", shape: "box", color: CREAM, roof: SLATE, x: 3.4, z: -36, sx: 2.8, sy: 1.08, sz: 2.2, y: 0.56 },
+    { id: "ave-low", shape: "box", color: CREAM, roof: SLATE, x: 3.2, z: 8, sx: 2.6, sy: 1.08, sz: 2.0, y: 0.56 },
+    { id: "ave-low-w", shape: "box", color: CREAM, roof: SLATE, x: -3.2, z: 10, sx: 2.6, sy: 1.08, sz: 2.0, y: 0.56 },
+    { id: "cart", shape: "box", color: 0x6a4428, x: 2.2, z: -40, sx: 1.6, sy: 0.6, sz: 1.0, y: 0.35 },
+    { id: "crate", shape: "box", color: 0x6a4428, x: -2.0, z: -3, sx: 1.2, sy: 0.7, sz: 1.0, y: 0.4 },
   ],
   north: [
-    { id: "chateau-gate", shape: "box", color: 0xcfc3a4, x: 8, z: -333.4, sx: 5.2, sy: 2.4, sz: 0.7, y: 1.25 },
-    { id: "chateau-door", shape: "box", color: 0x3a2a1c, x: 8, z: -332.9, sx: 1.3, sy: 1.7, sz: 0.2, y: 0.9 },
-    { id: "house-w", shape: "box", color: 0xd8c7a4, x: -4.0, z: -305.2, sx: 2.4, sy: 2.05, sz: 1.2, y: 1.08 },
-    { id: "house-e", shape: "box", color: 0xcbb892, x: 4.1, z: -305.4, sx: 2.3, sy: 2.0, sz: 1.15, y: 1.05 },
-    { id: "north-fountain", shape: "cyl", color: 0x6aa4c8, x: 0.15, z: -307.2, sx: 1.8, sy: 0.28, sz: 1.8, y: 0.18 },
-    { id: "cart", shape: "box", color: 0x6a4428, x: 2.4, z: -296.2, sx: 1.35, sy: 0.55, sz: 0.85, y: 0.32 },
-    { id: "crate", shape: "box", color: 0x8a6844, x: -2.15, z: -296.6, sx: 0.46, sy: 0.4, sz: 0.46, y: 0.24 },
+    { id: "nw-house", shape: "box", color: CREAM, roof: SLATE, x: -4.2, z: -500, sx: 3.2, sy: 6.4, sz: 3.2, y: 3.2 },
+    { id: "ne-house", shape: "box", color: CREAM, roof: SLATE, x: 4.2, z: -500, sx: 3.0, sy: 5.8, sz: 3.0, y: 2.9 },
+    { id: "west-hall", shape: "box", color: CREAM, roof: SLATE, x: -4.6, z: -488, sx: 2.4, sy: 5.4, sz: 3.2, y: 2.7 },
+    { id: "sw-facade", shape: "box", color: CREAM, roof: SLATE, x: -3.3, z: -476, sx: 2.8, sy: 1.08, sz: 2.0, y: 0.56 },
+    { id: "se-facade", shape: "box", color: CREAM, roof: SLATE, x: 3.3, z: -476, sx: 2.6, sy: 1.08, sz: 2.0, y: 0.56 },
+    { id: "cart", shape: "box", color: 0x6a4428, x: 2.2, z: -482, sx: 1.5, sy: 0.6, sz: 1.0, y: 0.34 },
   ],
   port: [
-    { id: "auction", shape: "box", color: 0xd8c7a0, x: -3.7, z: -426.4, sx: 2.5, sy: 2.1, sz: 1.15, y: 1.1 },
-    { id: "auction-door", shape: "box", color: 0x3a2a1c, x: -3.7, z: -425.75, sx: 0.85, sy: 1.4, sz: 0.16, y: 0.74 },
-    { id: "mog", shape: "box", color: 0xe4d7b8, x: 3.75, z: -426.6, sx: 2.4, sy: 2.05, sz: 1.1, y: 1.08 },
-    { id: "mog-door", shape: "box", color: 0x6a4030, x: 3.75, z: -425.95, sx: 0.8, sy: 1.35, sz: 0.16, y: 0.72 },
-    { id: "quay-shed", shape: "box", color: 0xc4b496, x: -3.3, z: -415.6, sx: 2.2, sy: 1.02, sz: 1.15, y: 0.54 },
-    { id: "pier-house", shape: "box", color: 0xd8c7a4, x: 0.2, z: -432.4, sx: 2.4, sy: 1.9, sz: 1.05, y: 1.0 },
-    { id: "cart", shape: "box", color: 0x6a4428, x: 2.15, z: -421.6, sx: 1.35, sy: 0.55, sz: 0.8, y: 0.32 },
-    { id: "crate-a", shape: "box", color: 0x8a6844, x: -1.7, z: -422.2, sx: 0.46, sy: 0.4, sz: 0.46, y: 0.24 },
-    { id: "crate-b", shape: "box", color: 0x7a5a38, x: -1.15, z: -421.7, sx: 0.36, sy: 0.32, sz: 0.36, y: 0.18 },
+    { id: "west-shed", shape: "box", color: CREAM, roof: SLATE, x: -4.4, z: -886, sx: 2.8, sy: 5.4, sz: 3.2, y: 2.7 },
+    { id: "east-shed", shape: "box", color: CREAM, roof: SLATE, x: 4.4, z: -886, sx: 2.6, sy: 5.0, sz: 3.0, y: 2.5 },
+    { id: "north-hall", shape: "box", color: CREAM, roof: SLATE, x: 4.2, z: -874, sx: 2.4, sy: 5.6, sz: 3.0, y: 2.8 },
+    { id: "sw-facade", shape: "box", color: CREAM, roof: SLATE, x: -3.2, z: -862, sx: 2.6, sy: 1.08, sz: 1.8, y: 0.56 },
+    { id: "se-facade", shape: "box", color: CREAM, roof: SLATE, x: 3.2, z: -862, sx: 2.4, sy: 1.08, sz: 1.8, y: 0.56 },
+    { id: "cart", shape: "box", color: 0x6a4428, x: -2.0, z: -868, sx: 1.4, sy: 0.55, sz: 0.9, y: 0.32 },
   ],
 };
 
@@ -175,6 +218,23 @@ function worldOf(id: GridId, gx: number, gy: number) {
   const g = GRIDS[id];
   return { x: g.x0 + gx * g.cell, z: g.z0 + gy * g.cell };
 }
+
+export const SAN_SPOT = {
+  southRon: worldOf("south", 5.5, 9.5),
+  southEast: worldOf("south", 11.5, 9.5),
+  southNorth: worldOf("south", 8.5, 6.5),
+  southChoco: worldOf("south", 7.5, 10.5),
+  northSouth: worldOf("north", 8.5, 9.5),
+  northWest: worldOf("north", 2.5, 7.5),
+  northD7: worldOf("north", 3.5, 6.5),
+  northPort: worldOf("north", 5.5, 2.5),
+  northChateau: worldOf("north", 8.5, 5.5),
+  northLanding: worldOf("north", 5.5, 4.5),
+  portNorth: worldOf("port", 5.5, 9.5),
+  portPier: worldOf("port", 6.5, 3.5),
+  fisher: worldOf("port", 6.62, 3.38),
+  joulet: worldOf("port", 6.38, 3.38),
+};
 
 for (const id of ["south", "north", "port"] as const) {
   const graph = GRAPHS[id];
@@ -351,80 +411,105 @@ export function sanSquare(id: GridId, x: number, z: number) {
   return `${LETTERS[col]}-${row + 1}`;
 }
 
-export function assertSanGraph(): void {
-  const southIn: [number, number][] = [
-    [0, 0],
-    [0, 10],
-    [0, 11.2],
-    [0, 14.25],
-    [12, -12],
-    [12, -40],
-    [36, -22],
-    [36, -10],
-    [72, 14],
-    [60, 14],
-    [20.6, 14.6],
-    [20.6, 9.2],
-    [3.5, -4.4],
-    [4.2, 5.6],
-    [7, 7.95],
-  ];
-  for (const [x, z] of southIn) {
-    if (!inSouthGraph(x, z, 0)) throw new Error(`south graph misses ${x},${z}`);
+function centerOf(id: GridId, square: string) {
+  const [gx, gy] = cell(square);
+  return worldOf(id, gx, gy);
+}
+
+function lum(hex: number) {
+  const r = (hex >> 16) & 255;
+  const g = (hex >> 8) & 255;
+  const b = hex & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function cover(id: GridId, squares: readonly string[]) {
+  const inside = (x: number, z: number) => (id === "south" ? inSouthGraph(x, z, 0) : id === "north" ? inNorthGraph(x, z, 0) : inPortGraph(x, z, 0));
+  const miss: string[] = [];
+  for (const square of squares) {
+    const at = centerOf(id, square);
+    if (sanSquare(id, at.x, at.z) !== square || !inside(at.x, at.z)) miss.push(square);
   }
+  return miss;
+}
+
+export function assertSanGraph(): void {
   const southSq: [number, number, string][] = [
     [0, 0, "F-9"],
-    [0, 11.2, "F-10"],
-    [0, 14.25, "F-10"],
-    [36, -22, "I-7"],
-    [36, -10, "I-8"],
-    [72, 14, "L-10"],
-    [60, 14, "K-10"],
-    [12, -40, "G-6"],
+    [0, -48, "F-8"],
+    [SAN_SPOT.southRon.x, SAN_SPOT.southRon.z, "F-10"],
+    [SAN_SPOT.southEast.x, SAN_SPOT.southEast.z, "L-10"],
+    [SAN_SPOT.southNorth.x, SAN_SPOT.southNorth.z, "I-7"],
+    [SAN_SPOT.southChoco.x, SAN_SPOT.southChoco.z, "H-11"],
   ];
   for (const [x, z, square] of southSq) {
+    if (!inSouthGraph(x, z, 0)) throw new Error(`south graph misses ${x},${z}`);
     if (sanSquare("south", x, z) !== square) throw new Error(`south ${x},${z} is ${sanSquare("south", x, z)} not ${square}`);
   }
-  for (const [x, z] of [[7, 12], [0, -20], [0, 40], [40, 20], [12, -80]] as const) {
-    if (inSouthGraph(x, z, 0)) throw new Error(`south graph includes ${x},${z}`);
-  }
-  if (!inSouthGraph(7, 7.95, 0.2)) throw new Error("south clamp shoulder");
-  const northIn: [number, number, string][] = [
-    [-10, -300, "F-7"],
-    [0, -300, "F-7"],
-    [-39.2, -292, "C-8"],
-    [-30, -304, "D-7"],
-    [32, -268, "I-10"],
-    [32, -276, "I-9"],
-    [-4, -352, "F-3"],
-    [-16, -344, "E-4"],
-    [8, -332, "G-5"],
-    [8, -324, "G-5"],
-    [-39.4, -328, "C-5"],
-    [-32, -328, "D-5"],
-    [18, -290, "H-8"],
+  if (!inSouthGraph(0, 10, 0) || !inSouthGraph(12, -12, 0)) throw new Error("south avenue");
+  if (inSouthGraph(30, 48, 0)) throw new Error("beside the south gate");
+  const southMiss = cover("south", SOUTH_RETAIL);
+  if (southMiss.length / SOUTH_RETAIL.length > 0.1) throw new Error(`south trace ${southMiss.join(" ")}`);
+  const northHeart = centerOf("north", "F-7");
+  const northSq: [number, number, string][] = [
+    [northHeart.x, northHeart.z, "F-7"],
+    [northHeart.x - 10, northHeart.z, "F-7"],
+    [SAN_SPOT.northWest.x, SAN_SPOT.northWest.z, "C-8"],
+    [SAN_SPOT.northD7.x, SAN_SPOT.northD7.z, "D-7"],
+    [SAN_SPOT.northSouth.x, SAN_SPOT.northSouth.z, "I-10"],
+    [SAN_SPOT.northPort.x, SAN_SPOT.northPort.z, "F-3"],
+    [SAN_SPOT.northChateau.x, SAN_SPOT.northChateau.z, "I-6"],
+    [SAN_SPOT.northLanding.x, SAN_SPOT.northLanding.z, "F-5"],
   ];
-  for (const [x, z, square] of northIn) {
+  for (const [x, z, square] of northSq) {
     if (!inNorthGraph(x, z, 0)) throw new Error(`north graph misses ${x},${z}`);
     if (sanSquare("north", x, z) !== square) throw new Error(`north ${x},${z} is ${sanSquare("north", x, z)} not ${square}`);
   }
-  const portIn: [number, number, string][] = [
-    [0, -420, "G-7"],
-    [-8, -386, "F-10"],
-    [-8, -396, "F-9"],
-    [2, -454, "G-4"],
-    [4.9, -454.2, "G-4"],
-    [-0.7, -454.2, "G-4"],
-    [5.2, -443.2, "G-5"],
-    [5.2, -442.05, "G-5"],
+  const northMiss = cover("north", NORTH_RETAIL);
+  if (northMiss.length / NORTH_RETAIL.length > 0.1) throw new Error(`north trace ${northMiss.join(" ")}`);
+  const portHeart = centerOf("port", "G-7");
+  const portCrystal = worldOf("port", 6.608, 6.017);
+  const portSq: [number, number, string][] = [
+    [portHeart.x, portHeart.z, "G-7"],
+    [portCrystal.x, portCrystal.z, "G-7"],
+    [SAN_SPOT.portNorth.x, SAN_SPOT.portNorth.z, "F-10"],
+    [SAN_SPOT.portPier.x, SAN_SPOT.portPier.z, "G-4"],
+    [SAN_SPOT.fisher.x, SAN_SPOT.fisher.z, "G-4"],
+    [SAN_SPOT.joulet.x, SAN_SPOT.joulet.z, "G-4"],
   ];
-  for (const [x, z, square] of portIn) {
+  for (const [x, z, square] of portSq) {
     if (!inPortGraph(x, z, 0)) throw new Error(`port graph misses ${x},${z}`);
     if (sanSquare("port", x, z) !== square) throw new Error(`port ${x},${z} is ${sanSquare("port", x, z)} not ${square}`);
   }
-  if (inPortGraph(2, -458, 0.2)) throw new Error("past the pier");
-  if (inPortGraph(12, -460, 0)) throw new Error("harbor water");
-  if (inSouthGraph(32, -276, 0) || inNorthGraph(0, 0, 0) || inPortGraph(-10, -300, 0)) throw new Error("districts overlap");
-  const shoulder = clampSouthGraph(7, 12, 0.36);
+  const portMiss = cover("port", PORT_RETAIL);
+  if (portMiss.length / PORT_RETAIL.length > 0.1) throw new Error(`port trace ${portMiss.join(" ")}`);
+  if (inPortGraph(SAN_SPOT.portPier.x, SAN_SPOT.portPier.z - 28, 0.2)) throw new Error("past the pier");
+  if (inPortGraph(SAN_SPOT.portPier.x + 24, SAN_SPOT.portPier.z - 20, 0)) throw new Error("harbor water");
+  if (inSouthGraph(SAN_SPOT.northSouth.x, SAN_SPOT.northSouth.z, 0) || inNorthGraph(0, 0, 0) || inPortGraph(northHeart.x, northHeart.z, 0)) {
+    throw new Error("districts overlap");
+  }
+  for (const spot of [SAN_SPOT.southRon, SAN_SPOT.southEast, SAN_SPOT.southNorth, { x: 0, z: 0 }]) {
+    if (spot.z > 205) throw new Error("south street meets ronfaure");
+  }
+  const shoulder = clampSouthGraph(30, 48, 0.36);
   if (!inSouthGraph(shoulder.x, shoulder.z, 0.2)) throw new Error("south clamp");
+  let walls = 0;
+  let low = 0;
+  for (const id of ["south", "north", "port"] as const) {
+    for (const bit of SAN_PROPS[id]) {
+      if (bit.shape !== "box" || bit.sy < 1) continue;
+      if (bit.roof == null) throw new Error(`${bit.id} has no roof`);
+      if (!(lum(bit.color) < lum(bit.roof) - 0.05)) throw new Error(`${bit.id} walls are not darker than the roof`);
+      walls++;
+      if (bit.sy < 1.4) low++;
+    }
+  }
+  if (walls < 6 || low < 3) throw new Error("building walls");
+  for (const id of ["south", "north", "port"] as const) {
+    const tile = SAN_PAINT[id];
+    const spanX = tile.maxX - tile.minX;
+    const spanZ = tile.maxZ - tile.minZ;
+    if (tile.w / spanX < 3.9 || tile.h / spanZ < 3.9) throw new Error(`${id} paint is under 4 px/yalm`);
+    if (!(tile.lum >= 0.3 && tile.lum <= 0.45)) throw new Error(`${id} floor luminance ${tile.lum}`);
+  }
 }

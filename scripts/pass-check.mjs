@@ -55,7 +55,7 @@ const probe = spawnSync(
       assertFort();
       assertYughott();
       assertWorldLinks(false);
-      for (const [x, z] of [[0, 0], [-10, -300], [0, -420]]) {
+      for (const [x, z] of [[0, 0], [0, -488], [0, -874]]) {
         if (campHere("battle", x, z)) throw new Error("town camp " + x + "," + z);
         if (campRefusal("battle", x, z) !== "Towns and instances can't hold a camp.") throw new Error("town refusal");
       }
@@ -270,8 +270,8 @@ try {
         const tomb = zoneArrival("ranperre");
         const rows = [
           { id: "south-city", x: 0, z: 0, square: "F-9" },
-          { id: "north-city", x: 0, z: -300, square: "F-7" },
-          { id: "port", x: 0, z: -420, square: "G-7" },
+          { id: "north-city", x: 0, z: -488, square: "F-7" },
+          { id: "port", x: 0, z: -874, square: "G-7" },
           { id: "west", x: west.x, z: west.z, square: "GRID" },
           { id: "east", x: east.x, z: east.z, square: "GRID" },
           { id: "tomb", x: tomb.x, z: tomb.z, square: "GRID" },

@@ -140,9 +140,9 @@ function orcMid(name: string): { x: number; z: number } {
 /** Interior points. Unbuilt regions (La Theine, Carpenters' Landing) have none. */
 export const REGION_CENTRE: Record<string, { x: number; z: number }> = {
   "Southern San d'Oria": { x: 0, z: 0 },
-  "Northern San d'Oria": { x: -10, z: -300 },
+  "Northern San d'Oria": { x: 0, z: -488 },
   "Port San d'Oria": FISHER,
-  "San d'Oria": { x: 0, z: 40 },
+  "San d'Oria": { x: 12, z: -80 },
   "West Ronfaure": { x: RON_X0 + RON_SIZE / 2, z: RON_Z0 + RON_SIZE / 2 },
   "East Ronfaure": EAST_STAND.sandoria,
   "King Ranperre's Tomb": TOMB_FOYER,
