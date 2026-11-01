@@ -155,10 +155,8 @@ function project(x: number, z: number, c: number, radius: number, ox: number, oz
   };
 }
 
-const STREET = "#8d6a45";
 const WATER = "#2f6d86";
 const PARCHMENT = "#d4c4a0";
-const PLAZA = "#efe2c4";
 
 const SHORT_GATE: Record<string, string> = {
   "West Ronfaure": "W. Ronfaure",
@@ -606,43 +604,36 @@ function paintTown(
 ) {
   const id = sanId(region);
   const draw = sanDraw(id);
-  ctx.fillStyle = PLAZA;
-  for (const area of draw.areas) {
-    if (area.length < 3) continue;
+  const trace = (rings: { x: number; z: number }[][]) => {
     ctx.beginPath();
-    area.forEach((p, i) => {
-      const q = at(p.x, p.z);
-      if (i === 0) ctx.moveTo(q.x, q.y);
-      else ctx.lineTo(q.x, q.y);
-    });
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.strokeStyle = STREET;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  for (const span of draw.spans) {
-    const a = at(span.ax, span.az);
-    const b = at(span.bx, span.bz);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.lineWidth = Math.max(1.4, span.width * unit);
-    ctx.stroke();
-  }
-  ctx.fillStyle = "#e7dcc4";
-  for (const bit of SAN_PROPS[id]) {
-    if (bit.sy < 1.2 && bit.shape !== "cyl") continue;
-    const p = at(bit.x, bit.z);
-    if (bit.shape === "cyl") {
-      ctx.beginPath();
-      ctx.fillStyle = bit.id.includes("water") || bit.id.includes("fountain") ? WATER : "#e7dcc4";
-      ctx.arc(p.x, p.y, Math.max(2, (bit.sx / 2) * unit), 0, Math.PI * 2);
-      ctx.fill();
-      continue;
+    for (const ring of rings) {
+      if (ring.length < 3) continue;
+      ring.forEach((p, i) => {
+        const q = at(p.x, p.z);
+        if (i === 0) ctx.moveTo(q.x, q.y);
+        else ctx.lineTo(q.x, q.y);
+      });
+      ctx.closePath();
     }
-    ctx.fillStyle = "#e7dcc4";
-    ctx.fillRect(p.x - (bit.sx / 2) * unit, p.y - (bit.sz / 2) * unit, bit.sx * unit, bit.sz * unit);
+  };
+  ctx.fillStyle = "#efe2c4";
+  trace(draw.rings);
+  ctx.fill("evenodd");
+  ctx.fillStyle = "#c4b496";
+  trace(draw.buildings);
+  ctx.fill();
+  ctx.strokeStyle = "#6e5844";
+  ctx.lineWidth = Math.max(1, unit * 0.35);
+  ctx.lineJoin = "round";
+  trace(draw.buildings);
+  ctx.stroke();
+  const fountain = SAN_PROPS.south.find((bit) => bit.id === "fountain");
+  if (id === "south" && fountain) {
+    const p = at(fountain.x, fountain.z);
+    ctx.beginPath();
+    ctx.fillStyle = WATER;
+    ctx.arc(p.x, p.y, Math.max(2, (fountain.sx / 2) * unit * 0.35), 0, Math.PI * 2);
+    ctx.fill();
   }
   if (id === "port") {
     const fisher = at(FISHER.x, FISHER.z);

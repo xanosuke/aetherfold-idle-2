@@ -69,13 +69,32 @@ function pixLum(r, g, b) {
 }
 
 function stoneAt(x, z) {
-  const cell = 2;
-  const fx = x / cell;
-  const fz = z / cell;
-  const mortar = Math.abs(fx - Math.round(fx)) < 0.12 || Math.abs(fz - Math.round(fz)) < 0.12;
-  if (mortar) return [100, 82, 62];
-  const grain = hash2(Math.floor(fx), Math.floor(fz));
-  return [118 + (grain - 0.5) * 10, 96 + (grain - 0.5) * 8, 72 + (grain - 0.5) * 6];
+  const scale = 0.72;
+  const gx = Math.floor(x / scale);
+  const gz = Math.floor(z / scale);
+  let best = 1e9;
+  let hx = 0;
+  let hz = 0;
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const ix = gx + dx;
+      const iz = gz + dz;
+      const jx = (hash2(ix, iz) - 0.5) * 0.62;
+      const jz = (hash2(iz + 19, ix + 7) - 0.5) * 0.62;
+      const cx = (ix + 0.5 + jx) * scale;
+      const cz = (iz + 0.5 + jz) * scale;
+      const d = (x - cx) ** 2 + (z - cz) ** 2;
+      if (d < best) {
+        best = d;
+        hx = ix;
+        hz = iz;
+      }
+    }
+  }
+  const rad = 0.24 + hash2(hx + 5, hz + 2) * 0.16;
+  if (Math.sqrt(best) > rad) return [98, 80, 60];
+  const tone = (hash2(hx + 3, hz + 11) - 0.5) * 16;
+  return [118 + tone, 96 + tone * 0.65, 72 + tone * 0.4];
 }
 
 const tiles = {};

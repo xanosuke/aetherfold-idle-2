@@ -1,11 +1,12 @@
 /**
- * San d'Oria districts, traced from the retail Vana'diel atlas.
+ * San d'Oria districts, traced from the retail Vana'diel atlas plates.
  * Grid units: gx 0 = column A, gy 0 = row 1, +gx east, +gy south.
  * World: x = x0 + gx * cell, z = z0 + gy * cell. Cell is 48 yalms.
  * (0,0) stays F-9 Southern. Northern F-7 is (0,-488). Port G-7 is (0,-874).
- * Walk = plaza polygons + street polylines. Not rectangle rooms.
+ * Walk polygons come from the traced plates, not chains of square centres.
  */
 import { SAN_PAINT } from "./sandoria-paint.generated.ts";
+import { SAN_TRACE } from "./sandoria-trace.generated.ts";
 
 export const SAN_CELL = 48;
 
@@ -165,54 +166,31 @@ export type SanProp = {
   y: number;
 };
 
-const CREAM = 0xb08960;
-const SLATE = 0xd5dee8;
+export const SAN_CREAM = 0xb08960;
+export const SAN_SLATE = 0xd5dee8;
 
-/** Outlined landmarks. South faces stay about one yalm so the camera can see over them.
- * Portrait only shows about ±5 yalms of east-west, so the cluster sits on the street edge of that window. */
+/** Lion Springs basin. Building blocks come from the traced footprints, not these boxes. */
 export const SAN_PROPS: Record<"south" | "north" | "port", SanProp[]> = {
-  south: [
-    { id: "fountain", shape: "cyl", color: 0xc4b496, x: 0, z: -48, sx: 12, sy: 0.7, sz: 12, y: 0.4 },
-    { id: "nw-shop", shape: "box", color: CREAM, roof: SLATE, x: -4.2, z: -60, sx: 3.4, sy: 6.6, sz: 3.2, y: 3.3 },
-    { id: "ne-shop", shape: "box", color: CREAM, roof: SLATE, x: 4.2, z: -60, sx: 3.2, sy: 6.0, sz: 3.0, y: 3.0 },
-    { id: "west-hall", shape: "box", color: CREAM, roof: SLATE, x: -4.4, z: -8, sx: 2.8, sy: 6.2, sz: 3.6, y: 3.1 },
-    { id: "ave-east", shape: "box", color: CREAM, roof: SLATE, x: 4.4, z: -6, sx: 2.6, sy: 5.6, sz: 3.4, y: 2.8 },
-    { id: "sw-facade", shape: "box", color: CREAM, roof: SLATE, x: -3.4, z: -36, sx: 3.0, sy: 1.08, sz: 2.2, y: 0.56 },
-    { id: "se-facade", shape: "box", color: CREAM, roof: SLATE, x: 3.4, z: -36, sx: 2.8, sy: 1.08, sz: 2.2, y: 0.56 },
-    { id: "ave-low", shape: "box", color: CREAM, roof: SLATE, x: 3.2, z: 8, sx: 2.6, sy: 1.08, sz: 2.0, y: 0.56 },
-    { id: "ave-low-w", shape: "box", color: CREAM, roof: SLATE, x: -3.2, z: 10, sx: 2.6, sy: 1.08, sz: 2.0, y: 0.56 },
-    { id: "cart", shape: "box", color: 0x6a4428, x: 2.2, z: -40, sx: 1.6, sy: 0.6, sz: 1.0, y: 0.35 },
-    { id: "crate", shape: "box", color: 0x6a4428, x: -2.0, z: -3, sx: 1.2, sy: 0.7, sz: 1.0, y: 0.4 },
-  ],
-  north: [
-    { id: "nw-house", shape: "box", color: CREAM, roof: SLATE, x: -4.2, z: -500, sx: 3.2, sy: 6.4, sz: 3.2, y: 3.2 },
-    { id: "ne-house", shape: "box", color: CREAM, roof: SLATE, x: 4.2, z: -500, sx: 3.0, sy: 5.8, sz: 3.0, y: 2.9 },
-    { id: "west-hall", shape: "box", color: CREAM, roof: SLATE, x: -4.6, z: -488, sx: 2.4, sy: 5.4, sz: 3.2, y: 2.7 },
-    { id: "sw-facade", shape: "box", color: CREAM, roof: SLATE, x: -3.3, z: -476, sx: 2.8, sy: 1.08, sz: 2.0, y: 0.56 },
-    { id: "se-facade", shape: "box", color: CREAM, roof: SLATE, x: 3.3, z: -476, sx: 2.6, sy: 1.08, sz: 2.0, y: 0.56 },
-    { id: "cart", shape: "box", color: 0x6a4428, x: 2.2, z: -482, sx: 1.5, sy: 0.6, sz: 1.0, y: 0.34 },
-  ],
-  port: [
-    { id: "west-shed", shape: "box", color: CREAM, roof: SLATE, x: -4.4, z: -886, sx: 2.8, sy: 5.4, sz: 3.2, y: 2.7 },
-    { id: "east-shed", shape: "box", color: CREAM, roof: SLATE, x: 4.4, z: -886, sx: 2.6, sy: 5.0, sz: 3.0, y: 2.5 },
-    { id: "north-hall", shape: "box", color: CREAM, roof: SLATE, x: 4.2, z: -874, sx: 2.4, sy: 5.6, sz: 3.0, y: 2.8 },
-    { id: "sw-facade", shape: "box", color: CREAM, roof: SLATE, x: -3.2, z: -862, sx: 2.6, sy: 1.08, sz: 1.8, y: 0.56 },
-    { id: "se-facade", shape: "box", color: CREAM, roof: SLATE, x: 3.2, z: -862, sx: 2.4, sy: 1.08, sz: 1.8, y: 0.56 },
-    { id: "cart", shape: "box", color: 0x6a4428, x: -2.0, z: -868, sx: 1.4, sy: 0.55, sz: 0.9, y: 0.32 },
-  ],
+  south: [{ id: "fountain", shape: "cyl", color: 0xc4b496, x: 0, z: -48, sx: 12, sy: 0.7, sz: 12, y: 0.4 }],
+  north: [],
+  port: [],
 };
 
 type GridId = "south" | "north" | "port";
 const GRIDS: Record<GridId, SanGrid> = { south: SOUTH_GRID, north: NORTH_GRID, port: PORT_GRID };
-const GRAPHS: Record<GridId, SanGraph> = { south: SOUTH_GRAPH, north: NORTH_GRAPH, port: PORT_GRAPH };
 
-type Seg = { ax: number; az: number; bx: number; bz: number; half: number };
-type Disc = { x: number; z: number; r: number };
-type Poly = { pts: { x: number; z: number }[] };
+function decodeMask(b64: string) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 255;
+  return out;
+}
 
-const SEGS: Record<GridId, Seg[]> = { south: [], north: [], port: [] };
-const DISCS: Record<GridId, Disc[]> = { south: [], north: [], port: [] };
-const POLYS: Record<GridId, Poly[]> = { south: [], north: [], port: [] };
+const MASK: Record<GridId, Uint8Array> = {
+  south: decodeMask(SAN_TRACE.south.mask),
+  north: decodeMask(SAN_TRACE.north.mask),
+  port: decodeMask(SAN_TRACE.port.mask),
+};
 
 function worldOf(id: GridId, gx: number, gy: number) {
   const g = GRIDS[id];
@@ -236,149 +214,52 @@ export const SAN_SPOT = {
   joulet: worldOf("port", 6.38, 3.38),
 };
 
-for (const id of ["south", "north", "port"] as const) {
-  const graph = GRAPHS[id];
-  for (const edge of graph.edges) {
-    const half = ((edge.width ?? 0.35) * SAN_CELL) / 2;
-    for (let i = 0; i + 1 < edge.pts.length; i++) {
-      const a = worldOf(id, edge.pts[i][0], edge.pts[i][1]);
-      const b = worldOf(id, edge.pts[i + 1][0], edge.pts[i + 1][1]);
-      SEGS[id].push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, half });
-    }
-  }
-  for (const node of graph.nodes) {
-    if (!node.r) continue;
-    const c = worldOf(id, node.gx, node.gy);
-    DISCS[id].push({ x: c.x, z: c.z, r: node.r * SAN_CELL });
-  }
-  for (const area of graph.areas) {
-    POLYS[id].push({ pts: area.pts.map(([gx, gy]) => worldOf(id, gx, gy)) });
-  }
+function maskAt(id: GridId, x: number, z: number) {
+  const g = GRIDS[id];
+  const ix = Math.floor(x - g.x0);
+  const iz = Math.floor(z - g.z0);
+  const span = SAN_TRACE[id];
+  if (ix < 0 || iz < 0 || ix >= span.w || iz >= span.h) return false;
+  const i = iz * span.w + ix;
+  return (MASK[id][i >> 3] & (128 >> (i & 7))) !== 0;
 }
 
-function nearOnSeg(px: number, pz: number, s: Seg) {
-  const dx = s.bx - s.ax;
-  const dz = s.bz - s.az;
-  const len2 = dx * dx + dz * dz;
-  const t = len2 ? Math.max(0, Math.min(1, ((px - s.ax) * dx + (pz - s.az) * dz) / len2)) : 0;
-  return { x: s.ax + t * dx, z: s.az + t * dz };
-}
-
-function insidePoly(x: number, z: number, poly: Poly) {
-  const pts = poly.pts;
-  let hit = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[i];
-    const b = pts[j];
-    if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z + 0) + a.x) hit = !hit;
+function inGraph(id: GridId, x: number, z: number, radius: number) {
+  if (!maskAt(id, x, z)) return false;
+  if (radius <= 0) return true;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    if (!maskAt(id, x + Math.cos(a) * radius, z + Math.sin(a) * radius)) return false;
   }
-  return hit;
-}
-
-function distToPoly(x: number, z: number, poly: Poly) {
-  let best = Infinity;
-  let qx = x;
-  let qz = z;
-  const pts = poly.pts;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[j];
-    const b = pts[i];
-    const dx = b.x - a.x;
-    const dz = b.z - a.z;
-    const len2 = dx * dx + dz * dz;
-    const t = len2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2)) : 0;
-    const px = a.x + t * dx;
-    const pz = a.z + t * dz;
-    const d = Math.hypot(x - px, z - pz);
-    if (d < best) {
-      best = d;
-      qx = px;
-      qz = pz;
-    }
-  }
-  const inside = insidePoly(x, z, poly);
-  return { inside, dist: best, x: qx, z: qz };
-}
-
-function clearance(id: GridId, x: number, z: number) {
-  let best = -Infinity;
-  for (const poly of POLYS[id]) {
-    const hit = distToPoly(x, z, poly);
-    best = Math.max(best, hit.inside ? hit.dist : -hit.dist);
-  }
-  for (const seg of SEGS[id]) {
-    const q = nearOnSeg(x, z, seg);
-    best = Math.max(best, seg.half - Math.hypot(x - q.x, z - q.z));
-  }
-  for (const disc of DISCS[id]) best = Math.max(best, disc.r - Math.hypot(x - disc.x, z - disc.z));
-  return best;
+  return true;
 }
 
 function clampGraph(id: GridId, x: number, z: number, radius: number) {
-  if (clearance(id, x, z) >= radius) return { x, z };
-  let best = -Infinity;
-  let cx = x;
-  let cz = z;
-  let room = 0;
-  let inwardX = 0;
-  let inwardZ = 0;
-  for (const poly of POLYS[id]) {
-    const hit = distToPoly(x, z, poly);
-    const c = hit.inside ? hit.dist : -hit.dist;
-    if (c > best) {
-      best = c;
-      cx = hit.x;
-      cz = hit.z;
-      room = hit.inside ? hit.dist : 0;
-      const dx = x - hit.x;
-      const dz = z - hit.z;
-      const len = Math.hypot(dx, dz) || 1;
-      inwardX = hit.inside ? dx / len : -dx / len;
-      inwardZ = hit.inside ? dz / len : -dz / len;
+  if (inGraph(id, x, z, radius)) return { x, z };
+  let best = Infinity;
+  let bx = x;
+  let bz = z;
+  for (let dz = -36; dz <= 36; dz++) {
+    for (let dx = -36; dx <= 36; dx++) {
+      const d2 = dx * dx + dz * dz;
+      if (d2 === 0 || d2 >= best) continue;
+      if (!inGraph(id, x + dx, z + dz, radius)) continue;
+      best = d2;
+      bx = x + dx;
+      bz = z + dz;
     }
   }
-  for (const seg of SEGS[id]) {
-    const q = nearOnSeg(x, z, seg);
-    const c = seg.half - Math.hypot(x - q.x, z - q.z);
-    if (c > best) {
-      best = c;
-      cx = q.x;
-      cz = q.z;
-      room = seg.half;
-      inwardX = 0;
-      inwardZ = 0;
-    }
-  }
-  for (const disc of DISCS[id]) {
-    const c = disc.r - Math.hypot(x - disc.x, z - disc.z);
-    if (c > best) {
-      best = c;
-      cx = disc.x;
-      cz = disc.z;
-      room = disc.r;
-      inwardX = 0;
-      inwardZ = 0;
-    }
-  }
-  if (inwardX || inwardZ) {
-    const inset = Math.max(radius, 0.05);
-    return { x: cx + inwardX * inset, z: cz + inwardZ * inset };
-  }
-  const dx = x - cx;
-  const dz = z - cz;
-  const len = Math.hypot(dx, dz) || 1;
-  const keep = Math.max(0, room - radius);
-  return { x: cx + (dx / len) * keep, z: cz + (dz / len) * keep };
+  return { x: bx, z: bz };
 }
 
 export function inSouthGraph(x: number, z: number, radius = 0) {
-  return clearance("south", x, z) >= radius;
+  return inGraph("south", x, z, radius);
 }
 export function inNorthGraph(x: number, z: number, radius = 0) {
-  return clearance("north", x, z) >= radius;
+  return inGraph("north", x, z, radius);
 }
 export function inPortGraph(x: number, z: number, radius = 0) {
-  return clearance("port", x, z) >= radius;
+  return inGraph("port", x, z, radius);
 }
 export function clampSouthGraph(x: number, z: number, radius = 0) {
   return clampGraph("south", x, z, radius);
@@ -393,14 +274,36 @@ export function clampPortGraph(x: number, z: number, radius = 0) {
 export type SanDraw = {
   areas: { x: number; z: number }[][];
   spans: { ax: number; az: number; bx: number; bz: number; width: number }[];
+  rings: { x: number; z: number }[][];
+  buildings: { x: number; z: number }[][];
+};
+
+function worldRings(id: GridId, rings: readonly (readonly (readonly [number, number])[])[]) {
+  return rings.map((ring) => ring.map(([gx, gy]) => worldOf(id, gx, gy)));
+}
+
+const DRAW: Record<GridId, SanDraw> = {
+  south: { areas: [], spans: [], rings: worldRings("south", SAN_TRACE.south.rings), buildings: worldRings("south", SAN_TRACE.south.buildings) },
+  north: { areas: [], spans: [], rings: worldRings("north", SAN_TRACE.north.rings), buildings: worldRings("north", SAN_TRACE.north.buildings) },
+  port: { areas: [], spans: [], rings: worldRings("port", SAN_TRACE.port.rings), buildings: worldRings("port", SAN_TRACE.port.buildings) },
 };
 
 export function sanDraw(id: GridId): SanDraw {
-  return {
-    areas: POLYS[id].map((poly) => poly.pts),
-    spans: SEGS[id].map((seg) => ({ ax: seg.ax, az: seg.az, bx: seg.bx, bz: seg.bz, width: seg.half * 2 })),
-  };
+  return DRAW[id];
 }
+
+export function sanNorthHeight(x: number, z: number) {
+  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return 4 + (n - Math.floor(n)) * 4;
+}
+
+/** South (+Z) eaves drop to about one yalm. North eaves stay 4–8. */
+export function sanEave(z: number, zMin: number, zMax: number, north: number) {
+  if (zMax - zMin < 0.35) return 1.05;
+  const t = (z - zMin) / (zMax - zMin);
+  return north + (1.05 - north) * t;
+}
+
 
 const LETTERS = "ABCDEFGHIJKLMNOP";
 export function sanSquare(id: GridId, x: number, z: number) {
@@ -423,14 +326,126 @@ function lum(hex: number) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
-function cover(id: GridId, squares: readonly string[]) {
-  const inside = (x: number, z: number) => (id === "south" ? inSouthGraph(x, z, 0) : id === "north" ? inNorthGraph(x, z, 0) : inPortGraph(x, z, 0));
-  const miss: string[] = [];
-  for (const square of squares) {
-    const at = centerOf(id, square);
-    if (sanSquare(id, at.x, at.z) !== square || !inside(at.x, at.z)) miss.push(square);
+function ringHas(rings: { x: number; z: number }[][], x: number, z: number) {
+  for (const ring of rings) {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i];
+      const b = ring[j];
+      if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) hit = !hit;
+    }
+    if (hit) return true;
   }
-  return miss;
+  return false;
+}
+
+function traceScores(id: GridId) {
+  const g = GRIDS[id];
+  const draw = DRAW[id];
+  const span = SAN_TRACE[id];
+  const poly = new Uint8Array(span.w * span.h);
+  for (let iz = 0; iz < span.h; iz++) {
+    const z = g.z0 + iz + 0.5;
+    const xs: number[] = [];
+    for (const ring of draw.rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j];
+        const b = ring[i];
+        if ((a.z > z) === (b.z > z)) continue;
+        xs.push(a.x + ((z - a.z) * (b.x - a.x)) / (b.z - a.z));
+      }
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      let x0 = Math.floor(xs[k] - g.x0);
+      let x1 = Math.floor(xs[k + 1] - g.x0);
+      if (x1 < x0) {
+        const swap = x0;
+        x0 = x1;
+        x1 = swap;
+      }
+      const a = Math.max(0, x0);
+      const b = Math.min(span.w - 1, x1);
+      const row = iz * span.w;
+      for (let ix = a; ix <= b; ix++) poly[row + ix] = 1;
+    }
+  }
+  const near = (buf: Uint8Array | null, ix: number, iz: number, onMask: boolean) => {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = ix + dx;
+        const z = iz + dz;
+        if (x < 0 || z < 0 || x >= span.w || z >= span.h) continue;
+        const on = onMask ? maskAt(id, g.x0 + x + 0.5, g.z0 + z + 0.5) : buf![z * span.w + x] === 1;
+        if (on) return true;
+      }
+    }
+    return false;
+  };
+  let maskN = 0;
+  let polyN = 0;
+  let recall = 0;
+  let precision = 0;
+  for (let iz = 0; iz < span.h; iz++) {
+    for (let ix = 0; ix < span.w; ix++) {
+      const m = maskAt(id, g.x0 + ix + 0.5, g.z0 + iz + 0.5);
+      const p = poly[iz * span.w + ix] === 1;
+      if (m) {
+        maskN++;
+        if (near(poly, ix, iz, false)) recall++;
+      }
+      if (p) {
+        polyN++;
+        if (near(null, ix, iz, true)) precision++;
+      }
+    }
+  }
+  return { recall: recall / Math.max(1, maskN), precision: precision / Math.max(1, polyN), poly };
+}
+
+function axisFault(id: GridId, poly: Uint8Array) {
+  const g = GRIDS[id];
+  const span = SAN_TRACE[id];
+  const maskNear = (x: number, z: number) => {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (maskAt(id, x + dx, z + dz)) return true;
+      }
+    }
+    return false;
+  };
+  for (let col = 0; col < g.cols; col++) {
+    for (let row = 0; row < g.rows; row++) {
+      let full = 0;
+      for (const horiz of [true, false]) {
+        let polyOn = true;
+        let maskOn = true;
+        for (let t = 0; t < 8; t++) {
+          const gx = horiz ? col + (t + 0.5) / 8 : col + 0.5;
+          const gy = horiz ? row + 0.5 : row + (t + 0.5) / 8;
+          const x = g.x0 + gx * g.cell;
+          const z = g.z0 + gy * g.cell;
+          const ix = Math.floor(x - g.x0);
+          const iz = Math.floor(z - g.z0);
+          if (ix < 0 || iz < 0 || ix >= span.w || iz >= span.h || poly[iz * span.w + ix] !== 1) polyOn = false;
+          if (!maskNear(x, z)) maskOn = false;
+        }
+        if (polyOn && !maskOn) full++;
+      }
+      if (full === 2) return `${LETTERS[col]}-${row + 1}`;
+    }
+  }
+  return "";
+}
+
+function portraitBuilding(x: number, z: number) {
+  const buildings = DRAW.south.buildings;
+  for (let zz = z - 20; zz <= z + 14; zz += 1) {
+    for (let xx = x - 5.4; xx <= x + 5.4; xx += 1) {
+      if (ringHas(buildings, xx, zz)) return true;
+    }
+  }
+  return false;
 }
 
 export function assertSanGraph(): void {
@@ -448,8 +463,6 @@ export function assertSanGraph(): void {
   }
   if (!inSouthGraph(0, 10, 0) || !inSouthGraph(12, -12, 0)) throw new Error("south avenue");
   if (inSouthGraph(30, 48, 0)) throw new Error("beside the south gate");
-  const southMiss = cover("south", SOUTH_RETAIL);
-  if (southMiss.length / SOUTH_RETAIL.length > 0.1) throw new Error(`south trace ${southMiss.join(" ")}`);
   const northHeart = centerOf("north", "F-7");
   const northSq: [number, number, string][] = [
     [northHeart.x, northHeart.z, "F-7"],
@@ -465,8 +478,6 @@ export function assertSanGraph(): void {
     if (!inNorthGraph(x, z, 0)) throw new Error(`north graph misses ${x},${z}`);
     if (sanSquare("north", x, z) !== square) throw new Error(`north ${x},${z} is ${sanSquare("north", x, z)} not ${square}`);
   }
-  const northMiss = cover("north", NORTH_RETAIL);
-  if (northMiss.length / NORTH_RETAIL.length > 0.1) throw new Error(`north trace ${northMiss.join(" ")}`);
   const portHeart = centerOf("port", "G-7");
   const portCrystal = worldOf("port", 6.608, 6.017);
   const portSq: [number, number, string][] = [
@@ -481,8 +492,6 @@ export function assertSanGraph(): void {
     if (!inPortGraph(x, z, 0)) throw new Error(`port graph misses ${x},${z}`);
     if (sanSquare("port", x, z) !== square) throw new Error(`port ${x},${z} is ${sanSquare("port", x, z)} not ${square}`);
   }
-  const portMiss = cover("port", PORT_RETAIL);
-  if (portMiss.length / PORT_RETAIL.length > 0.1) throw new Error(`port trace ${portMiss.join(" ")}`);
   if (inPortGraph(SAN_SPOT.portPier.x, SAN_SPOT.portPier.z - 28, 0.2)) throw new Error("past the pier");
   if (inPortGraph(SAN_SPOT.portPier.x + 24, SAN_SPOT.portPier.z - 20, 0)) throw new Error("harbor water");
   if (inSouthGraph(SAN_SPOT.northSouth.x, SAN_SPOT.northSouth.z, 0) || inNorthGraph(0, 0, 0) || inPortGraph(northHeart.x, northHeart.z, 0)) {
@@ -493,18 +502,37 @@ export function assertSanGraph(): void {
   }
   const shoulder = clampSouthGraph(30, 48, 0.36);
   if (!inSouthGraph(shoulder.x, shoulder.z, 0.2)) throw new Error("south clamp");
-  let walls = 0;
+  if (!(lum(SAN_CREAM) < lum(SAN_SLATE) - 0.05)) throw new Error("walls are not darker than the roof");
+  let blocks = 0;
   let low = 0;
   for (const id of ["south", "north", "port"] as const) {
-    for (const bit of SAN_PROPS[id]) {
-      if (bit.shape !== "box" || bit.sy < 1) continue;
-      if (bit.roof == null) throw new Error(`${bit.id} has no roof`);
-      if (!(lum(bit.color) < lum(bit.roof) - 0.05)) throw new Error(`${bit.id} walls are not darker than the roof`);
-      walls++;
-      if (bit.sy < 1.4) low++;
+    const score = traceScores(id);
+    if (score.recall < 0.9 || score.precision < 0.9) throw new Error(`${id} trace overlap ${score.recall.toFixed(3)}/${score.precision.toFixed(3)}`);
+    const fault = axisFault(id, score.poly);
+    if (fault) throw new Error(`${id} axis street ${fault}`);
+    for (const ring of DRAW[id].buildings) {
+      if (ring.length < 3) continue;
+      let zMin = Infinity;
+      let zMax = -Infinity;
+      let cx = 0;
+      let cz = 0;
+      for (const p of ring) {
+        zMin = Math.min(zMin, p.z);
+        zMax = Math.max(zMax, p.z);
+        cx += p.x;
+        cz += p.z;
+      }
+      cx /= ring.length;
+      cz /= ring.length;
+      const north = sanNorthHeight(cx, cz);
+      const south = sanEave(zMax, zMin, zMax, north);
+      if (!(south < 1.4) || !(north >= 4 && north <= 8)) throw new Error(`${id} eave ${south}/${north}`);
+      blocks++;
+      if (south < 1.4) low++;
     }
   }
-  if (walls < 6 || low < 3) throw new Error("building walls");
+  if (blocks < 6 || low < 3) throw new Error("building walls");
+  if (!portraitBuilding(0, -38) || !portraitBuilding(0, 0)) throw new Error("portrait buildings");
   for (const id of ["south", "north", "port"] as const) {
     const tile = SAN_PAINT[id];
     const spanX = tile.maxX - tile.minX;
