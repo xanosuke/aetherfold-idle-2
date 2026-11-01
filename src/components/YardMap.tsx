@@ -619,14 +619,23 @@ function paintTown(
   ctx.fillStyle = "#efe2c4";
   trace(draw.rings);
   ctx.fill("evenodd");
-  ctx.fillStyle = "#c4b496";
-  trace(draw.buildings);
-  ctx.fill();
-  ctx.strokeStyle = "#6e5844";
-  ctx.lineWidth = Math.max(1, unit * 0.35);
   ctx.lineJoin = "round";
-  trace(draw.buildings);
-  ctx.stroke();
+  ctx.lineWidth = Math.max(1.35, unit * 0.42);
+  ctx.strokeStyle = "#6e5844";
+  const shades = ["#cbbda2", "#c4b496", "#b7a788", "#d0c2a6"];
+  draw.buildings.forEach((ring, n) => {
+    if (ring.length < 3) return;
+    ctx.beginPath();
+    ring.forEach((p, i) => {
+      const q = at(p.x, p.z);
+      if (i === 0) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = shades[n % shades.length];
+    ctx.fill();
+    ctx.stroke();
+  });
   const fountain = SAN_PROPS.south.find((bit) => bit.id === "fountain");
   if (id === "south" && fountain) {
     const p = at(fountain.x, fountain.z);

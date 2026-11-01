@@ -306,6 +306,77 @@ export function sanEave(z: number, zMin: number, zMax: number, north: number) {
   return north + (1.05 - north) * t;
 }
 
+type V3 = { x: number; y: number; z: number };
+
+/** Pitched or hipped roof. Each face is one plane, eaves on the footprint, ridge above them. */
+export function sanHip(ring: { x: number; z: number }[]): V3[][] {
+  if (ring.length < 3) return [];
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  let cx = 0;
+  let cz = 0;
+  for (const p of ring) {
+    zMin = Math.min(zMin, p.z);
+    zMax = Math.max(zMax, p.z);
+    xMin = Math.min(xMin, p.x);
+    xMax = Math.max(xMax, p.x);
+    cx += p.x;
+    cz += p.z;
+  }
+  cx /= ring.length;
+  cz /= ring.length;
+  const spanX = Math.max(0.001, xMax - xMin);
+  const spanZ = Math.max(0.001, zMax - zMin);
+  const alongX = spanX >= spanZ;
+  const north = sanNorthHeight(cx, cz);
+  const eaveY = (z: number) => sanEave(z, zMin, zMax, north);
+  const axisLen = alongX ? spanX : spanZ;
+  const half = Math.max(0.35, axisLen * 0.5 - Math.max(0.8, axisLen * 0.18));
+  const r1 = alongX ? { x: cx - half, z: cz } : { x: cx, z: cz - half };
+  const r2 = alongX ? { x: cx + half, z: cz } : { x: cx, z: cz + half };
+  let peak = 1.05;
+  for (const p of ring) peak = Math.max(peak, eaveY(p.z));
+  const ridgeY = Math.min(8.4, peak + 1.15);
+  const faces: V3[][] = [];
+  const lo = alongX ? Math.min(r1.x, r2.x) : Math.min(r1.z, r2.z);
+  const hi = alongX ? Math.max(r1.x, r2.x) : Math.max(r1.z, r2.z);
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const mid = alongX ? (a.x + b.x) / 2 : (a.z + b.z) / 2;
+    const ea = { x: a.x, y: eaveY(a.z), z: a.z };
+    const eb = { x: b.x, y: eaveY(b.z), z: b.z };
+    if (mid < lo || mid > hi) {
+      const use1 = Math.abs(mid - (alongX ? r1.x : r1.z)) <= Math.abs(mid - (alongX ? r2.x : r2.z));
+      const tip = use1 ? r1 : r2;
+      faces.push([ea, eb, { x: tip.x, y: ridgeY, z: tip.z }]);
+    } else {
+      faces.push([ea, eb, { x: r2.x, y: ridgeY, z: r2.z }, { x: r1.x, y: ridgeY, z: r1.z }]);
+    }
+  }
+  return faces;
+}
+
+function faceArea(face: V3[]) {
+  if (face.length < 3) return 0;
+  const a = face[0];
+  let area = 0;
+  for (let i = 1; i + 1 < face.length; i++) {
+    const b = face[i];
+    const c = face[i + 1];
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const abz = b.z - a.z;
+    const acx = c.x - a.x;
+    const acy = c.y - a.y;
+    const acz = c.z - a.z;
+    area += 0.5 * Math.hypot(aby * acz - abz * acy, abz * acx - abx * acz, abx * acy - aby * acx);
+  }
+  return area;
+}
+
 
 const LETTERS = "ABCDEFGHIJKLMNOP";
 export function sanSquare(id: GridId, x: number, z: number) {
@@ -574,9 +645,17 @@ export function assertSanGraph(): void {
     if (fault) throw new Error(`${id} axis street ${fault}`);
     const parts = walkParts(id);
     if (parts.some((n) => n < 20) || parts.filter((n) => n >= 20).length !== 1) throw new Error(`${id} walk is fragmented`);
+    const share = SAN_TRACE[id].inside / SAN_TRACE[id].wall;
+    if (!(share >= 0.25 && share <= 0.45)) throw new Error(`${id} streets ${(share * 100).toFixed(1)}% of the wall`);
     for (const ring of DRAW[id].buildings) {
       if (ring.length < 3) continue;
-      if (polyArea(ring) < 4) throw new Error(`${id} building under 4 yalm`);
+      const footprint = polyArea(ring);
+      if (footprint < 4) throw new Error(`${id} building under 4 yalm`);
+      if (footprint > 200) throw new Error(`${id} roof plane ${footprint.toFixed(0)}`);
+      for (const face of sanHip(ring)) {
+        const plane = faceArea(face);
+        if (plane > 200) throw new Error(`${id} roof plane ${plane.toFixed(0)}`);
+      }
       let zMin = Infinity;
       let zMax = -Infinity;
       let cx = 0;
@@ -603,5 +682,7 @@ export function assertSanGraph(): void {
     const spanZ = tile.maxZ - tile.minZ;
     if (tile.w / spanX < 6 || tile.h / spanZ < 6) throw new Error(`${id} paint is under 6 px/yalm`);
     if (!(tile.lum >= 0.3 && tile.lum <= 0.45)) throw new Error(`${id} floor luminance ${tile.lum}`);
+    if (!(tile.axis <= 2)) throw new Error(`${id} bake edge ${tile.axis}`);
+    if (!tile.cobble) throw new Error(`${id} cobble edge`);
   }
 }

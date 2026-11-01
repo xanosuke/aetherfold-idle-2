@@ -8,7 +8,9 @@ export const SAN_PAINT = {
     "maxZ": 210,
     "w": 4020,
     "h": 3300,
-    "lum": 0.4
+    "lum": 0.387,
+    "axis": 1.85,
+    "cobble": 1
   },
   "north": {
     "url": "/sandoria/north.png",
@@ -18,7 +20,9 @@ export const SAN_PAINT = {
     "maxZ": -300,
     "w": 3720,
     "h": 2760,
-    "lum": 0.4
+    "lum": 0.387,
+    "axis": 1.85,
+    "cobble": 1
   },
   "port": {
     "url": "/sandoria/port.png",
@@ -28,6 +32,8 @@ export const SAN_PAINT = {
     "maxZ": -680,
     "w": 1080,
     "h": 2280,
-    "lum": 0.4
+    "lum": 0.388,
+    "axis": 1.844,
+    "cobble": 1
   }
 } as const;

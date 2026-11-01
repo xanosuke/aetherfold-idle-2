@@ -1772,6 +1772,7 @@ async function checkSanDoria(browser, url) {
     return JSON.stringify(save);
   };
   const stands = [
+    { name: "pikeman", x: -93.6, z: -48, square: "D-8", region: "Southern San d'Oria" },
     { name: "victory", x: 88.8, z: 6.72, square: "H-9", region: "Southern San d'Oria" },
     { name: "lion", x: 303.84, z: -91.68, square: "L-7", region: "Southern San d'Oria" },
     { name: "north", x: 0, z: -488, square: "F-7", region: "Northern San d'Oria" },

@@ -47,24 +47,24 @@ SOUTH = {
         # Count Caffaule's Manor court, out onto Pikeman's Way.
         street(8, [(1.85, 5.15), (2.55, 5.15), (2.55, 5.85), (1.9, 5.9)]),
         street(9, [(2.15, 5.9), (2.7, 6.25), (3.3, 6.55), (3.9, 6.9), (3.45, 7.45), (2.85, 7.65)]),
-        # Pikeman's Way east into the F-8 junction, then the Westgate road.
+        # Pikeman's Way, about 8 yalms, into the F-8 junction, then the Westgate road.
         street(9, [(3.2, 7.45), (4.15, 7.6), (4.9, 7.55), (5.45, 7.55)]),
-        street(11, [(4.85, 7.4), (5.25, 7.7), (5.75, 8.25), (5.5, 8.5), (5.5, 8.85), (5.45, 9.2), (5.5, 9.55), (5.5, 10.45)]),
+        street(9, [(4.85, 7.4), (5.25, 7.7), (5.75, 8.25), (5.5, 8.5), (5.5, 8.85), (5.45, 9.2), (5.5, 9.55), (5.5, 10.45)]),
         # East from F-8 into Victory Square's west door.
-        street(9, [(5.5, 7.7), (6.15, 7.75), (6.85, 7.9), (7.35, 8.05)]),
+        street(8, [(5.5, 7.7), (6.15, 7.75), (6.85, 7.9), (7.35, 8.05)]),
         # Watchdog Alley, north gate passage, shop row, Lion Square door.
         street(8, [(6.55, 6.35), (6.85, 6.85), (7.15, 7.3), (7.4, 7.7)]),
-        street(10, [(8.15, 6.05), (8.45, 6.45), (8.5, 6.95), (8.35, 7.4)]),
-        street(9, [(3.7, 6.2), (4.45, 5.9), (5.15, 5.6), (6.0, 5.4), (6.9, 5.5), (7.7, 5.75), (8.25, 6.05), (8.45, 6.35)]),
+        street(9, [(8.15, 6.05), (8.45, 6.45), (8.5, 6.95), (8.35, 7.4)]),
+        street(9, [(3.7, 6.2), (4.45, 5.9), (5.15, 5.6), (6.0, 5.4), (6.9, 5.5), (7.7, 5.75), (8.25, 6.05), (8.45, 6.35), (8.7, 6.7)]),
         street(9, [(8.7, 6.7), (9.45, 6.75), (10.15, 6.4), (10.85, 6.1), (11.4, 5.95)]),
         # Victory Square.
         # South yard around the Auction House, Chocobo Stables, Cavalry Way, Eastgate.
         street(8, [(7.35, 8.35), (7.35, 8.95)]),
-        street(11, [(8.85, 8.25), (9.45, 8.55), (10.15, 8.9), (10.85, 9.25), (11.4, 9.45), (11.55, 9.7), (12.05, 10.25)]),
-        street(9, [(11.55, 6.15), (11.9, 6.7), (11.55, 7.35), (10.9, 7.9), (10.3, 8.4)]),
+        street(9, [(8.85, 8.25), (9.45, 8.55), (10.15, 8.9), (10.85, 9.25), (11.29, 9.5), (11.5, 9.55), (11.55, 9.7), (12.05, 10.25)]),
+        street(9, [(11.55, 6.15), (11.9, 6.7), (11.55, 7.35), (10.9, 7.9), (10.3, 8.4), (10.15, 8.9)]),
         # Squire Alley and the Residential Area exit.
-        street(11, [(12.15, 6.15), (12.75, 6.7), (12.75, 7.15), (12.55, 7.6), (12.05, 7.95)]),
-        street(9, [(12.15, 5.7), (12.7, 5.15), (13.25, 4.4), (13.7, 3.85), (14.05, 3.55)]),
+        street(8, [(12.15, 6.15), (12.75, 6.7), (12.75, 7.15), (12.55, 7.6), (12.05, 7.95)]),
+        street(8, [(12.15, 5.7), (12.7, 5.15), (13.25, 4.4), (13.7, 3.85), (14.05, 3.55)]),
     ],
     "plazas": [
         # Manor court.
@@ -93,11 +93,11 @@ NORTH = {
     "streets": [
         # West Ronfaure gate (C-8) along the south wall toward the Parade Ground.
         street(12, [(1.45, 7.5), (2.9, 7.55), (3.8, 7.7), (4.7, 7.9), (5.5, 8.0)]),
-        # D-7 postern into that road. The arrival sits 10 yalms east of the gate.
-        street(14, [(2.3, 6.45), (3.2, 6.48), (3.71, 6.5), (4.15, 6.85), (4.7, 7.35), (5.15, 7.75)]),
+        # D-7 postern into that road. The arrival sits on the centreline.
+        street(12, [(2.3, 6.45), (3.2, 6.48), (3.71, 6.5), (4.15, 6.85), (4.7, 7.35), (5.15, 7.75)]),
         # Laborman's Way through F-7, Carpenters' Landing, up to the Port gate.
         street(10, [(4.6, 6.5), (5.35, 6.5), (6.2, 6.55), (6.9, 6.85), (7.5, 7.2)]),
-        street(12, [(5.4, 6.5), (5.5, 5.5), (5.5, 4.85), (5.5, 4.15), (5.5, 3.4), (5.5, 2.25), (5.5, 1.55)]),
+        street(11, [(5.4, 6.5), (5.5, 5.5), (5.5, 4.85), (5.5, 4.15), (5.5, 3.4), (5.5, 2.25), (5.5, 1.55)]),
         # Guild row on the west.
         street(8, [(2.45, 2.9), (3.15, 3.4), (3.45, 4.2), (3.3, 5.1), (3.25, 5.9), (3.4, 6.45)]),
         # Drawbridge and the chateau door.
@@ -142,7 +142,7 @@ PORT = {
     ],
     "plazas": [
         # Quay at G-7, covering the crystal.
-        poly([(6.0, 5.65), (7.4, 5.6), (7.5, 6.75), (6.85, 7.25), (6.0, 7.0)]),
+        poly([(5.85, 5.5), (7.55, 5.45), (7.65, 6.85), (6.85, 7.4), (5.85, 7.1)]),
         # Chocobo is south; this is the north auction yard.
         poly([(6.15, 9.7), (7.45, 9.75), (7.5, 10.6), (6.15, 10.55)]),
     ],
@@ -405,6 +405,174 @@ def find_stand(walk: np.ndarray, buildings: np.ndarray, district: str, box: tupl
     return best[1], best[2]
 
 
+def h2(x: float, y: float) -> float:
+    n = np.sin(x * 127.1 + y * 311.7) * 43758.5453
+    return float(n - np.floor(n))
+
+
+def poly_area(ring: np.ndarray) -> float:
+    if len(ring) < 3:
+        return 0.0
+    return 0.5 * abs(float(np.dot(ring[:, 0], np.roll(ring[:, 1], 1)) - np.dot(ring[:, 1], np.roll(ring[:, 0], 1))))
+
+
+def split_labels(buildings: np.ndarray) -> np.ndarray:
+    """Break each city block into footprints about 6–14 yalms across."""
+    h, w = buildings.shape
+    step = 11
+    seeds: list[tuple[int, int]] = []
+    for iz in range(0, h, step):
+        y1 = min(h, iz + step)
+        for ix in range(0, w, step):
+            x1 = min(w, ix + step)
+            sub = buildings[iz:y1, ix:x1]
+            if not sub.any():
+                continue
+            ys, xs = np.nonzero(sub)
+            cy = float(ys.mean()) + (h2(ix, iz) - 0.5) * step * 0.45
+            cx = float(xs.mean()) + (h2(iz + 4, ix + 1) - 0.5) * step * 0.45
+            k = int(np.argmin((ys - cy) ** 2 + (xs - cx) ** 2))
+            seeds.append((iz + int(ys[k]), ix + int(xs[k])))
+    labels = np.zeros((h, w), dtype=np.int32)
+    if not seeds:
+        return labels
+    marker = np.ones((h, w), dtype=np.uint8)
+    seed_id = np.zeros((h, w), dtype=np.int32)
+    for i, (sy, sx) in enumerate(seeds, start=1):
+        marker[sy, sx] = 0
+        seed_id[sy, sx] = i
+    _dist, (iy, ix) = ndimage.distance_transform_edt(marker, return_indices=True)
+    labels = np.where(buildings, seed_id[iy, ix], 0)
+    return labels
+
+
+def _span(ys: np.ndarray, xs: np.ndarray) -> tuple[int, int, int]:
+    return int(len(ys)), int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1)
+
+
+def refine_labels(labels: np.ndarray) -> np.ndarray:
+    labels = labels.copy()
+    for _ in range(8):
+        changed = False
+        for i in [n for n in np.unique(labels) if n]:
+            ys, xs = np.nonzero(labels == i)
+            if len(ys) == 0:
+                continue
+            area, span_x, span_y = _span(ys, xs)
+            if area <= 168 and span_x <= 14 and span_y <= 14:
+                continue
+            cy, cx = float(ys.mean()), float(xs.mean())
+            near = int(np.argmin((ys - cy) ** 2 + (xs - cx) ** 2))
+            far = int(np.argmax((ys - cy) ** 2 + (xs - cx) ** 2))
+            sy1, sx1 = int(ys[near]), int(xs[near])
+            sy2, sx2 = int(ys[far]), int(xs[far])
+            if sy1 == sy2 and sx1 == sx2:
+                continue
+            d1 = (ys - sy1) ** 2 + (xs - sx1) ** 2
+            d2 = (ys - sy2) ** 2 + (xs - sx2) ** 2
+            take = d2 < d1
+            if not take.any() or take.all():
+                continue
+            labels[ys[take], xs[take]] = int(labels.max()) + 1
+            changed = True
+        if not changed:
+            break
+    # Fold slivers into a neighbour when the pair still fits in 14 yalms.
+    for _ in range(6):
+        merged = False
+        ids = [n for n in np.unique(labels) if n]
+        for i in ids:
+            ys, xs = np.nonzero(labels == i)
+            if len(ys) == 0:
+                continue
+            area, span_x, span_y = _span(ys, xs)
+            if area >= 42 and min(span_x, span_y) >= 6 and max(span_x, span_y) <= 14:
+                continue
+            border: dict[int, int] = {}
+            for y, x in zip(ys.tolist(), xs.tolist()):
+                for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                    if ny < 0 or nx < 0 or ny >= labels.shape[0] or nx >= labels.shape[1]:
+                        continue
+                    other = int(labels[ny, nx])
+                    if other == 0 or other == i:
+                        continue
+                    border[other] = border.get(other, 0) + 1
+            if not border:
+                continue
+            neighbour = max(border, key=border.get)
+            oy, ox = np.nonzero(labels == neighbour)
+            both_y = np.concatenate([ys, oy])
+            both_x = np.concatenate([xs, ox])
+            _area, sx, sy = _span(both_y, both_x)
+            if sx > 14 or sy > 14 or _area > 175:
+                continue
+            labels[ys, xs] = neighbour
+            merged = True
+        if not merged:
+            break
+    return labels
+
+
+def inset_ring(ring: np.ndarray, dist: float) -> np.ndarray:
+    centre = ring.mean(axis=0)
+    out = []
+    for p in ring:
+        v = p - centre
+        length = float(np.hypot(v[0], v[1]))
+        if length <= dist + 0.15:
+            out.append(p)
+        else:
+            out.append(p - v / length * dist)
+    return np.asarray(out, dtype=np.float64)
+
+
+def ring_hits_walk(ring: np.ndarray, walk: np.ndarray) -> int:
+    im = Image.new("1", (walk.shape[1], walk.shape[0]), 0)
+    ImageDraw.Draw(im).polygon([(float(x), float(y)) for x, y in ring], fill=1)
+    return int(np.count_nonzero(np.array(im, dtype=bool) & walk))
+
+
+def building_rings(labels: np.ndarray, walk: np.ndarray) -> list[np.ndarray]:
+    rings = []
+    big = 0
+    for i in [n for n in np.unique(labels) if n]:
+        ys, xs = np.nonzero(labels == i)
+        if len(ys) < 4:
+            continue
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        sub = np.zeros((y1 - y0 + 2, x1 - x0 + 2), dtype=bool)
+        sub[ys - y0 + 1, xs - x0 + 1] = True
+        found = contours(sub, 1.35, 4)
+        if not found:
+            continue
+        ring = max(found, key=poly_area)
+        ring = ring.copy()
+        ring[:, 0] += x0 - 1
+        ring[:, 1] += y0 - 1
+        eps = 1.35
+        while len(ring) > 6 and eps < 5:
+            eps += 0.45
+            again = rdp(ring, eps)
+            if len(again) >= 4:
+                ring = again
+        ring = inset_ring(ring, 0.4)
+        if poly_area(ring) > 190:
+            ring = inset_ring(ring, 0.8)
+        if ring_hits_walk(ring, walk) > max(6, int(poly_area(ring) * 0.04)):
+            ring = inset_ring(ring, 0.7)
+        area = poly_area(ring)
+        if area < 4 or area > 200 or len(ring) < 4:
+            continue
+        if area > 200:
+            big += 1
+            continue
+        rings.append(ring)
+    if big:
+        print(f"  dropped {big} roofs over 200")
+    return rings
+
+
 def trace(district: str, spec: dict) -> dict:
     walk, hull = mask_of(district, spec)
     walk = components(walk, 20)
@@ -440,13 +608,21 @@ def trace(district: str, spec: dict) -> dict:
     if wn != 1:
         print(f"  walk is in {wn} pieces")
     rings = contours(walk, 1.2, 8)
-    brooms = []
-    for i in range(1, n + 1):
-        if counts[i] < 4:
-            continue
-        part = contours(lab == i, 2.2, 4)
-        if part:
-            brooms.append(max(part, key=lambda r: len(r)))
+    labels = refine_labels(split_labels(buildings))
+    brooms = building_rings(labels, walk)
+    areas = [poly_area(r) for r in brooms]
+    spans = []
+    for ring in brooms:
+        spans.append(max(float(ring[:, 0].max() - ring[:, 0].min()), float(ring[:, 1].max() - ring[:, 1].min())))
+    over = sum(1 for a in areas if a > 200)
+    wide = sum(1 for s in spans if s > 14.2)
+    print(
+        f"  roofs {len(brooms)} area {min(areas):.0f}-{max(areas):.0f} span {min(spans):.1f}-{max(spans):.1f} over {over} wide {wide}"
+        if areas
+        else "  roofs 0"
+    )
+    if over or not areas:
+        raise SystemExit(f"{district} roofs")
     # Even-odd ring raster versus the hand mask. 1-cell slack, same as the game assert.
     poly = np.zeros_like(walk)
     for iz in range(walk.shape[0]):
@@ -477,7 +653,17 @@ def trace(district: str, spec: dict) -> dict:
     if district == "south":
         stands["victory"] = find_stand(walk, buildings, district, (7.15, 7.55, 8.4, 8.9))
         stands["lion"] = find_stand(walk, buildings, district, (11.35, 12.05, 6.15, 6.85))
+        ox, oz = ORIGINS[district]
+        px = ox + 3.55 * 48
+        pz = oz + 7.50 * 48
+        stands["pikeman"] = (px, pz) if on(walk, district, px, pz, 0.36) else None
         print("  stands", stands)
+    wall = int(hull.sum())
+    inside = int(np.logical_and(walk, hull).sum())
+    ratio = inside / max(1, wall)
+    print(f"  streets {ratio:.3f} of the wall ({inside}/{wall})")
+    if not (0.25 <= ratio <= 0.45):
+        raise SystemExit(f"{district} street share {ratio:.3f}")
     preview(district, walk, buildings)
     return {
         "rings": [ring_gx(r) for r in rings],
@@ -485,6 +671,8 @@ def trace(district: str, spec: dict) -> dict:
         "mask": pack(walk),
         "w": SPAN,
         "h": SPAN,
+        "wall": wall,
+        "inside": inside,
         "stands": stands,
     }
 
@@ -518,6 +706,8 @@ def emit(data: dict) -> None:
         parts.append(f"    h: {payload['h']},")
         parts.append(f"    mask: {payload['mask']!r},")
         parts.append(f"    rings: {payload['rings']!r},")
+        parts.append(f"    wall: {payload['wall']},")
+        parts.append(f"    inside: {payload['inside']},")
         parts.append(f"    buildings: {payload['buildings']!r},")
         parts.append("  },")
     parts.append("} as const;\n")

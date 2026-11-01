@@ -17,7 +17,7 @@ import {
   type Object3D,
 } from "three";
 import { SAN_PAINT } from "./sandoria-paint.generated.ts";
-import { SAN_CREAM, SAN_PROPS, SAN_RIDGE, SAN_SLATE, sanDraw, sanEave, sanNorthHeight, type SanProp } from "./sandoria-graph";
+import { SAN_CREAM, SAN_PROPS, SAN_RIDGE, SAN_SLATE, sanDraw, sanEave, sanHip, sanNorthHeight, type SanProp } from "./sandoria-graph";
 
 type Tag = (mesh: Object3D, minX: number, maxX: number, minZ: number, maxZ: number) => void;
 type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -136,57 +136,8 @@ function signedArea(ring: XZ[]) {
   return area / 2;
 }
 
-function pointInTri(p: XZ, a: XZ, b: XZ, c: XZ) {
-  const c1 = (b.x - a.x) * (p.z - a.z) - (b.z - a.z) * (p.x - a.x);
-  const c2 = (c.x - b.x) * (p.z - b.z) - (c.z - b.z) * (p.x - b.x);
-  const c3 = (a.x - c.x) * (p.z - c.z) - (a.z - c.z) * (p.x - c.x);
-  const neg = c1 < 0 || c2 < 0 || c3 < 0;
-  const pos = c1 > 0 || c2 > 0 || c3 > 0;
-  return !(neg && pos);
-}
-
-function triangulate(ring: XZ[]) {
-  const idx = ring.map((_, i) => i);
-  const tris: number[] = [];
-  const ccw = signedArea(ring) >= 0;
-  const cross = (i: number, j: number, k: number) => {
-    const a = ring[i];
-    const b = ring[j];
-    const c = ring[k];
-    return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
-  };
-  let guard = 0;
-  while (idx.length > 3 && guard++ < ring.length * ring.length) {
-    let clipped = false;
-    for (let i = 0; i < idx.length; i++) {
-      const i0 = idx[(i + idx.length - 1) % idx.length];
-      const i1 = idx[i];
-      const i2 = idx[(i + 1) % idx.length];
-      const turn = cross(i0, i1, i2);
-      if (ccw ? turn <= 1e-6 : turn >= -1e-6) continue;
-      let inside = false;
-      for (const p of idx) {
-        if (p === i0 || p === i1 || p === i2) continue;
-        if (pointInTri(ring[p], ring[i0], ring[i1], ring[i2])) {
-          inside = true;
-          break;
-        }
-      }
-      if (inside) continue;
-      tris.push(i0, i1, i2);
-      idx.splice(i, 1);
-      clipped = true;
-      break;
-    }
-    if (!clipped) break;
-  }
-  if (idx.length === 3) tris.push(idx[0], idx[1], idx[2]);
-  return tris;
-}
-
-function pushBuildings(pos: number[], col: number[], idx: number[], shell: number[], id: "south" | "north" | "port") {
-  const buildings = sanDraw(id).buildings;
-  buildings.forEach((ring, n) => {
+function pushBuildings(pos: number[], col: number[], idx: number[], shell: number[], rings: { x: number; z: number }[][]) {
+  rings.forEach((ring, n) => {
     if (ring.length < 3) return;
     let zMin = Infinity;
     let zMax = -Infinity;
@@ -207,6 +158,9 @@ function pushBuildings(pos: number[], col: number[], idx: number[], shell: numbe
       Math.min(0.62, Math.max(0.42, CREAM[1] + (wobble * 0.6) / 255)),
       Math.min(0.48, Math.max(0.28, CREAM[2] + (wobble * 0.4) / 255)),
     ];
+    const toneN = Math.sin(cx * 12.9898 + cz * 78.233) * 43758.5453;
+    const tone = 0.9 + (toneN - Math.floor(toneN)) * 0.14;
+    const slate: [number, number, number] = [SLATE[0] * tone, SLATE[1] * tone, SLATE[2] * tone];
     const area = signedArea(ring);
     const sign = area >= 0 ? 1 : -1;
     const heights = ring.map((p) => sanEave(p.z, zMin, zMax, north));
@@ -245,21 +199,27 @@ function pushBuildings(pos: number[], col: number[], idx: number[], shell: numbe
       }
       idx.push(start, start + 1, start + 2, start, start + 2, start + 3);
     }
-    const roof = triangulate(ring);
-    const spanX = Math.max(0.001, ...ring.map((p) => p.x)) - Math.min(...ring.map((p) => p.x));
-    const spanZ = zMax - zMin || 0.001;
-    const alongX = spanX >= spanZ;
-    for (let t = 0; t < roof.length; t += 3) {
+    const onRing = (p: { x: number; z: number }) => ring.some((q) => Math.abs(q.x - p.x) < 0.05 && Math.abs(q.z - p.z) < 0.05);
+    for (const face of sanHip(ring)) {
       const start = pos.length / 3;
-      for (const vi of [roof[t], roof[t + 1], roof[t + 2]]) {
-        const p = ring[vi];
-        const u = alongX ? Math.min(1, (Math.abs(p.z - cz) / (spanZ * 0.5)) * 1.15) : Math.min(1, (Math.abs(p.x - cx) / (spanX * 0.5)) * 1.15);
-        pos.push(p.x, heights[vi], p.z);
-        col.push(RIDGE[0] + (SLATE[0] - RIDGE[0]) * u, RIDGE[1] + (SLATE[1] - RIDGE[1]) * u, RIDGE[2] + (SLATE[2] - RIDGE[2]) * u);
-        const o = outward[vi];
-        shell.push(p.x + o.x, heights[vi] - 0.04, p.z + o.z);
+      for (const p of face) {
+        const rgb = onRing(p) ? slate : RIDGE;
+        pos.push(p.x, p.y, p.z);
+        col.push(rgb[0], rgb[1], rgb[2]);
+        let best = 0;
+        let bestD = Infinity;
+        for (let k = 0; k < ring.length; k++) {
+          const d = (ring[k].x - p.x) ** 2 + (ring[k].z - p.z) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = k;
+          }
+        }
+        const o = outward[best];
+        shell.push(p.x + o.x, p.y - 0.04, p.z + o.z);
       }
-      idx.push(start, start + 2, start + 1);
+      if (face.length === 3) idx.push(start, start + 1, start + 2);
+      else idx.push(start, start + 1, start + 2, start, start + 2, start + 3);
     }
     void base;
   });
@@ -313,52 +273,72 @@ export function mountSanDoria(scene: SceneLike, tag: Tag, colliders: Box[]) {
     scene.add(floor);
     tag(floor, tile.minX, tile.maxX, tile.minZ, tile.maxZ);
     floors.push(floor);
-    const pos: number[] = [];
-    const col: number[] = [];
-    const idx: number[] = [];
-    const shell: number[] = [];
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    pushBuildings(pos, col, idx, shell, id);
-    for (const bit of SAN_PROPS[id]) {
-      pushBit(pos, col, idx, shell, bit);
-      minX = Math.min(minX, bit.x - bit.sx);
-      maxX = Math.max(maxX, bit.x + bit.sx);
-      minZ = Math.min(minZ, bit.z - bit.sz);
-      maxZ = Math.max(maxZ, bit.z + bit.sz);
-    }
+    const groups = new Map<string, { rings: { x: number; z: number }[][]; props: SanProp[]; minX: number; maxX: number; minZ: number; maxZ: number }>();
+    const take = (x: number, z: number) => {
+      const key = `${Math.floor(x / 150)}:${Math.floor(z / 150)}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { rings: [], props: [], minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+        groups.set(key, group);
+      }
+      return group;
+    };
     for (const ring of sanDraw(id).buildings) {
+      let cx = 0;
+      let cz = 0;
       for (const p of ring) {
-        minX = Math.min(minX, p.x);
-        maxX = Math.max(maxX, p.x);
-        minZ = Math.min(minZ, p.z);
-        maxZ = Math.max(maxZ, p.z);
+        cx += p.x;
+        cz += p.z;
+      }
+      cx /= ring.length;
+      cz /= ring.length;
+      const group = take(cx, cz);
+      group.rings.push(ring);
+      for (const p of ring) {
+        group.minX = Math.min(group.minX, p.x);
+        group.maxX = Math.max(group.maxX, p.x);
+        group.minZ = Math.min(group.minZ, p.z);
+        group.maxZ = Math.max(group.maxZ, p.z);
       }
     }
-    if (!pos.length) continue;
-    const geo = new BufferGeometry();
-    geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
-    geo.setAttribute("color", new Float32BufferAttribute(col, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    const mesh = new Mesh(geo, paint);
-    mesh.name = "sandoria-prop";
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    const hullGeo = new BufferGeometry();
-    hullGeo.setAttribute("position", new Float32BufferAttribute(shell, 3));
-    hullGeo.setIndex(idx.slice());
-    const hull = new Mesh(hullGeo, ink);
-    hull.name = "sandoria-outline";
-    hull.castShadow = false;
-    hull.receiveShadow = false;
-    hull.raycast = () => {};
-    scene.add(hull);
-    scene.add(mesh);
-    tag(mesh, minX - 1, maxX + 1, minZ - 1, maxZ + 1);
-    tag(hull, minX - 1, maxX + 1, minZ - 1, maxZ + 1);
+    for (const bit of SAN_PROPS[id]) {
+      const group = take(bit.x, bit.z);
+      group.props.push(bit);
+      group.minX = Math.min(group.minX, bit.x - bit.sx);
+      group.maxX = Math.max(group.maxX, bit.x + bit.sx);
+      group.minZ = Math.min(group.minZ, bit.z - bit.sz);
+      group.maxZ = Math.max(group.maxZ, bit.z + bit.sz);
+    }
+    for (const group of groups.values()) {
+      const pos: number[] = [];
+      const col: number[] = [];
+      const idx: number[] = [];
+      const shell: number[] = [];
+      pushBuildings(pos, col, idx, shell, group.rings);
+      for (const bit of group.props) pushBit(pos, col, idx, shell, bit);
+      if (!pos.length) continue;
+      const geo = new BufferGeometry();
+      geo.setAttribute("position", new Float32BufferAttribute(pos, 3));
+      geo.setAttribute("color", new Float32BufferAttribute(col, 3));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      const mesh = new Mesh(geo, paint);
+      mesh.name = "sandoria-prop";
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      const hullGeo = new BufferGeometry();
+      hullGeo.setAttribute("position", new Float32BufferAttribute(shell, 3));
+      hullGeo.setIndex(idx.slice());
+      const hull = new Mesh(hullGeo, ink);
+      hull.name = "sandoria-outline";
+      hull.castShadow = false;
+      hull.receiveShadow = false;
+      hull.raycast = () => {};
+      scene.add(hull);
+      scene.add(mesh);
+      tag(mesh, group.minX - 1, group.maxX + 1, group.minZ - 1, group.maxZ + 1);
+      tag(hull, group.minX - 1, group.maxX + 1, group.minZ - 1, group.maxZ + 1);
+    }
   }
   addFountain(scene, tag);
   return floors;
