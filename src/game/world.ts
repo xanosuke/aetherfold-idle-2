@@ -774,7 +774,7 @@ export function regionName(x: number, z: number): string {
   if (inRonfaure(x, z, 0)) return "West Ronfaure";
   if (inEast(x, z, 0)) return "East Ronfaure";
   if (inTomb(x, z, 0)) return "King Ranperre's Tomb";
-  if (inPass(x, z, 0)) return "Ranguemont Pass";
+  if (inPass(x, z, 0) && !inSouthCity(x, z, 0) && !inNorthCity(x, z, 0) && !inPort(x, z, 0)) return "Ranguemont Pass";
   if (inGlacier(x, z, 0)) return "Beaucedine Glacier";
   const orc = orcRegion(x, z);
   if (orc) return orc;

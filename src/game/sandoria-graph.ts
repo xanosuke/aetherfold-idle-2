@@ -226,6 +226,78 @@ function maskAt(id: GridId, x: number, z: number) {
   return (MASK[id][i >> 3] & (128 >> (i & 7))) !== 0;
 }
 
+/** Street samples about every 24 yalms, staying off the zone gates. */
+export function sanRoute(id: GridId, ax: number, az: number, bx: number, bz: number) {
+  const g = GRIDS[id];
+  const span = SAN_TRACE[id];
+  const w = span.w;
+  const h = span.h;
+  const gates = Object.values(SAN_SPOT).filter((spot) => {
+    const ix = spot.x - g.x0;
+    const iz = spot.z - g.z0;
+    return ix >= -8 && iz >= -8 && ix < w + 8 && iz < h + 8;
+  });
+  const nearGate = (x: number, z: number) => gates.some((spot) => Math.hypot(spot.x - x, spot.z - z) < 8);
+  const cellOf = (x: number, z: number) => {
+    const ix = Math.floor(x - g.x0);
+    const iz = Math.floor(z - g.z0);
+    if (ix < 0 || iz < 0 || ix >= w || iz >= h) return -1;
+    return iz * w + ix;
+  };
+  const start = clampGraph(id, ax, az, 0);
+  const goal = clampGraph(id, bx, bz, 0);
+  const s = cellOf(start.x, start.z);
+  const t = cellOf(goal.x, goal.z);
+  const at = (i: number) => {
+    const ix = i % w;
+    const iz = Math.floor(i / w);
+    return maskAt(id, g.x0 + ix + 0.5, g.z0 + iz + 0.5);
+  };
+  if (s < 0 || t < 0 || !at(s) || !at(t)) return [start, goal];
+  const prev = new Int32Array(w * h);
+  prev.fill(-1);
+  const seen = new Uint8Array(w * h);
+  const queue = [s];
+  seen[s] = 1;
+  for (let q = 0; q < queue.length && !seen[t]; q++) {
+    const cur = queue[q];
+    const ix = cur % w;
+    const iz = Math.floor(cur / w);
+    const next = [cur - 1, cur + 1, cur - w, cur + w];
+    for (const ni of next) {
+      if (ni < 0 || ni >= w * h || seen[ni]) continue;
+      const nx = ni % w;
+      const nz = Math.floor(ni / w);
+      if (Math.abs(nx - ix) + Math.abs(nz - iz) !== 1) continue;
+      if (!at(ni)) continue;
+      const x = g.x0 + nx + 0.5;
+      const z = g.z0 + nz + 0.5;
+      if (nearGate(x, z) && ni !== t && ni !== s) continue;
+      seen[ni] = 1;
+      prev[ni] = cur;
+      queue.push(ni);
+    }
+  }
+  if (!seen[t]) return [start, goal];
+  const cells = [t];
+  for (let cur = t; cur !== s; ) {
+    cur = prev[cur];
+    cells.push(cur);
+  }
+  cells.reverse();
+  const points = [start];
+  let last = start;
+  for (const i of cells) {
+    const x = g.x0 + (i % w) + 0.5;
+    const z = g.z0 + Math.floor(i / w) + 0.5;
+    if (Math.hypot(x - last.x, z - last.z) < 24) continue;
+    points.push({ x, z });
+    last = { x, z };
+  }
+  if (Math.hypot(goal.x - last.x, goal.z - last.z) > 0.5) points.push(goal);
+  return points;
+}
+
 function inGraph(id: GridId, x: number, z: number, radius: number) {
   if (!maskAt(id, x, z)) return false;
   if (radius <= 0) return true;
@@ -307,56 +379,425 @@ export function sanEave(z: number, zMin: number, zMax: number, north: number) {
 }
 
 type V3 = { x: number; y: number; z: number };
+type XZ = { x: number; z: number };
 
-/** Pitched or hipped roof. Each face is one plane, eaves on the footprint, ridge above them. */
-export function sanHip(ring: { x: number; z: number }[]): V3[][] {
-  if (ring.length < 3) return [];
+function ringArea(ring: XZ[]) {
+  let area = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    area += ring[j].x * ring[i].z - ring[i].x * ring[j].z;
+  }
+  return area / 2;
+}
+
+function turn(a: XZ, b: XZ, c: XZ) {
+  return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+}
+
+/** Drop duplicates and collinear points. Positive area matches the existing wall winding. */
+function cleanRing(ring: XZ[]): XZ[] {
+  const out: XZ[] = [];
+  for (const p of ring) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+    const prev = out[out.length - 1];
+    if (prev && Math.hypot(prev.x - p.x, prev.z - p.z) < 0.15) continue;
+    out.push({ x: p.x, z: p.z });
+  }
+  if (out.length > 1 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].z - out[out.length - 1].z) < 0.15) out.pop();
+  let guard = 0;
+  while (out.length >= 3 && guard++ < 12) {
+    let dropped = false;
+    for (let i = 0; i < out.length; i++) {
+      const a = out[(i + out.length - 1) % out.length];
+      const b = out[i];
+      const c = out[(i + 1) % out.length];
+      const cross = turn(a, b, c);
+      const scale = (Math.hypot(b.x - a.x, b.z - a.z) || 1) * (Math.hypot(c.x - b.x, c.z - b.z) || 1);
+      if (Math.abs(cross) <= 1e-4 * scale) {
+        out.splice(i, 1);
+        dropped = true;
+        break;
+      }
+    }
+    if (!dropped) break;
+  }
+  if (out.length < 3 || Math.abs(ringArea(out)) < 0.05) return [];
+  if (ringArea(out) < 0) out.reverse();
+  return out;
+}
+
+function pointInRing(ring: XZ[], x: number, z: number) {
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) hit = !hit;
+  }
+  return hit;
+}
+
+/** 0 when the point is inside. Otherwise the distance to the nearest edge. */
+export function sanOutside(ring: XZ[], x: number, z: number) {
+  if (pointInRing(ring, x, z)) return 0;
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const l2 = dx * dx + dz * dz || 1;
+    let t = ((x - a.x) * dx + (z - a.z) * dz) / l2;
+    t = Math.max(0, Math.min(1, t));
+    best = Math.min(best, Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t)));
+  }
+  return best;
+}
+
+function crossPoint(a: XZ, b: XZ, c: XZ, d: XZ): XZ | null {
+  const o1 = turn(a, b, c);
+  const o2 = turn(a, b, d);
+  const o3 = turn(c, d, a);
+  const o4 = turn(c, d, b);
+  if (!(o1 * o2 < -1e-8 && o3 * o4 < -1e-8)) return null;
+  const den = (a.x - b.x) * (c.z - d.z) - (a.z - b.z) * (c.x - d.x);
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((a.x - c.x) * (c.z - d.z) - (a.z - c.z) * (c.x - d.x)) / den;
+  if (t <= 1e-4 || t >= 1 - 1e-4) return null;
+  return { x: a.x + t * (b.x - a.x), z: a.z + t * (b.z - a.z) };
+}
+
+function untangle(ring: XZ[], depth = 0): XZ[][] {
+  if (ring.length < 3 || depth > 8) return [];
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(i - j) <= 1 || Math.abs(i - j) === n - 1) continue;
+      const hit = crossPoint(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n]);
+      if (!hit) continue;
+      const left: XZ[] = [hit];
+      for (let k = (i + 1) % n; ; k = (k + 1) % n) {
+        left.push(ring[k]);
+        if (k === j) break;
+      }
+      const right: XZ[] = [hit];
+      for (let k = (j + 1) % n; ; k = (k + 1) % n) {
+        right.push(ring[k]);
+        if (k === i) break;
+      }
+      return [...untangle(cleanRing(left), depth + 1), ...untangle(cleanRing(right), depth + 1)];
+    }
+  }
+  return [ring];
+}
+
+function isConvex(ring: XZ[]) {
+  if (ring.length < 3) return false;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[(i + ring.length - 1) % ring.length];
+    const b = ring[i];
+    const c = ring[(i + 1) % ring.length];
+    if (turn(a, b, c) < -1e-6) return false;
+  }
+  return true;
+}
+
+function sliceRing(ring: XZ[], from: number, to: number) {
+  const out: XZ[] = [];
+  const n = ring.length;
+  for (let t = from, guard = 0; guard <= n; t = (t + 1) % n, guard++) {
+    out.push(ring[t]);
+    if (t === to) break;
+  }
+  return out;
+}
+
+function diagonalFree(ring: XZ[], i: number, k: number) {
+  const n = ring.length;
+  const a = ring[i];
+  const b = ring[k];
+  for (let e = 0; e < n; e++) {
+    const e2 = (e + 1) % n;
+    if (e === i || e === k || e2 === i || e2 === k) continue;
+    if (crossPoint(a, b, ring[e], ring[e2])) return false;
+  }
+  const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+  return sanOutside(ring, mid.x, mid.z) <= 0.05;
+}
+
+function convexParts(ring: XZ[], depth = 0): XZ[][] {
+  if (ring.length < 3 || depth > 12) return [];
+  if (isConvex(ring)) return [ring];
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const prev = ring[(i + n - 1) % n];
+    const cur = ring[i];
+    const next = ring[(i + 1) % n];
+    if (turn(prev, cur, next) >= -1e-6) continue;
+    for (let step = 2; step < n - 1; step++) {
+      const k = (i + step) % n;
+      if (!diagonalFree(ring, i, k)) continue;
+      const left = cleanRing(sliceRing(ring, i, k));
+      const right = cleanRing(sliceRing(ring, k, i));
+      if (left.length < 3 || right.length < 3) continue;
+      return [...convexParts(left, depth + 1), ...convexParts(right, depth + 1)];
+    }
+  }
+  return earClip(ring);
+}
+
+function pointInTri(p: XZ, a: XZ, b: XZ, c: XZ) {
+  const o1 = turn(a, b, p);
+  const o2 = turn(b, c, p);
+  const o3 = turn(c, a, p);
+  const neg = o1 < -1e-8 || o2 < -1e-8 || o3 < -1e-8;
+  const pos = o1 > 1e-8 || o2 > 1e-8 || o3 > 1e-8;
+  return !(neg && pos);
+}
+
+function earClip(ring: XZ[]): XZ[][] {
+  const poly = ring.map((p) => ({ x: p.x, z: p.z }));
+  const tris: XZ[][] = [];
+  let guard = 0;
+  while (poly.length > 3 && guard++ < 16) {
+    let clipped = false;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[(i + poly.length - 1) % poly.length];
+      const b = poly[i];
+      const c = poly[(i + 1) % poly.length];
+      if (turn(a, b, c) <= 1e-8) continue;
+      let blocked = false;
+      for (const p of poly) {
+        if (p === a || p === b || p === c) continue;
+        if (pointInTri(p, a, b, c)) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) continue;
+      tris.push([a, b, c]);
+      poly.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) break;
+  }
+  if (poly.length === 3 && Math.abs(ringArea(poly)) > 0.05) tris.push(poly.slice());
+  return tris;
+}
+
+function ensureUp(face: V3[]): V3[] {
+  if (face.length < 3) return face;
+  const a = face[0];
+  const b = face[1];
+  const c = face[2];
+  const y = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z);
+  return y < 0 ? face.slice().reverse() : face;
+}
+
+function edgeLen(a: V3, b: V3) {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+function facesOk(ring: XZ[], faces: V3[][]) {
+  for (const face of faces) {
+    const tris = face.length === 4 ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 2]];
+    for (const p of face) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) return false;
+      if (sanOutside(ring, p.x, p.z) > 1) return false;
+    }
+    for (const [i, j, k] of tris) {
+      const a = face[i];
+      const b = face[j];
+      const c = face[k];
+      if (edgeLen(a, b) > 20 || edgeLen(b, c) > 20 || edgeLen(c, a) > 20) return false;
+    }
+  }
+  return faces.length > 0;
+}
+
+function splitLong(ring: XZ[], faces: V3[][]) {
+  const stack: V3[][] = [];
+  for (const face of faces) {
+    if (face.length === 4) stack.push([face[0], face[1], face[2]], [face[0], face[2], face[3]]);
+    else stack.push(face);
+  }
+  const out: V3[][] = [];
+  let guard = 0;
+  while (stack.length && guard++ < 64) {
+    const face = stack.pop() as V3[];
+    let worst = 0;
+    let at = -1;
+    for (let i = 0; i < face.length; i++) {
+      const e = edgeLen(face[i], face[(i + 1) % face.length]);
+      if (e > worst) {
+        worst = e;
+        at = i;
+      }
+    }
+    if (worst <= 20 || face.length !== 3) {
+      out.push(face);
+      continue;
+    }
+    const a = face[at];
+    const b = face[(at + 1) % 3];
+    const c = face[(at + 2) % 3];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+    if (sanOutside(ring, mid.x, mid.z) > 1) {
+      out.push(face);
+      continue;
+    }
+    stack.push([a, mid, c], [mid, b, c]);
+  }
+  return out;
+}
+
+function eaveOf(ring: XZ[]) {
   let zMin = Infinity;
   let zMax = -Infinity;
-  let xMin = Infinity;
-  let xMax = -Infinity;
   let cx = 0;
   let cz = 0;
   for (const p of ring) {
     zMin = Math.min(zMin, p.z);
     zMax = Math.max(zMax, p.z);
-    xMin = Math.min(xMin, p.x);
-    xMax = Math.max(xMax, p.x);
     cx += p.x;
     cz += p.z;
   }
   cx /= ring.length;
   cz /= ring.length;
-  const spanX = Math.max(0.001, xMax - xMin);
-  const spanZ = Math.max(0.001, zMax - zMin);
-  const alongX = spanX >= spanZ;
   const north = sanNorthHeight(cx, cz);
-  const eaveY = (z: number) => sanEave(z, zMin, zMax, north);
-  const axisLen = alongX ? spanX : spanZ;
-  const half = Math.max(0.35, axisLen * 0.5 - Math.max(0.8, axisLen * 0.18));
-  const r1 = alongX ? { x: cx - half, z: cz } : { x: cx, z: cz - half };
-  const r2 = alongX ? { x: cx + half, z: cz } : { x: cx, z: cz + half };
-  let peak = 1.05;
-  for (const p of ring) peak = Math.max(peak, eaveY(p.z));
-  const ridgeY = Math.min(8.4, peak + 1.15);
+  return {
+    cx,
+    cz,
+    zMin,
+    zMax,
+    y: (z: number) => sanEave(z, zMin, zMax, north),
+    north,
+  };
+}
+
+function flatCap(ring: XZ[]): V3[][] {
+  const eave = eaveOf(ring);
+  const c = { x: eave.cx, z: eave.cz };
+  if (sanOutside(ring, c.x, c.z) > 0.25) {
+    return splitLong(
+      ring,
+      earClip(ring).map((tri) => ensureUp(tri.map((p) => ({ x: p.x, y: eave.y(p.z), z: p.z })))),
+    );
+  }
+  const apex = { x: c.x, y: eave.y(c.z), z: c.z };
   const faces: V3[][] = [];
-  const lo = alongX ? Math.min(r1.x, r2.x) : Math.min(r1.z, r2.z);
-  const hi = alongX ? Math.max(r1.x, r2.x) : Math.max(r1.z, r2.z);
   for (let i = 0; i < ring.length; i++) {
     const a = ring[i];
     const b = ring[(i + 1) % ring.length];
-    const mid = alongX ? (a.x + b.x) / 2 : (a.z + b.z) / 2;
-    const ea = { x: a.x, y: eaveY(a.z), z: a.z };
-    const eb = { x: b.x, y: eaveY(b.z), z: b.z };
-    if (mid < lo || mid > hi) {
-      const use1 = Math.abs(mid - (alongX ? r1.x : r1.z)) <= Math.abs(mid - (alongX ? r2.x : r2.z));
-      const tip = use1 ? r1 : r2;
-      faces.push([ea, eb, { x: tip.x, y: ridgeY, z: tip.z }]);
-    } else {
-      faces.push([ea, eb, { x: r2.x, y: ridgeY, z: r2.z }, { x: r1.x, y: ridgeY, z: r1.z }]);
+    faces.push(ensureUp([
+      { x: a.x, y: eave.y(a.z), z: a.z },
+      { x: b.x, y: eave.y(b.z), z: b.z },
+      apex,
+    ]));
+  }
+  return splitLong(ring, faces);
+}
+
+/** Pitched or hipped roof over one convex part. Flat slate cap when a ridge would leave the footprint. */
+function roofConvex(ring: XZ[]): V3[][] {
+  if (ring.length < 3) return [];
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  const eave = eaveOf(ring);
+  for (const p of ring) {
+    xMin = Math.min(xMin, p.x);
+    xMax = Math.max(xMax, p.x);
+  }
+  const spanX = Math.max(0.001, xMax - xMin);
+  const spanZ = Math.max(0.001, eave.zMax - eave.zMin);
+  const alongX = spanX >= spanZ;
+  let peak = 1.05;
+  for (const p of ring) peak = Math.max(peak, eave.y(p.z));
+  const ridgeY = Math.min(8.4, peak + 1.15);
+  const axisLen = alongX ? spanX : spanZ;
+  let half = Math.max(0.35, axisLen * 0.5 - Math.max(0.8, axisLen * 0.18));
+  const lift = (p: XZ, y: number): V3 => ({ x: p.x, y, z: p.z });
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const r1 = alongX ? { x: eave.cx - half, z: eave.cz } : { x: eave.cx, z: eave.cz - half };
+    const r2 = alongX ? { x: eave.cx + half, z: eave.cz } : { x: eave.cx, z: eave.cz + half };
+    const ridgeIn = sanOutside(ring, r1.x, r1.z) <= 0.05 && sanOutside(ring, r2.x, r2.z) <= 0.05;
+    if (ridgeIn) {
+      const faces: V3[][] = [];
+      const lo = alongX ? Math.min(r1.x, r2.x) : Math.min(r1.z, r2.z);
+      const hi = alongX ? Math.max(r1.x, r2.x) : Math.max(r1.z, r2.z);
+      const tip1 = lift(r1, ridgeY);
+      const tip2 = lift(r2, ridgeY);
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        const mid = alongX ? (a.x + b.x) / 2 : (a.z + b.z) / 2;
+        const ea = lift(a, eave.y(a.z));
+        const eb = lift(b, eave.y(b.z));
+        if (half < 0.3 || mid < lo || mid > hi) {
+          const use1 = Math.abs(mid - (alongX ? r1.x : r1.z)) <= Math.abs(mid - (alongX ? r2.x : r2.z));
+          faces.push(ensureUp([ea, eb, use1 ? tip1 : tip2]));
+        } else {
+          faces.push(ensureUp([ea, eb, tip2, tip1]));
+        }
+      }
+      const trimmed = splitLong(ring, faces);
+      if (facesOk(ring, trimmed)) return trimmed;
+    }
+    half *= 0.5;
+  }
+  const cap = flatCap(ring);
+  if (facesOk(ring, cap)) return cap;
+  const ears = splitLong(
+    ring,
+    earClip(ring).map((tri) => ensureUp(tri.map((p) => lift(p, eave.y(p.z))))),
+  );
+  return facesOk(ring, ears) ? ears : cap;
+}
+
+function capRaw(ring: XZ[]): V3[][] {
+  const pts = ring.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.z));
+  if (!pts.length) return [];
+  let cx = 0;
+  let cz = 0;
+  for (const p of pts) {
+    cx += p.x;
+    cz += p.z;
+  }
+  cx /= pts.length;
+  cz /= pts.length;
+  const y = 1.05;
+  const diamond = [
+    { x: cx - 0.45, z: cz },
+    { x: cx, z: cz - 0.45 },
+    { x: cx + 0.45, z: cz },
+    { x: cx, z: cz + 0.45 },
+  ];
+  return [ensureUp(diamond.map((p) => ({ x: p.x, y, z: p.z })))];
+}
+
+/**
+ * Roof a footprint. Clean it, fix the winding, and split concave or crossing
+ * shapes into convex parts. A part that cannot hold a ridge gets a flat cap.
+ */
+export function sanHip(ring: { x: number; z: number }[]): V3[][] {
+  const cleaned = cleanRing(ring);
+  if (cleaned.length < 3) return capRaw(ring);
+  const faces: V3[][] = [];
+  for (const simple of untangle(cleaned)) {
+    if (simple.length < 3) continue;
+    for (const part of convexParts(simple)) {
+      if (part.length < 3) continue;
+      faces.push(...roofConvex(part));
     }
   }
-  return faces;
+  const roof = faces.length ? faces : capRaw(ring);
+  const tris: V3[][] = [];
+  for (const face of roof) {
+    const parts = face.length === 4 ? [[face[0], face[1], face[2]], [face[0], face[2], face[3]]] : [face];
+    for (const tri of parts) {
+      if (tri.length >= 3) tris.push(ensureUp(tri));
+    }
+  }
+  return tris;
 }
 
 function faceArea(face: V3[]) {
@@ -655,6 +1096,24 @@ export function assertSanGraph(): void {
       for (const face of sanHip(ring)) {
         const plane = faceArea(face);
         if (plane > 200) throw new Error(`${id} roof plane ${plane.toFixed(0)}`);
+        const tris = face.length === 4 ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 2]];
+        for (const p of face) {
+          if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) throw new Error(`${id} roof NaN`);
+          if (sanOutside(ring, p.x, p.z) > 1) throw new Error(`${id} roof vertex outside`);
+        }
+        for (const [ia, ib, ic] of tris) {
+          const a = face[ia];
+          const b = face[ib];
+          const c = face[ic];
+          const edges = [
+            Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z),
+            Math.hypot(b.x - c.x, b.y - c.y, b.z - c.z),
+            Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z),
+          ];
+          for (const edge of edges) {
+            if (edge > 20) throw new Error(`${id} roof edge ${edge.toFixed(1)}`);
+          }
+        }
       }
       let zMin = Infinity;
       let zMax = -Infinity;

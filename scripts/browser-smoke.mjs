@@ -1838,6 +1838,102 @@ async function checkSanDoria(browser, url) {
       await boot.context.close();
     }
   }
+  const walked = await assertCityWalk(browser, url, seated, view);
+  if (!walked.ok) return walked;
+  return { ok: true };
+}
+
+function cityWalkPoints() {
+  const run = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--experimental-loader",
+      "/tmp/ts-ext.mjs",
+      "--input-type=module",
+      "-e",
+      `import { sanRoute } from "./src/game/sandoria-graph.ts";
+       import { inPass } from "./src/game/pass.ts";
+       const keep = (pts) => pts.filter((p) => !inPass(p.x, p.z, 0));
+       const south = keep([...sanRoute("south", -93.6, -48, 88.8, 6.72), ...sanRoute("south", 88.8, 6.72, 303.84, -91.68).slice(1)]);
+       const north = keep(sanRoute("north", 0, -488, 70, -500));
+       const port = keep(sanRoute("port", 0, -874, 50, -860));
+       console.log(JSON.stringify({ south, north, port }));`,
+    ],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  const line = `${run.stdout || ""}`.trim().split("\n").filter((row) => row.startsWith("{")).pop();
+  if (run.status !== 0 || !line) throw new Error(`city walk ${run.stderr || run.stdout}`);
+  return JSON.parse(line);
+}
+
+function heroBlue(png) {
+  const { width, height, data } = decodePng(png);
+  let hits = 0;
+  const x0 = Math.floor(width * 0.25);
+  const x1 = Math.floor(width * 0.75);
+  const y0 = Math.floor(height * 0.4);
+  const y1 = Math.floor(height * 0.75);
+  for (let y = y0; y < y1; y += 2) {
+    for (let x = x0; x < x1; x += 2) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (b > r + 25 && b > g + 15 && b < 120 && r < 80) hits++;
+    }
+  }
+  return hits;
+}
+
+function frameClear(png) {
+  const { width, height, data } = decodePng(png);
+  let clear = 0;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      if (data[i] === 21 && data[i + 1] === 20 && data[i + 2] === 28) clear++;
+    }
+  }
+  return clear;
+}
+
+async function assertCityWalk(browser, url, seated, view) {
+  const legs = cityWalkPoints();
+  const boot = await bootStand(browser, url, seated, {
+    name: "walk",
+    x: legs.south[0].x,
+    z: legs.south[0].z,
+    square: "D-8",
+    region: "Southern San d'Oria",
+  }, view);
+  try {
+    await boot.page.waitForFunction(() => window.__yardPlace, null, { timeout: 15000 });
+    for (const id of ["south", "north", "port"]) {
+      const pts = legs[id];
+      for (let i = 0; i < pts.length; i++) {
+        const placed = await boot.page.evaluate(({ x, z }) => window.__yardPlace(x, z), pts[i]);
+        const pngB64 = await boot.page.evaluate(() => {
+          const canvas = document.querySelector("canvas");
+          return canvas ? canvas.toDataURL("image/png") : "";
+        });
+        if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${id} walk ${i} no canvas` };
+        const png = Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64");
+        const clear = frameClear(png);
+        const blue = heroBlue(png);
+        const town = placed.region.includes("San d'Oria");
+        console.log(`WALK ${id} ${i} ${placed.region} ${placed.x.toFixed(1)},${placed.z.toFixed(1)} clear ${clear} hero ${blue}`);
+        if (!town) return { ok: false, error: `${id} walk ${i} left town for ${placed.region}` };
+        if (clear > 0) return { ok: false, error: `${id} walk ${i} clear-colour pixels ${clear}` };
+        if (blue < 80) return { ok: false, error: `${id} walk ${i} player hidden (${blue})` };
+      }
+    }
+    if (boot.errors.length) return { ok: false, error: `walk ${boot.errors[0]}` };
+  } catch (err) {
+    return { ok: false, error: `walk ${err.message}` };
+  } finally {
+    await boot.context.close();
+  }
   return { ok: true };
 }
 

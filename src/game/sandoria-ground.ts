@@ -265,8 +265,8 @@ function addFountain(scene: SceneLike, tag: Tag) {
 
 export function mountSanDoria(scene: SceneLike, tag: Tag, colliders: Box[]) {
   const floors: Mesh[] = [];
-  const ink = new MeshBasicMaterial({ color: 0x111014, side: 1, fog: false });
-  const paint = new MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: false });
+  const sanWalls: Mesh[] = [];
+  scene.userData.sanWalls = sanWalls;
   for (const id of ["south", "north", "port"] as const) {
     const floor = floorMesh(id);
     const tile = SAN_PAINT[id];
@@ -322,6 +322,7 @@ export function mountSanDoria(scene: SceneLike, tag: Tag, colliders: Box[]) {
       geo.setAttribute("color", new Float32BufferAttribute(col, 3));
       geo.setIndex(idx);
       geo.computeVertexNormals();
+      const paint = new MeshBasicMaterial({ color: 0xffffff, vertexColors: true, fog: false });
       const mesh = new Mesh(geo, paint);
       mesh.name = "sandoria-prop";
       mesh.castShadow = false;
@@ -329,13 +330,16 @@ export function mountSanDoria(scene: SceneLike, tag: Tag, colliders: Box[]) {
       const hullGeo = new BufferGeometry();
       hullGeo.setAttribute("position", new Float32BufferAttribute(shell, 3));
       hullGeo.setIndex(idx.slice());
+      const ink = new MeshBasicMaterial({ color: 0x111014, side: 1, fog: false });
       const hull = new Mesh(hullGeo, ink);
       hull.name = "sandoria-outline";
       hull.castShadow = false;
       hull.receiveShadow = false;
-      hull.raycast = () => {};
+      mesh.userData.fadeMate = hull;
+      hull.userData.fadeMate = mesh;
       scene.add(hull);
       scene.add(mesh);
+      sanWalls.push(mesh, hull);
       tag(mesh, group.minX - 1, group.maxX + 1, group.minZ - 1, group.maxZ + 1);
       tag(hull, group.minX - 1, group.maxX + 1, group.minZ - 1, group.maxZ + 1);
     }

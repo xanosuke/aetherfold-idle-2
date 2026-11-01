@@ -4447,8 +4447,10 @@ function* buildYard(canvas) {
 	scene.add(trustRing);
 	const raycaster = new Raycaster();
 	const wallRay = new Raycaster();
+	const sanSpot = new Vector2();
 	const wallTo = new Vector3();
 	const wallBlocking = new Set();
+	const sanCover = new Set();
 	function fadeWallSet(meshes, gateMeshes, active, dt) {
 		if (!meshes || !meshes.length) return;
 		wallBlocking.clear();
@@ -4485,7 +4487,9 @@ function* buildYard(canvas) {
 			const mat = meshes[i].material;
 			if (!mat) continue;
 			const base = meshes[i].userData.fadeBase == null ? 1 : meshes[i].userData.fadeBase;
-			const goal = (wallBlocking.has(meshes[i]) ? 0.25 : 1) * base;
+			const blocking = wallBlocking.has(meshes[i]);
+			if (blocking && meshes === scene.userData.sanWalls) sanCover.add(meshes[i]);
+			const goal = (blocking ? 0.25 : 1) * base;
 			const cur = mat.opacity == null ? 1 : mat.opacity;
 			let next = cur + Math.sign(goal - cur) * Math.min(Math.abs(goal - cur), speed * dt);
 			if (Math.abs(next - goal) < 0.01) next = goal;
@@ -4511,6 +4515,64 @@ function* buildYard(canvas) {
 		fadeWallSet(meshes, passGates || [], inPass(px, pz), dt);
 		const orcWalls = scene.userData.orcWalls;
 		fadeWallSet(orcWalls, orcWalls || [], inOrc(px, pz), dt);
+		const sanWalls = scene.userData.sanWalls;
+		const inCity = inSouthCity(px, pz) || inNorthCity(px, pz) || inPort(px, pz);
+		sanCover.clear();
+		fadeWallSet(sanWalls, sanWalls || [], inCity, dt);
+		if (inCity && sanWalls && sanWalls.length) {
+			const pads = [[0, -0.02], [0, -0.12], [0, 0.08], [-0.1, -0.06], [0.1, -0.06]];
+			for (let i = 0; i < pads.length; i++) {
+				sanSpot.set(pads[i][0], pads[i][1]);
+				wallRay.setFromCamera(sanSpot, camera);
+				wallRay.far = 32;
+				const hits = wallRay.intersectObjects(sanWalls, false);
+				for (let h = 0; h < hits.length; h++) {
+					const hitMesh = hits[h].object;
+					sanCover.add(hitMesh);
+					if (hitMesh.userData && hitMesh.userData.fadeMate) sanCover.add(hitMesh.userData.fadeMate);
+					const mat = hitMesh.material;
+					if (mat && mat.opacity > 0.25) mat.opacity = 0.25;
+				}
+			}
+		}
+		if (sanWalls) {
+			const seen = new Set();
+			for (let i = 0; i < sanWalls.length; i++) {
+				const mesh = sanWalls[i];
+				if (seen.has(mesh)) continue;
+				const mate = mesh.userData && mesh.userData.fadeMate;
+				seen.add(mesh);
+				if (mate) seen.add(mate);
+				const src = mesh.material;
+				const other = mate && mate.material;
+				if (!src) continue;
+				let opacity = src.opacity == null ? 1 : src.opacity;
+				if (other && other.opacity < opacity) opacity = other.opacity;
+				const pair = other ? [mesh, mate] : [mesh];
+				for (let k = 0; k < pair.length; k++) {
+					const mat = pair[k].material;
+					mat.opacity = opacity;
+					const want = opacity < 0.995;
+					if (mat.transparent !== want) {
+						mat.transparent = want;
+						mat.depthWrite = !want;
+						mat.needsUpdate = true;
+					}
+				}
+			}
+			const hold = [];
+			for (let i = 0; i < sanWalls.length; i++) {
+				const mesh = sanWalls[i];
+				if (!sanCover.has(mesh)) continue;
+				const mat = mesh.material;
+				if (!mat) continue;
+				mat.opacity = 0;
+				mat.transparent = true;
+				mat.depthWrite = false;
+				if (mesh.name === "sandoria-prop") hold.push(mesh);
+			}
+			scene.userData.sanHold = hold;
+		}
 	}
 	const ndc = new Vector2();
 	const camPos = new Vector3(-look.x * 13, 15.2, -look.z * 13);
@@ -13661,7 +13723,8 @@ function* buildYard(canvas) {
 		perchond.position.y = Math.sin(elapsed * 1.2 + .4) * .012;
 		myffore.position.y = Math.sin(elapsed * 1.15 + 1.7) * .012;
 		for (let i = 0; i < glacierNpcs.length; i++) glacierNpcs[i].position.y = Math.sin(elapsed * 1.15 + i * .4) * .012;
-		const inPassNow = inPass(px, pz);
+		const inTownNow = inSouthCity(px, pz) || inNorthCity(px, pz) || inPort(px, pz);
+		const inPassNow = inPass(px, pz) && !inTownNow;
 		const inCave = orcFog(px, pz) === "cave" || inTomb(px, pz) || inPassNow;
 		const onIce = inGlacier(px, pz);
 		const inGhelsbaNow = inGhelsba(px, pz);
@@ -41791,6 +41854,37 @@ function* buildYard(canvas) {
 			tagSpellObj(chant.mark);
 		}
 	}
+	function stampHero() {
+		const held = scene.userData.sanHold;
+		if (!held || !held.length) return;
+		const clear = renderer.autoClear;
+		const shadows = renderer.shadowMap.autoUpdate;
+		renderer.autoClear = false;
+		renderer.shadowMap.autoUpdate = false;
+		for (let i = 0; i < held.length; i++) {
+			const mesh = held[i];
+			const mat = mesh.material;
+			if (!mat) continue;
+			mesh.visible = true;
+			mat.colorWrite = false;
+			mat.depthWrite = true;
+			mat.depthTest = true;
+			mat.depthFunc = 3;
+			mat.transparent = true;
+			mat.opacity = 0;
+			renderer.render(mesh, camera);
+			mat.colorWrite = true;
+			mat.depthWrite = false;
+			mat.depthFunc = 4;
+			mat.opacity = 0.25;
+			renderer.render(mesh, camera);
+			mat.depthFunc = 3;
+			mat.opacity = 0.25;
+			mesh.visible = false;
+		}
+		renderer.autoClear = clear;
+		renderer.shadowMap.autoUpdate = shadows;
+	}
 	function frame(now) {
 		const frameT = performance.now();
 		timer.update(now);
@@ -41844,6 +41938,13 @@ function* buildYard(canvas) {
 			if (grottoNow) placeActorBlobs();
 		}
 		syncGrottoActors(grottoNow, !grottoNow && (inSouthCity(px, pz) || inNorthCity(px, pz) || inPort(px, pz)));
+		const passOverTown = scene.userData.passWalls;
+		if (passOverTown && passOverTown.length) {
+			const showPass = !(inSouthCity(px, pz) || inNorthCity(px, pz) || inPort(px, pz));
+			for (let i = 0; i < passOverTown.length; i++) {
+				if (passOverTown[i].visible !== showPass) passOverTown[i].visible = showPass;
+			}
+		}
 		tagSpellFx();
 		globalThis.__yardSpellFxDraws = 0;
 		const renderT = performance.now();
@@ -41871,6 +41972,15 @@ function* buildYard(canvas) {
 			speed,
 			yugPoints
 		};
+		let cityFade = false;
+		const fadedWalls = scene.userData.sanWalls;
+		if (fadedWalls && (inSouthCity(px, pz) || inNorthCity(px, pz) || inPort(px, pz))) {
+			for (let i = 0; i < fadedWalls.length; i++) {
+				const mat = fadedWalls[i].material;
+				if (mat && mat.opacity < 0.9) { cityFade = true; break; }
+			}
+		}
+		if (cityFade) stampHero();
 	}
 	const unsub = useGame.subscribe((s, prev) => {
 		if (s.started && !prev.started) ensureAudio();
@@ -42154,6 +42264,7 @@ function* buildYard(canvas) {
 			if (window.__passClick === passClickLog) delete window.__passClick;
 			if (window.__skillHop === skillHop) delete window.__skillHop;
 			if (window.__yardStep) delete window.__yardStep;
+			if (window.__yardPlace) delete window.__yardPlace;
 			if (window.__yardGfx) delete window.__yardGfx;
 			if (window.__yardGfxReset) delete window.__yardGfxReset;
 			if (window.__floorCover) delete window.__floorCover;
@@ -42179,6 +42290,11 @@ function* buildYard(canvas) {
 		const foot = groundY(px, pz);
 		if (inYughott(px, pz)) publishGrottoView(px, pz, foot, true);
 		return { x: px, z: pz, region: regionName(px, pz), speed, built };
+	};
+	window.__yardPlace = (x, z) => {
+		px = x;
+		pz = z;
+		return window.__yardStep(8);
 	};
 	function spellFxRows(root, rows) {
 		if (!root) return;
