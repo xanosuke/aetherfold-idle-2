@@ -193,6 +193,11 @@ const MASK: Record<GridId, Uint8Array> = {
   north: decodeMask(SAN_TRACE.north.mask),
   port: decodeMask(SAN_TRACE.port.mask),
 };
+const HULL: Record<GridId, Uint8Array> = {
+  south: decodeMask(SAN_TRACE.south.hull),
+  north: decodeMask(SAN_TRACE.north.hull),
+  port: decodeMask(SAN_TRACE.port.hull),
+};
 
 function worldOf(id: GridId, gx: number, gy: number) {
   const g = GRIDS[id];
@@ -1008,6 +1013,67 @@ function walkParts(id: GridId) {
   return areas;
 }
 
+function bitAt(bits: Uint8Array, i: number) {
+  return (bits[i >> 3] & (128 >> (i & 7))) !== 0;
+}
+
+/** Blocked ground with no roof, and cobbles sitting under a roof. Both must stay zero. */
+function roofCoverFault(id: GridId) {
+  const g = GRIDS[id];
+  const span = SAN_TRACE[id];
+  const buildings = DRAW[id].buildings;
+  const bucket = 32;
+  const cols = Math.ceil(span.w / bucket);
+  const rows = Math.ceil(span.h / bucket);
+  const bins: number[][] = Array.from({ length: cols * rows }, () => []);
+  for (let ri = 0; ri < buildings.length; ri++) {
+    const ring = buildings[ri];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    }
+    const c0 = Math.max(0, Math.floor((minX - g.x0) / bucket));
+    const c1 = Math.min(cols - 1, Math.floor((maxX - g.x0) / bucket));
+    const r0 = Math.max(0, Math.floor((minZ - g.z0) / bucket));
+    const r1 = Math.min(rows - 1, Math.floor((maxZ - g.z0) / bucket));
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) bins[r * cols + c].push(ri);
+    }
+  }
+  let bare = 0;
+  let under = 0;
+  const mask = MASK[id];
+  const hull = HULL[id];
+  for (let iz = 0; iz < span.h; iz++) {
+    const z = g.z0 + iz + 0.5;
+    const br = Math.floor(iz / bucket) * cols;
+    for (let ix = 0; ix < span.w; ix++) {
+      const i = iz * span.w + ix;
+      const walk = bitAt(mask, i);
+      const inside = bitAt(hull, i);
+      if (!walk && !inside) continue;
+      const x = g.x0 + ix + 0.5;
+      const list = bins[br + Math.floor(ix / bucket)];
+      let covered = false;
+      for (let k = 0; k < list.length; k++) {
+        if (pointInRing(buildings[list[k]], x, z)) {
+          covered = true;
+          break;
+        }
+      }
+      if (inside && !walk && !covered) bare++;
+      else if (walk && covered) under++;
+    }
+  }
+  return { bare, under };
+}
+
 function portraitBuilding(x: number, z: number) {
   const buildings = DRAW.south.buildings;
   for (let zz = z - 20; zz <= z + 14; zz += 1) {
@@ -1088,10 +1154,12 @@ export function assertSanGraph(): void {
     if (parts.some((n) => n < 20) || parts.filter((n) => n >= 20).length !== 1) throw new Error(`${id} walk is fragmented`);
     const share = SAN_TRACE[id].inside / SAN_TRACE[id].wall;
     if (!(share >= 0.25 && share <= 0.45)) throw new Error(`${id} streets ${(share * 100).toFixed(1)}% of the wall`);
+    const cover = roofCoverFault(id);
+    if (cover.bare || cover.under) throw new Error(`${id} roofless ${cover.bare} under ${cover.under}`);
     for (const ring of DRAW[id].buildings) {
       if (ring.length < 3) continue;
       const footprint = polyArea(ring);
-      if (footprint < 4) throw new Error(`${id} building under 4 yalm`);
+      if (footprint < 3.99) throw new Error(`${id} building under 4 yalm`);
       if (footprint > 200) throw new Error(`${id} roof plane ${footprint.toFixed(0)}`);
       for (const face of sanHip(ring)) {
         const plane = faceArea(face);

@@ -8,7 +8,7 @@ export const SAN_PAINT = {
     "maxZ": 210,
     "w": 4020,
     "h": 3300,
-    "lum": 0.387,
+    "lum": 0.385,
     "axis": 1.85,
     "cobble": 1
   },
@@ -20,7 +20,7 @@ export const SAN_PAINT = {
     "maxZ": -300,
     "w": 3720,
     "h": 2760,
-    "lum": 0.387,
+    "lum": 0.385,
     "axis": 1.85,
     "cobble": 1
   },
@@ -32,7 +32,7 @@ export const SAN_PAINT = {
     "maxZ": -680,
     "w": 1080,
     "h": 2280,
-    "lum": 0.388,
+    "lum": 0.386,
     "axis": 1.844,
     "cobble": 1
   }

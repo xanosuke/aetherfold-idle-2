@@ -371,6 +371,19 @@ def ring_gx(ring: np.ndarray) -> list[list[float]]:
     return out
 
 
+def ring_gx_fine(ring: np.ndarray) -> list[list[float]]:
+    """Cell corners need more than 3 decimals or *48 drifts off the yalm grid."""
+    out = []
+    for x, y in ring:
+        gx = round(float(x) / 48.0, 8)
+        gy = round(float(y) / 48.0, 8)
+        if not out or out[-1] != [gx, gy]:
+            out.append([gx, gy])
+    if len(out) > 2 and out[0] == out[-1]:
+        out.pop()
+    return out
+
+
 def find_stand(walk: np.ndarray, buildings: np.ndarray, district: str, box: tuple[float, float, float, float]) -> tuple[float, float] | None:
     """A cobble with walls to the left and right, inside the named square."""
     x0, z0 = ORIGINS[district]
@@ -532,44 +545,255 @@ def ring_hits_walk(ring: np.ndarray, walk: np.ndarray) -> int:
     return int(np.count_nonzero(np.array(im, dtype=bool) & walk))
 
 
-def building_rings(labels: np.ndarray, walk: np.ndarray) -> list[np.ndarray]:
-    rings = []
-    big = 0
-    for i in [n for n in np.unique(labels) if n]:
-        ys, xs = np.nonzero(labels == i)
-        if len(ys) < 4:
+def cell_loops(cells: set[tuple[int, int]]) -> list[np.ndarray]:
+    """Outer edges of a set of yalm cells. One loop per pinch or island."""
+    nxt: dict[tuple[int, int], list[tuple[int, int]]] = {}
+
+    def add(a: tuple[int, int], b: tuple[int, int]) -> None:
+        nxt.setdefault(a, []).append(b)
+
+    for x, y in cells:
+        if (x, y - 1) not in cells:
+            add((x, y), (x + 1, y))
+        if (x + 1, y) not in cells:
+            add((x + 1, y), (x + 1, y + 1))
+        if (x, y + 1) not in cells:
+            add((x + 1, y + 1), (x, y + 1))
+        if (x - 1, y) not in cells:
+            add((x, y + 1), (x, y))
+    loops = []
+    seen: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    for start, dests in list(nxt.items()):
+        for first in dests:
+            if (start, first) in seen:
+                continue
+            loop = [start]
+            a, b = start, first
+            closed = False
+            for _ in range(100000):
+                if (a, b) in seen:
+                    break
+                seen.add((a, b))
+                loop.append(b)
+                if b == start:
+                    closed = True
+                    break
+                options = [c for c in nxt.get(b, []) if (b, c) not in seen]
+                if not options:
+                    break
+                a, b = b, options[0]
+            if closed and len(loop) >= 4:
+                loops.append(np.asarray(loop[:-1], dtype=np.float64))
+    return loops
+
+
+def ring_area(ring: np.ndarray) -> float:
+    return 0.5 * abs(float(np.dot(ring[:, 0], np.roll(ring[:, 1], 1)) - np.dot(ring[:, 1], np.roll(ring[:, 0], 1))))
+
+
+def point_in_ring(ring: np.ndarray, x: float, z: float) -> bool:
+    hit = False
+    for i in range(len(ring)):
+        ax, az = ring[i - 1]
+        bx, bz = ring[i]
+        if (az > z) != (bz > z) and x < (bx - ax) * (z - az) / (bz - az) + ax:
+            hit = not hit
+    return hit
+
+
+def drop_collinear(ring: np.ndarray) -> np.ndarray:
+    if len(ring) < 4:
+        return ring
+    keep = []
+    n = len(ring)
+    for i in range(n):
+        a = ring[(i - 1) % n]
+        b = ring[i]
+        c = ring[(i + 1) % n]
+        cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+        if abs(cross) > 1e-8:
+            keep.append(b)
+    if len(keep) < 3:
+        return ring
+    return np.asarray(keep, dtype=np.float64)
+
+
+def absorb_slivers(labels: np.ndarray, walk: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """A pinch can leave a 1–3 yalm island. Fold it into a neighbour, or open it as street."""
+    labels = labels.copy()
+    walk = walk.copy()
+    for _ in range(6):
+        changed = False
+        for i in [n for n in np.unique(labels) if n]:
+            ys, xs = np.nonzero(labels == i)
+            if len(ys) == 0:
+                continue
+            cells = set(zip(xs.tolist(), ys.tolist()))
+            for loop in cell_loops(cells):
+                if ring_area(loop) >= 4:
+                    continue
+                owned = [(x, y) for x, y in cells if point_in_ring(loop, x + 0.5, y + 0.5)]
+                for x, y in owned:
+                    moved = False
+                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                        if ny < 0 or nx < 0 or ny >= labels.shape[0] or nx >= labels.shape[1]:
+                            continue
+                        other = int(labels[ny, nx])
+                        if other != 0 and other != i:
+                            labels[y, x] = other
+                            moved = True
+                            break
+                    if not moved:
+                        walk[y, x] = True
+                        labels[y, x] = 0
+                    changed = True
+                    cells.discard((x, y))
+        if not changed:
+            break
+    return labels, walk
+
+
+def orient_positive(ring: np.ndarray) -> np.ndarray:
+    """Positive shoelace matches the wall winding the city already draws."""
+    s = 0.0
+    n = len(ring)
+    for i in range(n):
+        x0, z0 = float(ring[i - 1, 0]), float(ring[i - 1, 1])
+        x1, z1 = float(ring[i, 0]), float(ring[i, 1])
+        s += x0 * z1 - x1 * z0
+    if s < 0:
+        return np.ascontiguousarray(ring[::-1])
+    return ring
+
+
+def max_edge(ring: np.ndarray) -> float:
+    best = 0.0
+    n = len(ring)
+    for i in range(n):
+        a = ring[i]
+        b = ring[(i + 1) % n]
+        best = max(best, float(np.hypot(a[0] - b[0], a[1] - b[1])))
+    return best
+
+
+def simplify_footprint(loop: np.ndarray) -> np.ndarray | None:
+    """Drop 1-yalm jogs so a roof stays a handful of corners, never an inset hole."""
+    ring = drop_collinear(loop)
+    if len(ring) < 4:
+        return None
+    if not (4 <= poly_area(ring) <= 200):
+        return None
+    eps = 1.35
+    while len(ring) > 6 and eps < 5:
+        eps += 0.45
+        again = drop_collinear(rdp(ring, eps))
+        if len(again) < 4:
+            break
+        area = poly_area(again)
+        if area < 4 or area > 200 or max_edge(again) > 18:
+            break
+        ring = again
+    if len(ring) < 4 or not (4 <= poly_area(ring) <= 200):
+        return None
+    return orient_positive(ring)
+
+
+def rect_ring(x: int, y: int, w: int, h: int) -> np.ndarray:
+    ring = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dtype=np.float64)
+    return orient_positive(ring)
+
+
+def largest_rect(cells: set[tuple[int, int]]) -> tuple[int, int, int, int] | None:
+    """Biggest rectangle inside the cells, at most 14 yalms on a side."""
+    if not cells:
+        return None
+    xs = [p[0] for p in cells]
+    ys = [p[1] for p in cells]
+    minx, maxx = min(xs), max(xs)
+    miny, maxy = min(ys), max(ys)
+    width = maxx - minx + 1
+    height = maxy - miny + 1
+    grid = [[(x + minx, y + miny) in cells for x in range(width)] for y in range(height)]
+    hist = [0] * width
+    best = None
+    for y in range(height):
+        for x in range(width):
+            hist[x] = hist[x] + 1 if grid[y][x] else 0
+        stack: list[int] = []
+        for i in range(width + 1):
+            hgt = hist[i] if i < width else 0
+            while stack and hist[stack[-1]] > hgt:
+                hh = hist[stack.pop()]
+                left = stack[-1] + 1 if stack else 0
+                ww = i - left
+                area = hh * ww
+                if ww > 14 or hh > 14 or area < 4:
+                    continue
+                top = y - hh + 1
+                cand = (area, -(max(ww, hh)), minx + left, miny + top, ww, hh)
+                if best is None or cand[:2] > best[:2]:
+                    best = cand
+            stack.append(i)
+    if best is None:
+        return None
+    return best[2], best[3], best[4], best[5]
+
+
+def grid_rings(labels: np.ndarray, walk: np.ndarray, hull: np.ndarray) -> list[np.ndarray]:
+    """Cover blocked ground with rectangles no wider than 14. Streets stay cobbles."""
+    del labels
+    blocked = hull & ~walk
+    rings: list[np.ndarray] = []
+    claimed = np.zeros(blocked.shape, dtype=bool)
+    lab, n = ndimage.label(blocked)
+    leftovers: list[tuple[int, int]] = []
+    for i in range(1, n + 1):
+        ys, xs = np.nonzero(lab == i)
+        cells = set(zip(xs.tolist(), ys.tolist()))
+        guard = 0
+        while len(cells) >= 4 and guard < 8000:
+            guard += 1
+            rect = largest_rect(cells)
+            if rect is None:
+                break
+            x, y, w, h = rect
+            rings.append(rect_ring(x, y, w, h))
+            for yy in range(y, y + h):
+                for xx in range(x, x + w):
+                    cells.discard((xx, yy))
+                    claimed[yy, xx] = True
+        leftovers.extend(cells)
+    for x, y in leftovers:
+        if claimed[y, x]:
             continue
-        y0, y1 = int(ys.min()), int(ys.max()) + 1
-        x0, x1 = int(xs.min()), int(xs.max()) + 1
-        sub = np.zeros((y1 - y0 + 2, x1 - x0 + 2), dtype=bool)
-        sub[ys - y0 + 1, xs - x0 + 1] = True
-        found = contours(sub, 1.35, 4)
-        if not found:
-            continue
-        ring = max(found, key=poly_area)
-        ring = ring.copy()
-        ring[:, 0] += x0 - 1
-        ring[:, 1] += y0 - 1
-        eps = 1.35
-        while len(ring) > 6 and eps < 5:
-            eps += 0.45
-            again = rdp(ring, eps)
-            if len(again) >= 4:
-                ring = again
-        ring = inset_ring(ring, 0.4)
-        if poly_area(ring) > 190:
-            ring = inset_ring(ring, 0.8)
-        if ring_hits_walk(ring, walk) > max(6, int(poly_area(ring) * 0.04)):
-            ring = inset_ring(ring, 0.7)
-        area = poly_area(ring)
-        if area < 4 or area > 200 or len(ring) < 4:
-            continue
-        if area > 200:
-            big += 1
-            continue
-        rings.append(ring)
-    if big:
-        print(f"  dropped {big} roofs over 200")
+        placed = False
+        for hh, ww in ((2, 2), (1, 4), (4, 1), (2, 3), (3, 2), (1, 5), (5, 1)):
+            if ww > 14 or hh > 14 or ww * hh < 4:
+                continue
+            for dy in range(hh):
+                for dx in range(ww):
+                    x0, y0 = x - dx, y - dy
+                    ok = True
+                    for iy in range(hh):
+                        for ix in range(ww):
+                            xx, yy = x0 + ix, y0 + iy
+                            if yy < 0 or xx < 0 or yy >= walk.shape[0] or xx >= walk.shape[1] or not blocked[yy, xx]:
+                                ok = False
+                                break
+                        if not ok:
+                            break
+                    if not ok:
+                        continue
+                    rings.append(rect_ring(x0, y0, ww, hh))
+                    for iy in range(hh):
+                        for ix in range(ww):
+                            claimed[y0 + iy, x0 + ix] = True
+                    placed = True
+                    break
+                if placed:
+                    break
+            if placed:
+                break
     return rings
 
 
@@ -607,22 +831,105 @@ def trace(district: str, spec: dict) -> dict:
     # One component must hold every named point and every positive must-point.
     if wn != 1:
         print(f"  walk is in {wn} pieces")
-    rings = contours(walk, 1.2, 8)
     labels = refine_labels(split_labels(buildings))
-    brooms = building_rings(labels, walk)
+    # Cells the block split dropped (under 4 yalms) are not a roof. Open them if they
+    # touch the street; otherwise give them to the neighbouring block.
+    bare = hull & ~walk & (labels == 0)
+    ys, xs = np.nonzero(bare)
+    for y, x in zip(ys.tolist(), xs.tolist()):
+        stuck = False
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if ny < 0 or nx < 0 or ny >= labels.shape[0] or nx >= labels.shape[1]:
+                continue
+            other = int(labels[ny, nx])
+            if other:
+                labels[y, x] = other
+                stuck = True
+                break
+        if not stuck:
+            walk[y, x] = True
+    labels, walk = absorb_slivers(labels, walk)
+    brooms = grid_rings(labels, walk, hull)
+    # Simplified corners miss a few blocked cells and clip a few cobbles.
+    # Missed cells become cobbles. Clipped cobbles become part of the building.
+    # Paint follows this same walk mask, so a dark cell never stands in for a roof.
+    cover = np.zeros_like(walk)
+    for ring in brooms:
+        x0i = max(0, int(np.floor(ring[:, 0].min())) - 1)
+        x1i = min(walk.shape[1] - 1, int(np.ceil(ring[:, 0].max())))
+        y0i = max(0, int(np.floor(ring[:, 1].min())) - 1)
+        y1i = min(walk.shape[0] - 1, int(np.ceil(ring[:, 1].max())))
+        for y in range(y0i, y1i + 1):
+            for x in range(x0i, x1i + 1):
+                if cover[y, x]:
+                    continue
+                if point_in_ring(ring, x + 0.5, y + 0.5):
+                    cover[y, x] = True
+    eaten = walk & cover
+    walk[eaten] = False
+    skirt = hull & ~walk & ~cover
+    # Open only the blocked cells that join the street, so they cannot become a one-cell island.
+    opened = 0
+    fringe = skirt & ndimage.binary_dilation(walk)
+    stack = list(zip(*np.nonzero(fringe)[::-1]))
+    seen = set(stack)
+    while stack:
+        x, y = stack.pop()
+        if not skirt[y, x]:
+            continue
+        walk[y, x] = True
+        skirt[y, x] = False
+        opened += 1
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if ny < 0 or nx < 0 or ny >= walk.shape[0] or nx >= walk.shape[1]:
+                continue
+            if skirt[ny, nx] and (nx, ny) not in seen:
+                seen.add((nx, ny))
+                stack.append((nx, ny))
+    left = int(skirt.sum())
+    if left:
+        # Interior specks the simplified roof missed. Give each one to the street only when it
+        # is already gone; otherwise keep it blocked and fail below so a roof has to claim it.
+        ys, xs = np.nonzero(skirt)
+        for y, x in zip(ys.tolist(), xs.tolist()):
+            walk[y, x] = False
+    over = int(np.logical_and(walk, cover).sum())
+    bare_left = int((hull & ~walk & ~cover).sum())
+    verts = sum(len(r) for r in brooms)
+    print(
+        f"  roofs {len(brooms)} opened {opened} left {left} eaten {int(eaten.sum())} "
+        f"bare {bare_left} walk-under {over} verts {verts}"
+    )
+    if bare_left or over:
+        raise SystemExit(f"{district} roof cover bare {bare_left} under {over}")
+    x0, z0 = ORIGINS[district]
+    lost = []
+    for name, (gx, gy) in NAMED[district].items():
+        if not on(walk, district, x0 + gx * 48, z0 + gy * 48, 0):
+            lost.append(name)
+    for mx, mz, radius in MUST[district]:
+        if not on(walk, district, mx, mz, radius):
+            lost.append(f"{mx:.0f},{mz:.0f}")
+    if lost:
+        raise SystemExit(f"{district} lost {lost}")
     areas = [poly_area(r) for r in brooms]
     spans = []
+    edges = []
     for ring in brooms:
         spans.append(max(float(ring[:, 0].max() - ring[:, 0].min()), float(ring[:, 1].max() - ring[:, 1].min())))
+        edges.append(max_edge(ring))
     over = sum(1 for a in areas if a > 200)
     wide = sum(1 for s in spans if s > 14.2)
+    long_e = sum(1 for e in edges if e > 18)
     print(
-        f"  roofs {len(brooms)} area {min(areas):.0f}-{max(areas):.0f} span {min(spans):.1f}-{max(spans):.1f} over {over} wide {wide}"
+        f"  roofs {len(brooms)} area {min(areas):.0f}-{max(areas):.0f} span {min(spans):.1f}-{max(spans):.1f} "
+        f"edge {max(edges):.1f} over {over} wide {wide} long {long_e} avg verts {verts / max(1, len(brooms)):.1f}"
         if areas
         else "  roofs 0"
     )
-    if over or not areas:
+    if over or not areas or long_e:
         raise SystemExit(f"{district} roofs")
+    rings = contours(walk, 1.2, 8)
     # Even-odd ring raster versus the hand mask. 1-cell slack, same as the game assert.
     poly = np.zeros_like(walk)
     for iz in range(walk.shape[0]):
@@ -649,6 +956,11 @@ def trace(district: str, spec: dict) -> dict:
     print(f"  overlap {recall:.3f}/{precision:.3f} building verts {verts}")
     if recall < 0.9 or precision < 0.9:
         raise SystemExit(f"{district} overlap {recall:.3f}/{precision:.3f}")
+    walk_lab, wn = ndimage.label(walk)
+    sizes = np.bincount(walk_lab.ravel())
+    fragments = [int(s) for s in sizes[1:] if 0 < s < 20]
+    if wn != 1 or fragments:
+        raise SystemExit(f"{district} walk pieces {wn} fragments {fragments[:6]}")
     stands = {}
     if district == "south":
         stands["victory"] = find_stand(walk, buildings, district, (7.15, 7.55, 8.4, 8.9))
@@ -664,11 +976,12 @@ def trace(district: str, spec: dict) -> dict:
     print(f"  streets {ratio:.3f} of the wall ({inside}/{wall})")
     if not (0.25 <= ratio <= 0.45):
         raise SystemExit(f"{district} street share {ratio:.3f}")
-    preview(district, walk, buildings)
+    preview(district, walk, cover)
     return {
         "rings": [ring_gx(r) for r in rings],
-        "buildings": [ring_gx(r) for r in brooms],
+        "buildings": [ring_gx_fine(r) for r in brooms],
         "mask": pack(walk),
+        "hull": pack(hull),
         "w": SPAN,
         "h": SPAN,
         "wall": wall,
@@ -705,6 +1018,7 @@ def emit(data: dict) -> None:
         parts.append(f"    w: {payload['w']},")
         parts.append(f"    h: {payload['h']},")
         parts.append(f"    mask: {payload['mask']!r},")
+        parts.append(f"    hull: {payload['hull']!r},")
         parts.append(f"    rings: {payload['rings']!r},")
         parts.append(f"    wall: {payload['wall']},")
         parts.append(f"    inside: {payload['inside']},")

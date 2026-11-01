@@ -2,7 +2,7 @@
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { inNorthGraph, inPortGraph, inSouthGraph, SAN_PROPS } from "../src/game/sandoria-graph.ts";
+import { inNorthGraph, inPortGraph, inSouthGraph, SAN_PROPS, sanDraw } from "../src/game/sandoria-graph.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const pub = resolve(root, "public/sandoria");
@@ -111,6 +111,76 @@ function stoneAt(x, z) {
   const speck = (hash2(hx + 9, hz + 4) - 0.5) * 10;
   const joint = [72, 58, 44];
   return joint.map((c, i) => c + (stone[i] + speck - c) * cover);
+}
+
+function buildingShade(ring, x, z) {
+  let best = 1.5;
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const ax = ring[j].x;
+    const az = ring[j].z;
+    const bx = ring[i].x;
+    const bz = ring[i].z;
+    const dx = bx - ax;
+    const dz = bz - az;
+    const l2 = dx * dx + dz * dz || 1;
+    let t = ((x - ax) * dx + (z - az) * dz) / l2;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const qx = ax + dx * t;
+    const qz = az + dz * t;
+    if (qx > x + 0.05 || qz > z + 0.05) continue;
+    const d = Math.hypot(x - qx, z - qz);
+    if (d < best) {
+      best = d;
+      hit = true;
+    }
+  }
+  if (!hit) return 0;
+  const u = 1 - best / 1.5;
+  return u > 0 ? u * u * (3 - 2 * u) : 0;
+}
+
+/** Soft darkening on cobbles only, at most 1.5 yalms to the lower right of a real roof. */
+function castBuildingShade(id, minX, minZ, w, h, walk, rgba) {
+  const shade = new Float32Array(w * h);
+  for (const ring of sanDraw(id).buildings) {
+    let minRX = Infinity;
+    let maxRX = -Infinity;
+    let minRZ = Infinity;
+    let maxRZ = -Infinity;
+    for (const p of ring) {
+      if (p.x < minRX) minRX = p.x;
+      if (p.x > maxRX) maxRX = p.x;
+      if (p.z < minRZ) minRZ = p.z;
+      if (p.z > maxRZ) maxRZ = p.z;
+    }
+    const i0 = Math.max(0, Math.floor((Math.max(minRX, minX) - minX) * RES));
+    const i1 = Math.min(w - 1, Math.ceil((maxRX + 1.5 - minX) * RES));
+    const j0 = Math.max(0, Math.floor((Math.max(minRZ, minZ) - minZ) * RES));
+    const j1 = Math.min(h - 1, Math.ceil((maxRZ + 1.5 - minZ) * RES));
+    for (let j = j0; j <= j1; j++) {
+      const z = minZ + (j + 0.5) / RES;
+      if (z < minRZ - 0.05) continue;
+      for (let i = i0; i <= i1; i++) {
+        if (!walk[j * w + i]) continue;
+        const x = minX + (i + 0.5) / RES;
+        if (x < minRX - 0.05) continue;
+        const s = buildingShade(ring, x, z);
+        const p = j * w + i;
+        if (s > shade[p]) shade[p] = s;
+      }
+    }
+  }
+  for (let p = 0; p < shade.length; p++) {
+    const s = shade[p];
+    if (s <= 0) continue;
+    const a = s * 0.14;
+    const o = p * 4;
+    rgba[o] = mix(rgba[o], 52, a);
+    rgba[o + 1] = mix(rgba[o + 1], 40, a);
+    rgba[o + 2] = mix(rgba[o + 2], 30, a);
+  }
 }
 
 function cobbleIsSoft() {
@@ -606,7 +676,27 @@ for (const sheet of SHEETS) {
       rgba[p] = r;
       rgba[p + 1] = g;
       rgba[p + 2] = b;
-      lumSum += pixLum(r, g, b);
+    }
+  }
+  castBuildingShade(sheet.id, sheet.minX, sheet.minZ, w, h, walk, rgba);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      if (!walk[j * w + i]) continue;
+      const p = (j * w + i) * 4;
+      let r = rgba[p];
+      let g = rgba[p + 1];
+      let b = rgba[p + 2];
+      const L = pixLum(r, g, b);
+      if (L < 0.3 && L > 0) {
+        const k = 0.3 / L;
+        r = Math.min(255, r * k);
+        g = Math.min(255, g * k);
+        b = Math.min(255, b * k);
+        rgba[p] = r;
+        rgba[p + 1] = g;
+        rgba[p + 2] = b;
+      }
+      lumSum += pixLum(rgba[p], rgba[p + 1], rgba[p + 2]);
       lumN++;
     }
   }
