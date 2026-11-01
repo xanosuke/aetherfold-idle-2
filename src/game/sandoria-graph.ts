@@ -3,7 +3,8 @@
  * Grid units: gx 0 = column A, gy 0 = row 1, +gx east, +gy south.
  * World: x = x0 + gx * cell, z = z0 + gy * cell. Cell is 48 yalms.
  * (0,0) stays F-9 Southern. Northern F-7 is (0,-488). Port G-7 is (0,-874).
- * Walk polygons come from the traced plates, not chains of square centres.
+ * Walk polygons are the hand trace in scripts/hand-sandoria.py (plate pixels on the
+ * A–O / 1–15 grid). Not an ink flood, and not a chain of square centres.
  */
 import { SAN_PAINT } from "./sandoria-paint.generated.ts";
 import { SAN_TRACE } from "./sandoria-trace.generated.ts";
@@ -166,12 +167,13 @@ export type SanProp = {
   y: number;
 };
 
-export const SAN_CREAM = 0xb08960;
-export const SAN_SLATE = 0xd5dee8;
+export const SAN_CREAM = 0x80684e;
+export const SAN_SLATE = 0x5a6470;
+export const SAN_RIDGE = 0x3a424c;
 
 /** Lion Springs basin. Building blocks come from the traced footprints, not these boxes. */
 export const SAN_PROPS: Record<"south" | "north" | "port", SanProp[]> = {
-  south: [{ id: "fountain", shape: "cyl", color: 0xc4b496, x: 0, z: -48, sx: 12, sy: 0.7, sz: 12, y: 0.4 }],
+  south: [{ id: "fountain", shape: "cyl", color: 0xc4b496, x: 312, z: -120, sx: 8, sy: 0.7, sz: 8, y: 0.4 }],
   north: [],
   port: [],
 };
@@ -314,6 +316,12 @@ export function sanSquare(id: GridId, x: number, z: number) {
   return `${LETTERS[col]}-${row + 1}`;
 }
 
+/** South door of Victory Square, and the south door of Lion Square. */
+export const SAN_VIEW = {
+  victory: { x: 88.8, z: 6.72, square: "H-9" },
+  lion: { x: 303.84, z: -91.68, square: "L-7" },
+} as const;
+
 function centerOf(id: GridId, square: string) {
   const [gx, gy] = cell(square);
   return worldOf(id, gx, gy);
@@ -438,6 +446,56 @@ function axisFault(id: GridId, poly: Uint8Array) {
   return "";
 }
 
+function polyArea(ring: { x: number; z: number }[]) {
+  let area = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    area += ring[j].x * ring[i].z - ring[i].x * ring[j].z;
+  }
+  return Math.abs(area) / 2;
+}
+
+/** Connected walk, in yalms². One part means every stone reaches every exit. */
+function walkParts(id: GridId) {
+  const span = SAN_TRACE[id];
+  const g = GRIDS[id];
+  const seen = new Uint8Array(span.w * span.h);
+  const areas: number[] = [];
+  const at = (ix: number, iz: number) => {
+    if (ix < 0 || iz < 0 || ix >= span.w || iz >= span.h) return false;
+    return maskAt(id, g.x0 + ix + 0.5, g.z0 + iz + 0.5);
+  };
+  for (let iz = 0; iz < span.h; iz++) {
+    for (let ix = 0; ix < span.w; ix++) {
+      const start = iz * span.w + ix;
+      if (seen[start] || !at(ix, iz)) continue;
+      let n = 0;
+      const stack = [start];
+      seen[start] = 1;
+      while (stack.length) {
+        const cur = stack.pop() as number;
+        n++;
+        const x = cur % span.w;
+        const z = Math.floor(cur / span.w);
+        const next = [
+          [x - 1, z],
+          [x + 1, z],
+          [x, z - 1],
+          [x, z + 1],
+        ];
+        for (const [nx, nz] of next) {
+          if (!at(nx, nz)) continue;
+          const ni = nz * span.w + nx;
+          if (seen[ni]) continue;
+          seen[ni] = 1;
+          stack.push(ni);
+        }
+      }
+      if (n > 0) areas.push(n);
+    }
+  }
+  return areas;
+}
+
 function portraitBuilding(x: number, z: number) {
   const buildings = DRAW.south.buildings;
   for (let zz = z - 20; zz <= z + 14; zz += 1) {
@@ -502,7 +560,11 @@ export function assertSanGraph(): void {
   }
   const shoulder = clampSouthGraph(30, 48, 0.36);
   if (!inSouthGraph(shoulder.x, shoulder.z, 0.2)) throw new Error("south clamp");
-  if (!(lum(SAN_CREAM) < lum(SAN_SLATE) - 0.05)) throw new Error("walls are not darker than the roof");
+  if (lum(SAN_SLATE) > 0.5 || lum(SAN_RIDGE) >= lum(SAN_SLATE)) throw new Error("white roof");
+  if (!(lum(SAN_CREAM) < 0.45)) throw new Error("walls are not darker than the floor");
+  if (!portraitBuilding(SAN_VIEW.victory.x, SAN_VIEW.victory.z) || !portraitBuilding(SAN_VIEW.lion.x, SAN_VIEW.lion.z)) {
+    throw new Error("portrait buildings");
+  }
   let blocks = 0;
   let low = 0;
   for (const id of ["south", "north", "port"] as const) {
@@ -510,8 +572,11 @@ export function assertSanGraph(): void {
     if (score.recall < 0.9 || score.precision < 0.9) throw new Error(`${id} trace overlap ${score.recall.toFixed(3)}/${score.precision.toFixed(3)}`);
     const fault = axisFault(id, score.poly);
     if (fault) throw new Error(`${id} axis street ${fault}`);
+    const parts = walkParts(id);
+    if (parts.some((n) => n < 20) || parts.filter((n) => n >= 20).length !== 1) throw new Error(`${id} walk is fragmented`);
     for (const ring of DRAW[id].buildings) {
       if (ring.length < 3) continue;
+      if (polyArea(ring) < 4) throw new Error(`${id} building under 4 yalm`);
       let zMin = Infinity;
       let zMax = -Infinity;
       let cx = 0;
@@ -532,12 +597,11 @@ export function assertSanGraph(): void {
     }
   }
   if (blocks < 6 || low < 3) throw new Error("building walls");
-  if (!portraitBuilding(0, -38) || !portraitBuilding(0, 0)) throw new Error("portrait buildings");
   for (const id of ["south", "north", "port"] as const) {
     const tile = SAN_PAINT[id];
     const spanX = tile.maxX - tile.minX;
     const spanZ = tile.maxZ - tile.minZ;
-    if (tile.w / spanX < 3.9 || tile.h / spanZ < 3.9) throw new Error(`${id} paint is under 4 px/yalm`);
+    if (tile.w / spanX < 6 || tile.h / spanZ < 6) throw new Error(`${id} paint is under 6 px/yalm`);
     if (!(tile.lum >= 0.3 && tile.lum <= 0.45)) throw new Error(`${id} floor luminance ${tile.lum}`);
   }
 }

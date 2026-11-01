@@ -6,6 +6,7 @@ import {
   BufferGeometry,
   CanvasTexture,
   Float32BufferAttribute,
+  LinearFilter,
   Mesh,
   MeshBasicMaterial,
   NearestFilter,
@@ -16,7 +17,7 @@ import {
   type Object3D,
 } from "three";
 import { SAN_PAINT } from "./sandoria-paint.generated.ts";
-import { SAN_CREAM, SAN_PROPS, SAN_SLATE, sanDraw, sanEave, sanNorthHeight, type SanProp } from "./sandoria-graph";
+import { SAN_CREAM, SAN_PROPS, SAN_RIDGE, SAN_SLATE, sanDraw, sanEave, sanNorthHeight, type SanProp } from "./sandoria-graph";
 
 type Tag = (mesh: Object3D, minX: number, maxX: number, minZ: number, maxZ: number) => void;
 type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -36,8 +37,8 @@ function floorMesh(id: "south" | "north" | "port") {
   geo.computeVertexNormals();
   const tex = loader.load(tile.url);
   tex.colorSpace = SRGBColorSpace;
-  tex.magFilter = NearestFilter;
-  tex.minFilter = NearestFilter;
+  tex.magFilter = LinearFilter;
+  tex.minFilter = LinearFilter;
   const mat = new MeshBasicMaterial({ map: tex, fog: false });
   const mesh = new Mesh(geo, mat);
   mesh.name = "sandoria-floor";
@@ -96,6 +97,7 @@ function hexRgb(hex: number): [number, number, number] {
 
 const CREAM = hexRgb(SAN_CREAM);
 const SLATE = hexRgb(SAN_SLATE);
+const RIDGE = hexRgb(SAN_RIDGE);
 
 function pushBit(pos: number[], col: number[], idx: number[], shell: number[], bit: SanProp) {
   const verts = bit.shape === "cyl" ? CYL.verts : BOX;
@@ -244,12 +246,16 @@ function pushBuildings(pos: number[], col: number[], idx: number[], shell: numbe
       idx.push(start, start + 1, start + 2, start, start + 2, start + 3);
     }
     const roof = triangulate(ring);
+    const spanX = Math.max(0.001, ...ring.map((p) => p.x)) - Math.min(...ring.map((p) => p.x));
+    const spanZ = zMax - zMin || 0.001;
+    const alongX = spanX >= spanZ;
     for (let t = 0; t < roof.length; t += 3) {
       const start = pos.length / 3;
       for (const vi of [roof[t], roof[t + 1], roof[t + 2]]) {
         const p = ring[vi];
+        const u = alongX ? Math.min(1, (Math.abs(p.z - cz) / (spanZ * 0.5)) * 1.15) : Math.min(1, (Math.abs(p.x - cx) / (spanX * 0.5)) * 1.15);
         pos.push(p.x, heights[vi], p.z);
-        col.push(SLATE[0], SLATE[1], SLATE[2]);
+        col.push(RIDGE[0] + (SLATE[0] - RIDGE[0]) * u, RIDGE[1] + (SLATE[1] - RIDGE[1]) * u, RIDGE[2] + (SLATE[2] - RIDGE[2]) * u);
         const o = outward[vi];
         shell.push(p.x + o.x, heights[vi] - 0.04, p.z + o.z);
       }

@@ -1,4 +1,4 @@
-/** Bake San d'Oria painted ground. Warm flagstone, hard joints, no blur. */
+/** Bake San d'Oria painted ground. Irregular cobbles, thin joints, no pixel blocks. */
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -62,12 +62,18 @@ const SHEETS = [
   { id: "north", minX: -220, maxX: 400, minZ: -760, maxZ: -300, inside: inNorthGraph },
   { id: "port", minX: -90, maxX: 90, minZ: -1060, maxZ: -680, inside: inPortGraph },
 ];
-const RES = 4;
+const RES = 6;
 
 function pixLum(r, g, b) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
+function smooth(t) {
+  const x = t < 0 ? 0 : t > 1 ? 1 : t;
+  return x * x * (3 - 2 * x);
+}
+
+/** Stones 0.5–0.9 yalm, warm grey-tan, a thin dark joint, anti-aliased. */
 function stoneAt(x, z) {
   const scale = 0.72;
   const gx = Math.floor(x / scale);
@@ -79,8 +85,8 @@ function stoneAt(x, z) {
     for (let dx = -1; dx <= 1; dx++) {
       const ix = gx + dx;
       const iz = gz + dz;
-      const jx = (hash2(ix, iz) - 0.5) * 0.62;
-      const jz = (hash2(iz + 19, ix + 7) - 0.5) * 0.62;
+      const jx = (hash2(ix, iz) - 0.5) * 0.55;
+      const jz = (hash2(iz + 19, ix + 7) - 0.5) * 0.55;
       const cx = (ix + 0.5 + jx) * scale;
       const cz = (iz + 0.5 + jz) * scale;
       const d = (x - cx) ** 2 + (z - cz) ** 2;
@@ -91,10 +97,15 @@ function stoneAt(x, z) {
       }
     }
   }
-  const rad = 0.24 + hash2(hx + 5, hz + 2) * 0.16;
-  if (Math.sqrt(best) > rad) return [98, 80, 60];
-  const tone = (hash2(hx + 3, hz + 11) - 0.5) * 16;
-  return [118 + tone, 96 + tone * 0.65, 72 + tone * 0.4];
+  const rad = 0.26 + hash2(hx + 5, hz + 2) * 0.18;
+  const cover = smooth((rad - Math.sqrt(best)) / 0.07 + 0.5);
+  const tone = hash2(hx + 3, hz + 11);
+  const grey = [132, 122, 108];
+  const tan = [150, 118, 86];
+  const stone = grey.map((c, i) => c + (tan[i] - c) * tone);
+  const speck = (hash2(hx + 9, hz + 4) - 0.5) * 10;
+  const joint = [72, 58, 44];
+  return joint.map((c, i) => c + (stone[i] + speck - c) * cover);
 }
 
 const tiles = {};

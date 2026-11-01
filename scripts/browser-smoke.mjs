@@ -1772,8 +1772,8 @@ async function checkSanDoria(browser, url) {
     return JSON.stringify(save);
   };
   const stands = [
-    { name: "fountain", x: 0, z: -38, square: "F-8", region: "Southern San d'Oria" },
-    { name: "avenue", x: 0, z: 0, square: "F-9", region: "Southern San d'Oria" },
+    { name: "victory", x: 88.8, z: 6.72, square: "H-9", region: "Southern San d'Oria" },
+    { name: "lion", x: 303.84, z: -91.68, square: "L-7", region: "Southern San d'Oria" },
     { name: "north", x: 0, z: -488, square: "F-7", region: "Northern San d'Oria" },
     { name: "port", x: 0, z: -874, square: "G-7", region: "Port San d'Oria" },
   ];
@@ -1799,7 +1799,7 @@ async function checkSanDoria(browser, url) {
       if (!pngB64.startsWith("data:image/png;base64,")) return { ok: false, error: `${stand.name} no canvas` };
       const png = Buffer.from(pngB64.slice("data:image/png;base64,".length), "base64");
       writeFileSync(`/workspace/screenshots/sandoria-${stand.name}.png`, png);
-      if (stand.name === "fountain") {
+      if (stand.name === "victory") {
         await boot.page.getByRole("button", { name: /Open the .* map/ }).click();
         await boot.page.getByRole("dialog", { name: "Zone map" }).waitFor({ timeout: 8000 });
         await boot.page.waitForTimeout(500);
