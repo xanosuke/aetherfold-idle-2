@@ -171,9 +171,9 @@ export const SAN_CREAM = 0x80684e;
 export const SAN_SLATE = 0x5a6470;
 export const SAN_RIDGE = 0x3a424c;
 
-/** Lion Springs basin. Building blocks come from the traced footprints, not these boxes. */
+/** Lion Springs, lamps, doors and street clutter. Walls stay at street height; these are the only tall pieces. */
 export const SAN_PROPS: Record<"south" | "north" | "port", SanProp[]> = {
-  south: [{ id: "fountain", shape: "cyl", color: 0xc4b496, x: 312, z: -120, sx: 8, sy: 0.7, sz: 8, y: 0.4 }],
+  south: [],
   north: [],
   port: [],
 };
@@ -349,6 +349,99 @@ export function clampNorthGraph(x: number, z: number, radius = 0) {
 export function clampPortGraph(x: number, z: number, radius = 0) {
   return clampGraph("port", x, z, radius);
 }
+
+/** 1.5 on the far curb (normal points north), 0.6 on the camera curb (normal points south). */
+export function sanCurbHeight(nz: number) {
+  const z = Math.max(-1, Math.min(1, nz));
+  return 1.05 - 0.45 * z;
+}
+
+export function sanLot(id: GridId, x: number, z: number) {
+  const g = GRIDS[id];
+  const ix = Math.floor(x - g.x0);
+  const iz = Math.floor(z - g.z0);
+  const span = SAN_TRACE[id];
+  if (ix < 0 || iz < 0 || ix >= span.w || iz >= span.h) return false;
+  const i = iz * span.w + ix;
+  const on = (bits: Uint8Array) => (bits[i >> 3] & (128 >> (i & 7))) !== 0;
+  return on(HULL[id]) && !on(MASK[id]);
+}
+
+function dressProp(id: string, shape: SanProp["shape"], color: number, x: number, z: number, sx: number, sy: number, sz: number, y: number, roof?: number): SanProp {
+  return { id, shape, color, x, z, sx, sy, sz, y, roof };
+}
+
+function besideLot(id: GridId, x: number, z: number) {
+  return sanLot(id, x + 2.4, z) || sanLot(id, x - 2.4, z) || sanLot(id, x, z + 2.4) || sanLot(id, x, z - 2.4);
+}
+
+function seatProp(id: GridId, x: number, z: number) {
+  if (maskAt(id, x, z) && !sanLot(id, x, z)) return { x, z };
+  const nudged = clampGraph(id, x, z, 0);
+  return { x: nudged.x, z: nudged.z };
+}
+
+function dressDistrict(id: GridId, specials: SanProp[]) {
+  const g = GRIDS[id];
+  const out: SanProp[] = [];
+  const seen: { x: number; z: number }[] = [];
+  const push = (bit: SanProp) => {
+    const seat = seatProp(id, bit.x, bit.z);
+    if (sanLot(id, seat.x, seat.z)) return;
+    for (const prev of seen) {
+      if (Math.hypot(prev.x - seat.x, prev.z - seat.z) < 3.2) return;
+    }
+    out.push({ ...bit, x: seat.x, z: seat.z });
+    seen.push(seat);
+  };
+  for (const bit of specials) push(bit);
+  const kinds = ["lamp", "banner", "lamp", "crate", "lamp", "cart", "guard"] as const;
+  let n = 0;
+  for (let z = g.z0 + 6; z < g.z0 + g.rows * g.cell - 6; z += 9) {
+    for (let x = g.x0 + 6; x < g.x0 + g.cols * g.cell - 6; x += 9) {
+      if (!maskAt(id, x, z) || !besideLot(id, x, z)) continue;
+      const kind = kinds[n % kinds.length];
+      n++;
+      if (kind === "lamp") push(dressProp("lamp", "cyl", 0x3c3832, x, z, 0.16, 1.35, 0.16, 0.7, 0xe0c36a));
+      else if (kind === "banner") push(dressProp("banner", "box", 0x8d3a32, x, z, 0.12, 1.35, 0.55, 0.72, 0xc4b496));
+      else if (kind === "crate") push(dressProp("crate", "box", 0x8a6238, x, z, 0.55, 0.42, 0.5, 0.26));
+      else if (kind === "cart") push(dressProp("cart", "box", 0x6e5438, x, z, 0.9, 0.4, 0.55, 0.28, 0x4a3a2c));
+      else push(dressProp("guard", "box", 0x2c3e55, x, z, 0.32, 1.4, 0.26, 0.72, 0xd4c4a4));
+    }
+  }
+  return out;
+}
+
+const auction = worldOf("south", 7.4, 10.5);
+const manor = worldOf("south", 2.1, 5.3);
+const victoryView = { x: 88.8, z: 6.72 };
+const f9 = { x: 1.2, z: 1.4 };
+const lion = worldOf("south", 12.0, 6.0);
+SAN_PROPS.south = dressDistrict("south", [
+  dressProp("fountain", "cyl", 0xc4b496, lion.x, lion.z + 4, 6.4, 0.5, 6.4, 0.28),
+  dressProp("guard", "box", 0x2c3e55, victoryView.x - 4.5, victoryView.z + 2.2, 0.34, 1.4, 0.26, 0.72, 0xd4c4a4),
+  dressProp("banner", "box", 0x8d3a32, victoryView.x + 4.2, victoryView.z - 2.4, 0.14, 1.4, 0.7, 0.74, 0xc4b496),
+  dressProp("lamp", "cyl", 0x3c3832, victoryView.x + 1.6, victoryView.z + 4.6, 0.16, 1.35, 0.16, 0.7, 0xe0c36a),
+  dressProp("crate", "box", 0x8a6238, victoryView.x - 2.2, victoryView.z - 3.4, 0.5, 0.4, 0.45, 0.24),
+  dressProp("lamp", "cyl", 0x3c3832, f9.x + 5, f9.z, 0.16, 1.35, 0.16, 0.7, 0xe0c36a),
+  dressProp("banner", "box", 0x1e4d78, f9.x - 4, f9.z + 5, 0.12, 1.35, 0.5, 0.72, 0xc4b496),
+  dressProp("crate", "box", 0x8a6238, f9.x + 2, f9.z - 4, 0.5, 0.4, 0.45, 0.24),
+  dressProp("door", "box", 0x6a3a28, auction.x, auction.z, 0.28, 1.35, 0.12, 0.7, 0xc4b496),
+  dressProp("cart", "box", 0x6e5438, auction.x + 4, auction.z + 2, 1.1, 0.42, 0.62, 0.28, 0x4a3a2c),
+  dressProp("door", "box", 0x6a3a28, manor.x, manor.z, 0.28, 1.35, 0.12, 0.7, 0xe8d7bc),
+  dressProp("guard", "box", 0x2c3e55, lion.x - 5, lion.z + 2, 0.34, 1.4, 0.26, 0.72, 0xd4c4a4),
+  dressProp("lamp", "cyl", 0x3c3832, lion.x + 5.5, lion.z + 1, 0.16, 1.35, 0.16, 0.7, 0xe0c36a),
+  dressProp("banner", "box", 0x8d3a32, lion.x - 2, lion.z + 7, 0.12, 1.35, 0.55, 0.72, 0xc4b496),
+  dressProp("crate", "box", 0x8a6238, lion.x + 3, lion.z + 8, 0.5, 0.4, 0.45, 0.24),
+]);
+SAN_PROPS.north = dressDistrict("north", [
+  dressProp("door", "box", 0x6a3a28, worldOf("north", 8.5, 5.5).x, worldOf("north", 8.5, 5.5).z + 4, 0.3, 1.4, 0.14, 0.72, 0xc4b496),
+  dressProp("guard", "box", 0x2c3e55, 0, -488, 0.34, 1.4, 0.26, 0.72, 0xd4c4a4),
+]);
+SAN_PROPS.port = dressDistrict("port", [
+  dressProp("crate", "box", 0x8a6238, 4, -870, 0.6, 0.45, 0.55, 0.26),
+  dressProp("cart", "box", 0x6e5438, -5, -878, 1.0, 0.4, 0.6, 0.28, 0x4a3a2c),
+]);
 
 export type SanDraw = {
   areas: { x: number; z: number }[][];
@@ -1144,7 +1237,6 @@ export function assertSanGraph(): void {
     throw new Error("portrait buildings");
   }
   let blocks = 0;
-  let low = 0;
   for (const id of ["south", "north", "port"] as const) {
     const score = traceScores(id);
     if (score.recall < 0.9 || score.precision < 0.9) throw new Error(`${id} trace overlap ${score.recall.toFixed(3)}/${score.precision.toFixed(3)}`);
@@ -1156,53 +1248,19 @@ export function assertSanGraph(): void {
     if (!(share >= 0.25 && share <= 0.45)) throw new Error(`${id} streets ${(share * 100).toFixed(1)}% of the wall`);
     const cover = roofCoverFault(id);
     if (cover.bare || cover.under) throw new Error(`${id} roofless ${cover.bare} under ${cover.under}`);
+    for (const bit of SAN_PROPS[id]) {
+      if (bit.y + bit.sy * 0.5 > 1.5) throw new Error(`${id} ${bit.id} is taller than 1.5`);
+    }
     for (const ring of DRAW[id].buildings) {
       if (ring.length < 3) continue;
       const footprint = polyArea(ring);
       if (footprint < 3.99) throw new Error(`${id} building under 4 yalm`);
       if (footprint > 200) throw new Error(`${id} roof plane ${footprint.toFixed(0)}`);
-      for (const face of sanHip(ring)) {
-        const plane = faceArea(face);
-        if (plane > 200) throw new Error(`${id} roof plane ${plane.toFixed(0)}`);
-        const tris = face.length === 4 ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 2]];
-        for (const p of face) {
-          if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) throw new Error(`${id} roof NaN`);
-          if (sanOutside(ring, p.x, p.z) > 1) throw new Error(`${id} roof vertex outside`);
-        }
-        for (const [ia, ib, ic] of tris) {
-          const a = face[ia];
-          const b = face[ib];
-          const c = face[ic];
-          const edges = [
-            Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z),
-            Math.hypot(b.x - c.x, b.y - c.y, b.z - c.z),
-            Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z),
-          ];
-          for (const edge of edges) {
-            if (edge > 20) throw new Error(`${id} roof edge ${edge.toFixed(1)}`);
-          }
-        }
-      }
-      let zMin = Infinity;
-      let zMax = -Infinity;
-      let cx = 0;
-      let cz = 0;
-      for (const p of ring) {
-        zMin = Math.min(zMin, p.z);
-        zMax = Math.max(zMax, p.z);
-        cx += p.x;
-        cz += p.z;
-      }
-      cx /= ring.length;
-      cz /= ring.length;
-      const north = sanNorthHeight(cx, cz);
-      const south = sanEave(zMax, zMin, zMax, north);
-      if (!(south < 1.4) || !(north >= 4 && north <= 8)) throw new Error(`${id} eave ${south}/${north}`);
       blocks++;
-      if (south < 1.4) low++;
     }
   }
-  if (blocks < 6 || low < 3) throw new Error("building walls");
+  if (blocks < 6) throw new Error("building walls");
+  if (sanCurbHeight(1) > 0.61 || sanCurbHeight(-1) > 1.5 || sanCurbHeight(0) > 1.5) throw new Error("street wall is too tall");
   for (const id of ["south", "north", "port"] as const) {
     const tile = SAN_PAINT[id];
     const spanX = tile.maxX - tile.minX;

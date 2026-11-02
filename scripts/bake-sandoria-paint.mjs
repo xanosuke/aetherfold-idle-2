@@ -545,7 +545,7 @@ function smoothWalk(mask, W, H) {
   const next = fillLoops(loops, W, H);
   let kept = 0;
   for (let i = 0; i < next.length; i++) if (next[i]) kept++;
-  return { mask: next, kept, axis };
+  return { mask: next, kept, axis, loops };
 }
 
 function boxCover(mask, W, H) {
@@ -570,7 +570,94 @@ function boxCover(mask, W, H) {
   return cov;
 }
 
+function roofColor(meta, x, z) {
+  const tone = meta.tone;
+  let r = 0x5a * tone;
+  let g = 0x64 * tone;
+  let b = 0x70 * tone;
+  const across = meta.longX ? z : x;
+  const along = meta.longX ? x : z;
+  const tile = Math.abs(((across % 0.72) + 0.72) % 0.72 - 0.36);
+  if (tile < 0.07) {
+    r *= 0.78;
+    g *= 0.78;
+    b *= 0.8;
+  }
+  const speck = (hash2(Math.floor(along * 3.1), Math.floor(across * 3.1)) - 0.5) * 10;
+  r += speck;
+  g += speck * 0.8;
+  b += speck * 0.6;
+  const ridge = meta.longX ? Math.abs(z - meta.cz) : Math.abs(x - meta.cx);
+  if (ridge < 0.34) {
+    const k = 1 - ridge / 0.34;
+    r = r * (1 - k) + 0x3a * k;
+    g = g * (1 - k) + 0x42 * k;
+    b = b * (1 - k) + 0x4c * k;
+  }
+  return [r, g, b];
+}
+
+function rasterLots(sheet, w, h) {
+  const ids = new Int16Array(w * h);
+  const meta = [null];
+  const rings = sanDraw(sheet.id).buildings;
+  for (let n = 0; n < rings.length; n++) {
+    const ring = rings[n];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    }
+    const toneN = Math.sin((minX + maxX) * 12.9898 + (minZ + maxZ) * 78.233) * 43758.5453;
+    meta.push({
+      cx: (minX + maxX) / 2,
+      cz: (minZ + maxZ) / 2,
+      longX: maxX - minX >= maxZ - minZ,
+      tone: 0.86 + (toneN - Math.floor(toneN)) * 0.22,
+    });
+    const i0 = Math.max(0, Math.floor((minX - sheet.minX) * RES));
+    const i1 = Math.min(w - 1, Math.ceil((maxX - sheet.minX) * RES) - 1);
+    const j0 = Math.max(0, Math.floor((minZ - sheet.minZ) * RES));
+    const j1 = Math.min(h - 1, Math.ceil((maxZ - sheet.minZ) * RES) - 1);
+    const id = n + 1;
+    for (let j = j0; j <= j1; j++) {
+      const z = sheet.minZ + (j + 0.5) / RES;
+      if (z < minZ || z >= maxZ) continue;
+      const row = j * w;
+      for (let i = i0; i <= i1; i++) {
+        const x = sheet.minX + (i + 0.5) / RES;
+        if (x < minX || x >= maxX) continue;
+        ids[row + i] = id;
+      }
+    }
+  }
+  return { ids, meta };
+}
+
+function curbLoops(loops, minX, minZ) {
+  const out = [];
+  for (const loop of loops) {
+    const pts = [];
+    let last = null;
+    for (const p of loop) {
+      const x = Math.round((minX + p.x / RES) * 20) / 20;
+      const z = Math.round((minZ + p.y / RES) * 20) / 20;
+      if (last && Math.hypot(x - last[0], z - last[1]) < 0.9) continue;
+      pts.push([x, z]);
+      last = [x, z];
+    }
+    if (pts.length >= 8) out.push(pts);
+  }
+  return out;
+}
+
 const tiles = {};
+const curbs = {};
 for (const sheet of SHEETS) {
   const w = Math.ceil((sheet.maxX - sheet.minX) * RES);
   const h = Math.ceil((sheet.maxZ - sheet.minZ) * RES);
@@ -597,35 +684,68 @@ for (const sheet of SHEETS) {
   }
   walk.set(smoothed.mask);
   const cover = boxCover(walk, w, h);
+  const { ids, meta } = rasterLots(sheet, w, h);
+  const lot = new Uint8Array(w * h);
+  for (let p = 0; p < ids.length; p++) if (ids[p]) lot[p] = 1;
+  const lotSmooth = smoothWalk(lot, w, h);
+  console.log(`sandoria ${sheet.id} roofs axis ${lotSmooth.axis.toFixed(2)}`);
+  for (let pass = 0; pass < 5; pass++) {
+    for (let j = 1; j < h - 1; j++) {
+      for (let i = 1; i < w - 1; i++) {
+        const p = j * w + i;
+        if (ids[p] || !lotSmooth.mask[p]) continue;
+        const n = ids[p - 1] || ids[p + 1] || ids[p - w] || ids[p + w];
+        if (n) ids[p] = n;
+      }
+    }
+  }
+  curbs[sheet.id] = curbLoops(smoothed.loops, sheet.minX, sheet.minZ);
+  let curbSegs = 0;
+  for (const loop of curbs[sheet.id]) curbSegs += loop.length;
+  console.log(`sandoria ${sheet.id} curb loops ${curbs[sheet.id].length} segs ${curbSegs} props ${SAN_PROPS[sheet.id].length}`);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
       const x = sheet.minX + (i + 0.5) / RES;
       const z = sheet.minZ + (j + 0.5) / RES;
+      const p = j * w + i;
       const n = hash2(Math.floor(x * 0.7), Math.floor(z * 0.7));
-      const c = cover[j * w + i];
+      const c = cover[p];
+      const id = ids[p];
+      const roofHere = !walk[p] && (id || lotSmooth.mask[p]);
       let r;
       let g;
       let b;
-      if (sheet.id === "port" && z < -1028 && Math.abs(x) < 40) {
+      if (!roofHere && sheet.id === "port" && z < -1028 && Math.abs(x) < 40) {
         r = 16 + n * 6;
         g = 36 + n * 8;
         b = 52 + n * 6;
+      } else if (roofHere) {
+        const tone = roofColor(meta[id] || meta[1] || { cx: x, cz: z, longX: true, tone: 0.94 }, x, z);
+        r = tone[0];
+        g = tone[1];
+        b = tone[2];
       } else {
         r = 46 + n * 8;
         g = 34 + n * 6;
         b = 26 + n * 4;
       }
-      if (c > 0) {
+      if (c > 0 && !roofHere) {
         const stone = stoneAt(x, z);
         r = r + (stone[0] - r) * c;
         g = g + (stone[1] - g) * c;
         b = b + (stone[2] - b) * c;
+      } else if (c > 0 && roofHere) {
+        const stone = stoneAt(x, z);
+        const k = Math.min(0.28, c * 0.45);
+        r = r + (stone[0] - r) * k;
+        g = g + (stone[1] - g) * k;
+        b = b + (stone[2] - b) * k;
       }
-      const p = (j * w + i) * 4;
-      rgba[p] = r;
-      rgba[p + 1] = g;
-      rgba[p + 2] = b;
-      rgba[p + 3] = 255;
+      const o = p * 4;
+      rgba[o] = r;
+      rgba[o + 1] = g;
+      rgba[o + 2] = b;
+      rgba[o + 3] = 255;
     }
   }
   for (const prop of SAN_PROPS[sheet.id]) {
@@ -700,6 +820,27 @@ for (const sheet of SHEETS) {
       lumN++;
     }
   }
+  for (let j = 1; j < h - 1; j++) {
+    for (let i = 1; i < w - 1; i++) {
+      const p = j * w + i;
+      if (walk[p] || !ids[p]) continue;
+      const id = ids[p];
+      let edge = false;
+      const neigh = [p - 1, p + 1, p - w, p + w];
+      for (let k = 0; k < 4; k++) {
+        const q = neigh[k];
+        if (walk[q] || (ids[q] && ids[q] !== id) || !ids[q]) {
+          edge = true;
+          break;
+        }
+      }
+      if (!edge) continue;
+      const o = p * 4;
+      rgba[o] = mix(rgba[o], 17, 0.72);
+      rgba[o + 1] = mix(rgba[o + 1], 16, 0.72);
+      rgba[o + 2] = mix(rgba[o + 2], 20, 0.72);
+    }
+  }
   const lum = lumN ? Math.round((lumSum / lumN) * 1000) / 1000 : 0;
   writePng(resolve(pub, `${sheet.id}.png`), w, h, rgba);
   tiles[sheet.id] = {
@@ -719,5 +860,5 @@ for (const sheet of SHEETS) {
 
 writeFileSync(
   outTs,
-  `/** Generated by scripts/bake-sandoria-paint.mjs. Do not edit. */\nexport const SAN_PAINT = ${JSON.stringify(tiles, null, 2)} as const;\n`,
+  `/** Generated by scripts/bake-sandoria-paint.mjs. Do not edit. */\nexport const SAN_PAINT = ${JSON.stringify(tiles, null, 2)} as const;\nexport const SAN_CURB = ${JSON.stringify(curbs)} as const;\n`,
 );
