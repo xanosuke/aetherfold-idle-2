@@ -6,7 +6,7 @@
  * Walk polygons are the hand trace in scripts/hand-sandoria.py (plate pixels on the
  * A–O / 1–15 grid). Not an ink flood, and not a chain of square centres.
  */
-import { SAN_PAINT } from "./sandoria-paint.generated.ts";
+import { SAN_CURB, SAN_PAINT } from "./sandoria-paint.generated.ts";
 import { SAN_TRACE } from "./sandoria-trace.generated.ts";
 
 export const SAN_CELL = 48;
@@ -1167,6 +1167,146 @@ function roofCoverFault(id: GridId) {
   return { bare, under };
 }
 
+function curbTurn(a: readonly number[], b: readonly number[], c: readonly number[]): number {
+  const ax = b[0] - a[0];
+  const az = b[1] - a[1];
+  const bx = c[0] - b[0];
+  const bz = c[1] - b[1];
+  return Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz));
+}
+
+function curbWalk(loop: readonly (readonly number[])[], index: number, dir: number, dist: number): [number, number] | null {
+  const n = loop.length;
+  let left = dist;
+  let i = index;
+  let x = loop[i][0];
+  let z = loop[i][1];
+  for (let step = 0; step < n; step++) {
+    const j = (i + dir + n) % n;
+    const nx = loop[j][0];
+    const nz = loop[j][1];
+    const hop = Math.hypot(nx - x, nz - z);
+    if (hop >= left) {
+      const t = hop > 0 ? left / hop : 0;
+      return [x + (nx - x) * t, z + (nz - z) * t];
+    }
+    left -= hop;
+    x = nx;
+    z = nz;
+    i = j;
+  }
+  return null;
+}
+
+function curbWideCorner(loop: readonly (readonly number[])[], i: number): boolean {
+  const back = curbWalk(loop, i, -1, 2.2);
+  const fore = curbWalk(loop, i, 1, 2.2);
+  if (!back || !fore) return false;
+  const deg = (curbTurn(back, loop[i], fore) * 180) / Math.PI;
+  return deg >= 58 && deg <= 122;
+}
+
+function curbDiagonalRun(loop: readonly (readonly number[])[], i0: number, count: number, sum: number): boolean {
+  const n = loop.length;
+  if (count < 1 || count >= n) return false;
+  const at = (dist: number): [number, number] => {
+    let left = dist;
+    for (let k = 0; k < count; k++) {
+      const a = loop[(i0 + k) % n];
+      const b = loop[(i0 + k + 1) % n];
+      const hop = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (hop >= left) {
+        const t = hop > 0 ? left / hop : 0;
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      }
+      left -= hop;
+    }
+    const last = loop[(i0 + count) % n];
+    return [last[0], last[1]];
+  };
+  const mid = sum * 0.5;
+  const back = at(Math.max(0, mid - 4));
+  const fore = at(Math.min(sum, mid + 4));
+  const dx = fore[0] - back[0];
+  const dz = fore[1] - back[1];
+  const len = Math.hypot(dx, dz);
+  if (len < 0.8) return false;
+  return !(Math.abs(dx) <= 0.22 * len || Math.abs(dz) <= 0.22 * len);
+}
+
+function curbOutlineFault(loop: readonly (readonly number[])[]): string {
+  const n = loop.length;
+  if (n < 4) return "loop";
+  const lens: number[] = [];
+  const axis: number[] = [];
+  const turn: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % n];
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const len = Math.hypot(dx, dz);
+    lens.push(len);
+    axis.push(len > 1e-4 && (Math.abs(dx) <= 0.18 * len || Math.abs(dz) <= 0.18 * len) ? 1 : 0);
+    turn.push(curbTurn(loop[(i - 1 + n) % n], a, b));
+  }
+  const sharp = (ang: number) => ang > 1.15 && ang < 2.15;
+  for (let i = 0; i < n; i++) {
+    const i1 = (i + 1) % n;
+    const i2 = (i + 2) % n;
+    if (lens[i] < 3 && lens[i1] < 3 && lens[i2] < 3 && sharp(turn[i1]) && sharp(turn[i2])) return "zigzag";
+  }
+  const keepsShort = (v: number) => {
+    if (!curbWideCorner(loop, v)) return false;
+    return lens[(v - 1 + n) % n] >= 1.5 || lens[v] >= 1.5;
+  };
+  for (let i = 0; i < n; i++) {
+    if (lens[i] >= 1.5) continue;
+    if (!keepsShort(i) && !keepsShort((i + 1) % n)) return "short";
+  }
+  const corner: number[] = [];
+  for (let i = 0; i < n; i++) corner.push(curbWideCorner(loop, i) ? 1 : 0);
+  let origin = -1;
+  for (let i = 0; i < n; i++) {
+    if (corner[i] || !axis[(i - 1 + n) % n]) {
+      origin = i;
+      break;
+    }
+  }
+  const runs: { i0: number; count: number; sum: number }[] = [];
+  if (origin < 0) {
+    let sum = 0;
+    for (const len of lens) sum += len;
+    if (sum > 0) runs.push({ i0: 0, count: n, sum });
+  } else {
+    let i = origin;
+    let seen = 0;
+    while (seen < n) {
+      if (!axis[i]) {
+        i = (i + 1) % n;
+        seen++;
+        continue;
+      }
+      let count = 0;
+      let sum = 0;
+      while (count < n - seen && axis[(i + count) % n]) {
+        const endV = (i + count + 1) % n;
+        sum += lens[(i + count) % n];
+        count++;
+        if (corner[endV]) break;
+      }
+      runs.push({ i0: i, count, sum });
+      i = (i + count) % n;
+      seen += count;
+    }
+  }
+  for (const run of runs) {
+    if (run.sum <= 2.02) continue;
+    if (curbDiagonalRun(loop, run.i0, run.count, run.sum)) return "axis";
+  }
+  return "";
+}
+
 function portraitBuilding(x: number, z: number) {
   const buildings = DRAW.south.buildings;
   for (let zz = z - 20; zz <= z + 14; zz += 1) {
@@ -1265,9 +1405,15 @@ export function assertSanGraph(): void {
     const tile = SAN_PAINT[id];
     const spanX = tile.maxX - tile.minX;
     const spanZ = tile.maxZ - tile.minZ;
-    if (tile.w / spanX < 6 || tile.h / spanZ < 6) throw new Error(`${id} paint is under 6 px/yalm`);
+    if (tile.w / spanX < 8 || tile.h / spanZ < 8) throw new Error(`${id} paint is under 8 px/yalm`);
     if (!(tile.lum >= 0.3 && tile.lum <= 0.45)) throw new Error(`${id} floor luminance ${tile.lum}`);
     if (!(tile.axis <= 2)) throw new Error(`${id} bake edge ${tile.axis}`);
+    if (!(tile.roofAxis <= 2)) throw new Error(`${id} roof axis ${tile.roofAxis}`);
+    if (tile.roofGap !== 0) throw new Error(`${id} cobble gap ${tile.roofGap}`);
     if (!tile.cobble) throw new Error(`${id} cobble edge`);
+    for (const loop of SAN_CURB[id]) {
+      const fault = curbOutlineFault(loop);
+      if (fault) throw new Error(`${id} curb ${fault}`);
+    }
   }
 }

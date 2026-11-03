@@ -181,17 +181,6 @@ function pushCurb(pos: number[], col: number[], idx: number[], id: "south" | "no
   );
 }
 
-function decimateLoop(loop: readonly (readonly [number, number])[], step: number) {
-  const out: (readonly [number, number])[] = [];
-  let last: readonly [number, number] | null = null;
-  for (const p of loop) {
-    if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) < step) continue;
-    out.push(p);
-    last = p;
-  }
-  return out.length >= 4 ? out : loop;
-}
-
 function pushBit(pos: number[], col: number[], idx: number[], shell: number[], shellIdx: number[], bit: SanProp) {
   const verts = bit.shape === "cyl" ? CYL.verts : BOX;
   const faces = bit.shape === "cyl" ? CYL.faces : BOX_FACES;
@@ -291,10 +280,9 @@ export function mountSanDoria(scene: SceneLike, tag: Tag, _colliders: Box[]) {
       return group;
     };
     for (const loop of SAN_CURB[id]) {
-      const ring = decimateLoop(loop, 0.92);
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i];
-        const b = ring[(i + 1) % ring.length];
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i];
+        const b = loop[(i + 1) % loop.length];
         const group = take((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
         group.segs.push([a, b]);
         if (a[0] < group.minX) group.minX = a[0];
