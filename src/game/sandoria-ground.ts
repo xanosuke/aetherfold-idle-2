@@ -18,6 +18,7 @@ import {
 } from "three";
 import { SAN_CURB, SAN_PAINT } from "./sandoria-paint.generated.ts";
 import { SAN_CREAM, SAN_PROPS, sanCurbHeight, sanLot, type SanProp } from "./sandoria-graph";
+import { mountSanRoofs } from "./sandoria-roof";
 
 type Tag = (mesh: Object3D, minX: number, maxX: number, minZ: number, maxZ: number) => void;
 type Box = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -250,6 +251,7 @@ function addFountain(scene: SceneLike, tag: Tag) {
 }
 
 export function mountSanDoria(scene: SceneLike, tag: Tag, _colliders: Box[]) {
+  mountSanRoofs(scene, tag);
   const floors: Mesh[] = [];
   for (const id of ["south", "north", "port"] as const) {
     const floor = floorMesh(id);

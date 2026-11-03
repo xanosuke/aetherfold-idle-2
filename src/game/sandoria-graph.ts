@@ -1307,6 +1307,64 @@ function curbOutlineFault(loop: readonly (readonly number[])[]): string {
   return "";
 }
 
+/** Longest axis-aligned run whose street chord is diagonal. Straight walls stay out of this. */
+function diagonalStair(loop: readonly (readonly number[])[]): number {
+  const n = loop.length;
+  if (n < 4) return 0;
+  const lens: number[] = [];
+  const axis: number[] = [];
+  const corner: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % n];
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const len = Math.hypot(dx, dz);
+    lens.push(len);
+    axis.push(len > 1e-4 && (Math.abs(dx) <= 0.18 * len || Math.abs(dz) <= 0.18 * len) ? 1 : 0);
+    corner.push(curbWideCorner(loop, i) ? 1 : 0);
+  }
+  let origin = -1;
+  for (let i = 0; i < n; i++) {
+    if (corner[i] || !axis[(i - 1 + n) % n]) {
+      origin = i;
+      break;
+    }
+  }
+  const runs: { i0: number; count: number; sum: number }[] = [];
+  if (origin < 0) {
+    let sum = 0;
+    for (const len of lens) sum += len;
+    if (sum > 0) runs.push({ i0: 0, count: n, sum });
+  } else {
+    let i = origin;
+    let seen = 0;
+    while (seen < n) {
+      if (!axis[i]) {
+        i = (i + 1) % n;
+        seen++;
+        continue;
+      }
+      let count = 0;
+      let sum = 0;
+      while (count < n - seen && axis[(i + count) % n]) {
+        const endV = (i + count + 1) % n;
+        sum += lens[(i + count) % n];
+        count++;
+        if (corner[endV]) break;
+      }
+      runs.push({ i0: i, count, sum });
+      i = (i + count) % n;
+      seen += count;
+    }
+  }
+  let worst = 0;
+  for (const run of runs) {
+    if (run.sum > worst && curbDiagonalRun(loop, run.i0, run.count, run.sum)) worst = run.sum;
+  }
+  return worst;
+}
+
 function portraitBuilding(x: number, z: number) {
   const buildings = DRAW.south.buildings;
   for (let zz = z - 20; zz <= z + 14; zz += 1) {
@@ -1414,6 +1472,8 @@ export function assertSanGraph(): void {
     for (const loop of SAN_CURB[id]) {
       const fault = curbOutlineFault(loop);
       if (fault) throw new Error(`${id} curb ${fault}`);
+      const stair = diagonalStair(loop);
+      if (stair > 1) throw new Error(`${id} roof stair ${stair.toFixed(2)}`);
     }
   }
 }
