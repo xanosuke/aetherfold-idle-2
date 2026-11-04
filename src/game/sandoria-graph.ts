@@ -170,6 +170,10 @@ export type SanProp = {
 export const SAN_CREAM = 0x80684e;
 export const SAN_SLATE = 0x5a6470;
 export const SAN_RIDGE = 0x3a424c;
+/** Warm slate blue-grey. Highlight stays within 8% of this. Shade is darker. */
+export const SAN_ROOF = 0x6c737e;
+export const SAN_ROOF_HI = 0x747c88;
+export const SAN_ROOF_SHADE = 0x545a62;
 
 /** Lion Springs, lamps, doors and street clutter. Walls stay at street height; these are the only tall pieces. */
 export const SAN_PROPS: Record<"south" | "north" | "port", SanProp[]> = {
@@ -1430,6 +1434,10 @@ export function assertSanGraph(): void {
   const shoulder = clampSouthGraph(30, 48, 0.36);
   if (!inSouthGraph(shoulder.x, shoulder.z, 0.2)) throw new Error("south clamp");
   if (lum(SAN_SLATE) > 0.5 || lum(SAN_RIDGE) >= lum(SAN_SLATE)) throw new Error("white roof");
+  if (lum(SAN_ROOF) > 0.5) throw new Error("white roof");
+  if (!(lum(SAN_ROOF_HI) > lum(SAN_ROOF))) throw new Error("roof highlight");
+  if (lum(SAN_ROOF_HI) > lum(SAN_ROOF) * 1.08 + 1e-4) throw new Error("roof highlight");
+  if (!(lum(SAN_ROOF_SHADE) < lum(SAN_ROOF))) throw new Error("roof shade");
   if (!(lum(SAN_CREAM) < 0.45)) throw new Error("walls are not darker than the floor");
   if (!portraitBuilding(SAN_VIEW.victory.x, SAN_VIEW.victory.z) || !portraitBuilding(SAN_VIEW.lion.x, SAN_VIEW.lion.z)) {
     throw new Error("portrait buildings");

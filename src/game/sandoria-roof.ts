@@ -18,7 +18,7 @@ import {
   type Object3D,
 } from "three";
 import { SAN_CURB, SAN_PAINT } from "./sandoria-paint.generated.ts";
-import { inNorthGraph, inPortGraph, inSouthGraph, sanDraw, sanLot } from "./sandoria-graph";
+import { inNorthGraph, inPortGraph, inSouthGraph, sanDraw, sanLot, SAN_ROOF, SAN_ROOF_HI, SAN_ROOF_SHADE } from "./sandoria-graph";
 
 type District = "south" | "north" | "port";
 type Tag = (mesh: Object3D, minX: number, maxX: number, minZ: number, maxZ: number) => void;
@@ -172,7 +172,8 @@ function buildBuildings(id: District) {
       if (p.z > maxZ) maxZ = p.z;
     }
     const n = Math.sin((minX + maxX) * 12.9898 + (minZ + maxZ) * 78.233) * 43758.5453;
-    const tone = 0.86 + (n - Math.floor(n)) * 0.28;
+    const tone = 0.92 + (n - Math.floor(n)) * 0.16;
+    if (tone < 0.92 - 1e-6 || tone > 1.08 + 1e-6) throw new Error("roof tone");
     const index = buildings.length;
     buildings.push({
       ring,
@@ -486,8 +487,8 @@ export function buildSanRoof(id: District): RoofMeshData {
       const along = longX ? p[0] : p[1];
       const across = longX ? p[1] : p[0];
       pos.push(p[0], ROOF_Y, p[1]);
-      col.push(tone, tone * 0.98, tone * 0.96);
-      uv.push(along / 3.84, across / 1.64);
+      col.push(tone, tone, tone);
+      uv.push(along / 4, across / 0.5);
       mark(p[0], p[1]);
     }
   }
@@ -501,8 +502,14 @@ export function buildSanRoof(id: District): RoofMeshData {
   const linePos: number[] = [];
   const lineCol: number[] = [];
   const ink = [0x2a / 255, 0x2f / 255, 0x38 / 255];
-  const ridge = [0x3a / 255, 0x42 / 255, 0x4c / 255];
+  const roofRgb = [((SAN_ROOF >> 16) & 255) / 255, ((SAN_ROOF >> 8) & 255) / 255, (SAN_ROOF & 255) / 255];
+  const hiRgb = [((SAN_ROOF_HI >> 16) & 255) / 255, ((SAN_ROOF_HI >> 8) & 255) / 255, (SAN_ROOF_HI & 255) / 255];
+  const shadeRgb = [((SAN_ROOF_SHADE >> 16) & 255) / 255, ((SAN_ROOF_SHADE >> 8) & 255) / 255, (SAN_ROOF_SHADE & 255) / 255];
+  const lumOf = (rgb: number[]) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+  const hiLum = lumOf(hiRgb);
+  if (lumOf(shadeRgb) >= lumOf(roofRgb) || hiLum > lumOf(roofRgb) * 1.08 + 1e-4) throw new Error("roof overlay");
   const pushLine = (verts: number[][], rgb: number[]) => {
+    if (lumOf(rgb) > hiLum + 1e-4) throw new Error("roof overlay");
     const order = [0, 2, 1, 0, 3, 2];
     for (const i of order) {
       const v = verts[i];
@@ -540,31 +547,142 @@ export function buildSanRoof(id: District): RoofMeshData {
       );
     }
   }
-  for (const b of buildings) {
-    if (!pointInRing(b.ring, b.cx, b.cz)) continue;
-    const span = b.longX ? b.maxX - b.minX : b.maxZ - b.minZ;
-    if (span < 1.4) continue;
-    let reach = span * 0.42;
-    for (let attempt = 0; attempt < 3 && reach > 0.6; attempt++, reach *= 0.72) {
-      const ax = b.cx + (b.longX ? -reach : 0);
-      const az = b.cz + (b.longX ? 0 : -reach);
-      const bx = b.cx + (b.longX ? reach : 0);
-      const bz = b.cz + (b.longX ? 0 : reach);
-      if (walk(b.cx, b.cz) || walk(ax, az) || walk(bx, bz)) continue;
-      if (!sanLot(id, b.cx, b.cz) || !sanLot(id, ax, az) || !sanLot(id, bx, bz)) continue;
-      const px = b.longX ? 0 : 0.11;
-      const pz = b.longX ? 0.11 : 0;
-      pushLine(
-        [
-          [ax - px, RIDGE_Y, az - pz],
-          [bx - px, RIDGE_Y, bz - pz],
-          [bx + px, RIDGE_Y, bz + pz],
-          [ax + px, RIDGE_Y, az + pz],
-        ],
-        ridge,
-      );
-      break;
+  type Ridge = { ax: number; az: number; bx: number; bz: number; longX: boolean; tone: number; block: number };
+  const convexRing = (ring: { x: number; z: number }[]) => {
+    let sign = 0;
+    const n = ring.length;
+    for (let i = 0; i < n; i++) {
+      const a = ring[(i + n - 1) % n];
+      const b = ring[i];
+      const c = ring[(i + 1) % n];
+      const cross = (b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x);
+      const scale = Math.hypot(b.x - a.x, b.z - a.z) * Math.hypot(c.x - b.x, c.z - b.z);
+      if (Math.abs(cross) <= 0.04 * scale) continue;
+      const s = cross > 0 ? 1 : -1;
+      if (!sign) sign = s;
+      else if (s !== sign) return false;
     }
+    return sign !== 0;
+  };
+  const chordOf = (b: Building) => {
+    const hits: number[] = [];
+    const ring = b.ring;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const c = ring[(i + 1) % ring.length];
+      if (b.longX) {
+        const d = c.z - a.z;
+        if (Math.abs(d) < 1e-8) continue;
+        const t = (b.cz - a.z) / d;
+        if (t < -1e-4 || t > 1 + 1e-4) continue;
+        hits.push(a.x + (c.x - a.x) * t);
+      } else {
+        const d = c.x - a.x;
+        if (Math.abs(d) < 1e-8) continue;
+        const t = (b.cx - a.x) / d;
+        if (t < -1e-4 || t > 1 + 1e-4) continue;
+        hits.push(a.z + (c.z - a.z) * t);
+      }
+    }
+    hits.sort((p, q) => p - q);
+    const uniq: number[] = [];
+    for (const h of hits) if (!uniq.length || Math.abs(h - uniq[uniq.length - 1]) > 0.05) uniq.push(h);
+    const mid = b.longX ? b.cx : b.cz;
+    for (let i = 0; i + 1 < uniq.length; i++) {
+      if (uniq[i] > mid + 0.05 || uniq[i + 1] < mid - 0.05) continue;
+      if (uniq[i + 1] - uniq[i] < 4) return null;
+      if (b.longX) return { ax: uniq[i], az: b.cz, bx: uniq[i + 1], bz: b.cz };
+      return { ax: b.cx, az: uniq[i], bx: b.cx, bz: uniq[i + 1] };
+    }
+    return null;
+  };
+  const ridges: Ridge[] = [];
+  const claimed = new Set<number>();
+  for (let block = 0; block < buildings.length; block++) {
+    const b = buildings[block];
+    if (Math.min(b.maxX - b.minX, b.maxZ - b.minZ) < 4) continue;
+    if (!convexRing(b.ring) || !pointInRing(b.ring, b.cx, b.cz)) continue;
+    const chord = chordOf(b);
+    if (!chord) continue;
+    if (claimed.has(block)) throw new Error(`${id} ridge count`);
+    claimed.add(block);
+    ridges.push({ ...chord, longX: b.longX, tone: b.tone, block });
+  }
+  const crosses = (a: Ridge, b: Ridge) => {
+    const o = (ax: number, az: number, bx: number, bz: number, cx: number, cz: number) => (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+    const o1 = o(a.ax, a.az, a.bx, a.bz, b.ax, b.az);
+    const o2 = o(a.ax, a.az, a.bx, a.bz, b.bx, b.bz);
+    const o3 = o(b.ax, b.az, b.bx, b.bz, a.ax, a.az);
+    const o4 = o(b.ax, b.az, b.bx, b.bz, a.bx, a.bz);
+    return o1 * o2 < 0 && o3 * o4 < 0;
+  };
+  const endsInside = (a: Ridge, b: Ridge) => {
+    const dx = b.bx - b.ax;
+    const dz = b.bz - b.az;
+    const l2 = dx * dx + dz * dz || 1;
+    const hit = (px: number, pz: number) => {
+      const t = ((px - b.ax) * dx + (pz - b.az) * dz) / l2;
+      if (t <= 0.03 || t >= 0.97) return false;
+      return Math.hypot(px - (b.ax + dx * t), pz - (b.az + dz * t)) < 0.08;
+    };
+    return hit(a.ax, a.az) || hit(a.bx, a.bz);
+  };
+  let sweep = 0;
+  while (sweep++ < ridges.length + 2) {
+    let drop = -1;
+    for (let i = 0; i < ridges.length && drop < 0; i++) {
+      for (let j = i + 1; j < ridges.length; j++) {
+        if (!crosses(ridges[i], ridges[j]) && !endsInside(ridges[i], ridges[j]) && !endsInside(ridges[j], ridges[i])) continue;
+        const li = Math.hypot(ridges[i].bx - ridges[i].ax, ridges[i].bz - ridges[i].az);
+        const lj = Math.hypot(ridges[j].bx - ridges[j].ax, ridges[j].bz - ridges[j].az);
+        drop = li <= lj ? i : j;
+        break;
+      }
+    }
+    if (drop < 0) break;
+    ridges.splice(drop, 1);
+  }
+  const perBlock = new Map<number, number>();
+  for (let i = 0; i < ridges.length; i++) {
+    const n = (perBlock.get(ridges[i].block) ?? 0) + 1;
+    if (n > 1) throw new Error(`${id} ridge count`);
+    perBlock.set(ridges[i].block, n);
+    for (let j = i + 1; j < ridges.length; j++) {
+      if (crosses(ridges[i], ridges[j]) || endsInside(ridges[i], ridges[j]) || endsInside(ridges[j], ridges[i])) {
+        throw new Error(`${id} ridge cross`);
+      }
+    }
+  }
+  for (const ridge of ridges) {
+    const nx = ridge.longX ? 0 : 1;
+    const nz = ridge.longX ? 1 : 0;
+    const lift = Math.min(1.08, ridge.tone * 1.06);
+    const hi = roofRgb.map((c, i) => Math.min(hiRgb[i], c * lift));
+    const shade = roofRgb.map((c) => c * ridge.tone * 0.78);
+    if (lumOf(hi) > hiLum + 1e-4 || lumOf(shade) >= lumOf(roofRgb) * ridge.tone) throw new Error("roof overlay");
+    const band = 0.18;
+    const sx0 = nx * 0.1;
+    const sz0 = nz * 0.1;
+    const sx1 = nx * 0.24;
+    const sz1 = nz * 0.24;
+    pushLine(
+      [
+        [ridge.ax - nx * band, RIDGE_Y, ridge.az - nz * band],
+        [ridge.bx - nx * band, RIDGE_Y, ridge.bz - nz * band],
+        [ridge.bx + nx * band, RIDGE_Y, ridge.bz + nz * band],
+        [ridge.ax + nx * band, RIDGE_Y, ridge.az + nz * band],
+      ],
+      hi,
+    );
+    pushLine(
+      [
+        [ridge.ax + sx0, RIDGE_Y + 0.008, ridge.az + sz0],
+        [ridge.bx + sx0, RIDGE_Y + 0.008, ridge.bz + sz0],
+        [ridge.bx + sx1, RIDGE_Y + 0.008, ridge.bz + sz1],
+        [ridge.ax + sx1, RIDGE_Y + 0.008, ridge.az + sz1],
+      ],
+      shade,
+    );
   }
   return {
     pos: Float32Array.from(pos),
@@ -579,32 +697,23 @@ export function buildSanRoof(id: District): RoofMeshData {
 
 function slateTiles() {
   const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 32;
+  canvas.width = 8;
+  canvas.height = 8;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("roof tiles");
-  const img = ctx.createImageData(64, 32);
-  for (let y = 0; y < 32; y++) {
-    const course = y >> 4;
-    const row = y & 15;
-    const stagger = course ? 8 : 0;
-    for (let x = 0; x < 64; x++) {
-      const sx = (x + stagger) & 63;
-      const tile = (sx >> 4) + course * 7;
-      const n = Math.sin(tile * 12.9898 + 4.2) * 43758.5453;
-      const f = n - Math.floor(n);
-      let r = 108 + f * 18;
-      let g = 114 + f * 10;
-      let b = 126 + f * 8;
-      if (row < 1 || (sx & 15) === 0) {
-        r = 48;
-        g = 54;
-        b = 64;
+  const img = ctx.createImageData(8, 8);
+  const base = [(SAN_ROOF >> 16) & 255, (SAN_ROOF >> 8) & 255, SAN_ROOF & 255];
+  const line = base.map((c) => Math.round(c * 0.9));
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const src = y === 0 ? line : base;
+      for (let k = 0; k < 3; k++) {
+        if (src[k] > base[k]) throw new Error("roof tile brighter than base");
       }
-      const i = (y * 64 + x) * 4;
-      img.data[i] = r;
-      img.data[i + 1] = g;
-      img.data[i + 2] = b;
+      const i = (y * 8 + x) * 4;
+      img.data[i] = src[0];
+      img.data[i + 1] = src[1];
+      img.data[i + 2] = src[2];
       img.data[i + 3] = 255;
     }
   }
@@ -615,6 +724,7 @@ function slateTiles() {
   tex.wrapT = RepeatWrapping;
   tex.magFilter = LinearFilter;
   tex.minFilter = LinearFilter;
+  tex.generateMipmaps = false;
   return tex;
 }
 
