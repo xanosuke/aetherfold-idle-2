@@ -948,6 +948,17 @@ function lum(hex: number) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
+function lumWorking(hex: number) {
+  const ch = (u: number) => {
+    const c = u / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const r = ch((hex >> 16) & 255);
+  const g = ch((hex >> 8) & 255);
+  const b = ch(hex & 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 function ringHas(rings: { x: number; z: number }[][], x: number, z: number) {
   for (const ring of rings) {
     let hit = false;
@@ -1438,6 +1449,9 @@ export function assertSanGraph(): void {
   if (!(lum(SAN_ROOF_HI) > lum(SAN_ROOF))) throw new Error("roof highlight");
   if (lum(SAN_ROOF_HI) > lum(SAN_ROOF) * 1.08 + 1e-4) throw new Error("roof highlight");
   if (!(lum(SAN_ROOF_SHADE) < lum(SAN_ROOF))) throw new Error("roof shade");
+  if (!(lumWorking(SAN_ROOF_HI) > lumWorking(SAN_ROOF))) throw new Error("roof highlight");
+  if (!(lumWorking(SAN_ROOF_SHADE) < lumWorking(SAN_ROOF))) throw new Error("roof shade");
+  if (!(lumWorking(SAN_ROOF_HI) < lum(SAN_ROOF_HI))) throw new Error("roof highlight");
   if (!(lum(SAN_CREAM) < 0.45)) throw new Error("walls are not darker than the floor");
   if (!portraitBuilding(SAN_VIEW.victory.x, SAN_VIEW.victory.z) || !portraitBuilding(SAN_VIEW.lion.x, SAN_VIEW.lion.z)) {
     throw new Error("portrait buildings");

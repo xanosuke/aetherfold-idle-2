@@ -5,9 +5,11 @@
 import {
   BufferGeometry,
   CanvasTexture,
+  Color,
   DoubleSide,
   Float32BufferAttribute,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
   Path,
@@ -142,7 +144,10 @@ function split(t: Tri, edge: number): [Tri, Tri] {
   ];
 }
 
+type Dir = { x: number; z: number };
+
 type Building = {
+  index: number;
   ring: { x: number; z: number }[];
   minX: number;
   maxX: number;
@@ -150,9 +155,63 @@ type Building = {
   maxZ: number;
   cx: number;
   cz: number;
-  longX: boolean;
+  dir: Dir;
+  span: number;
   tone: number;
 };
+
+function principal(pts: { x: number; z: number }[]): { dir: Dir; span: number } {
+  let mx = 0;
+  let mz = 0;
+  const n = pts.length || 1;
+  for (const p of pts) {
+    mx += p.x;
+    mz += p.z;
+  }
+  mx /= n;
+  mz /= n;
+  let xx = 0;
+  let xz = 0;
+  let zz = 0;
+  for (const p of pts) {
+    const dx = p.x - mx;
+    const dz = p.z - mz;
+    xx += dx * dx;
+    xz += dx * dz;
+    zz += dz * dz;
+  }
+  const disc = Math.sqrt(Math.max(0, (xx - zz) * (xx - zz) + 4 * xz * xz));
+  const l1 = (xx + zz + disc) * 0.5;
+  const l2 = (xx + zz - disc) * 0.5;
+  let vx = 1;
+  let vz = 0;
+  if (l1 > l2 * 1.08 + 1e-4) {
+    if (Math.abs(xz) > 1e-4) {
+      vx = xz;
+      vz = l1 - xx;
+    } else if (zz > xx) {
+      vx = 0;
+      vz = 1;
+    }
+  }
+  const len = Math.hypot(vx, vz) || 1;
+  vx /= len;
+  vz /= len;
+  if (vx < -1e-8 || (Math.abs(vx) <= 1e-8 && vz < 0)) {
+    vx = -vx;
+    vz = -vz;
+  }
+  const px = -vz;
+  const pz = vx;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const p of pts) {
+    const t = p.x * px + p.z * pz;
+    if (t < lo) lo = t;
+    if (t > hi) hi = t;
+  }
+  return { dir: { x: vx, z: vz }, span: hi - lo };
+}
 
 function buildBuildings(id: District) {
   const bins = new Map<number, number[]>();
@@ -174,8 +233,10 @@ function buildBuildings(id: District) {
     const n = Math.sin((minX + maxX) * 12.9898 + (minZ + maxZ) * 78.233) * 43758.5453;
     const tone = 0.92 + (n - Math.floor(n)) * 0.16;
     if (tone < 0.92 - 1e-6 || tone > 1.08 + 1e-6) throw new Error("roof tone");
+    const axis = principal(ring);
     const index = buildings.length;
     buildings.push({
+      index,
       ring,
       minX,
       maxX,
@@ -183,7 +244,8 @@ function buildBuildings(id: District) {
       maxZ,
       cx: (minX + maxX) / 2,
       cz: (minZ + maxZ) / 2,
-      longX: maxX - minX >= maxZ - minZ,
+      dir: axis.dir,
+      span: axis.span,
       tone,
     });
     const c0 = Math.floor(minX / bucket);
@@ -460,35 +522,103 @@ export function buildSanRoof(id: District): RoofMeshData {
     }
     return false;
   };
-  const { buildings, at } = buildBuildings(id);
-  const pos: number[] = [];
-  const col: number[] = [];
-  const uv: number[] = [];
-  for (const tri of kept) {
+  const { at } = buildBuildings(id);
+  const tones: number[] = new Array(kept.length);
+  for (let i = 0; i < kept.length; i++) {
+    const tri = kept[i];
     const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
     const cz = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
     const home = at(cx, cz);
-    let longX = home ? home.longX : false;
-    if (!home) {
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minZ = Infinity;
-      let maxZ = -Infinity;
-      for (const p of tri) {
-        if (p[0] < minX) minX = p[0];
-        if (p[0] > maxX) maxX = p[0];
-        if (p[1] < minZ) minZ = p[1];
-        if (p[1] > maxZ) maxZ = p[1];
-      }
-      longX = maxX - minX >= maxZ - minZ;
+    tones[i] = home ? home.tone : 0.96;
+  }
+  const edgeKey = (a: P, b: P) => {
+    let ax = Math.round(a[0] * 500);
+    let az = Math.round(a[1] * 500);
+    let bx = Math.round(b[0] * 500);
+    let bz = Math.round(b[1] * 500);
+    if (ax > bx || (ax === bx && az > bz)) {
+      const tx = ax;
+      ax = bx;
+      bx = tx;
+      const tz = az;
+      az = bz;
+      bz = tz;
     }
-    const tone = home ? home.tone : 0.96;
+    return `${ax},${az}|${bx},${bz}`;
+  };
+  const edges = new Map<string, number[]>();
+  for (let i = 0; i < kept.length; i++) {
+    const tri = kept[i];
+    for (let k = 0; k < 3; k++) {
+      const key = edgeKey(tri[k], tri[(k + 1) % 3]);
+      let bin = edges.get(key);
+      if (!bin) {
+        bin = [];
+        edges.set(key, bin);
+      }
+      bin.push(i);
+    }
+  }
+  const neigh: number[][] = Array.from({ length: kept.length }, () => []);
+  for (const bin of edges.values()) {
+    for (let a = 0; a < bin.length; a++) {
+      for (let b = a + 1; b < bin.length; b++) {
+        neigh[bin[a]].push(bin[b]);
+        neigh[bin[b]].push(bin[a]);
+      }
+    }
+  }
+  type Sheet = { tris: number[]; dir: Dir; span: number; cx: number; cz: number };
+  const sheets: Sheet[] = [];
+  const dirs: Dir[] = new Array(kept.length);
+  const seenTri = new Set<number>();
+  for (let s = 0; s < kept.length; s++) {
+    if (seenTri.has(s)) continue;
+    const tris: number[] = [];
+    const q = [s];
+    seenTri.add(s);
+    for (let i = 0; i < q.length; i++) {
+      tris.push(q[i]);
+      for (const j of neigh[q[i]]) {
+        if (seenTri.has(j)) continue;
+        seenTri.add(j);
+        q.push(j);
+      }
+    }
+    const pts: { x: number; z: number }[] = [];
+    let areaSum = 0;
+    let cx = 0;
+    let cz = 0;
+    for (const i of tris) {
+      const t = kept[i];
+      for (const p of t) pts.push({ x: p[0], z: p[1] });
+      const area = Math.abs((t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) - (t[2][0] - t[0][0]) * (t[1][1] - t[0][1]));
+      areaSum += area;
+      cx += ((t[0][0] + t[1][0] + t[2][0]) / 3) * area;
+      cz += ((t[0][1] + t[1][1] + t[2][1]) / 3) * area;
+    }
+    const axis = principal(pts);
+    if (areaSum > 0) {
+      cx /= areaSum;
+      cz /= areaSum;
+    }
+    sheets.push({ tris, dir: axis.dir, span: axis.span, cx, cz });
+    for (const i of tris) dirs[i] = axis.dir;
+  }
+  const pos: number[] = [];
+  const col: number[] = [];
+  const uv: number[] = [];
+  for (let i = 0; i < kept.length; i++) {
+    const tri = kept[i];
+    const dir = dirs[i];
+    if (!dir) throw new Error(`${id} roof tile has no direction`);
+    const tone = tones[i];
+    const acrossX = -dir.z;
+    const acrossZ = dir.x;
     for (const p of tri) {
-      const along = longX ? p[0] : p[1];
-      const across = longX ? p[1] : p[0];
       pos.push(p[0], ROOF_Y, p[1]);
       col.push(tone, tone, tone);
-      uv.push(along / 4, across / 0.5);
+      uv.push((p[0] * dir.x + p[1] * dir.z) / 4, (p[0] * acrossX + p[1] * acrossZ) / 0.5);
       mark(p[0], p[1]);
     }
   }
@@ -501,15 +631,23 @@ export function buildSanRoof(id: District): RoofMeshData {
   if (missing) throw new Error(`${id} roof misses ${missing} curb vertices`);
   const linePos: number[] = [];
   const lineCol: number[] = [];
-  const ink = [0x2a / 255, 0x2f / 255, 0x38 / 255];
-  const roofRgb = [((SAN_ROOF >> 16) & 255) / 255, ((SAN_ROOF >> 8) & 255) / 255, (SAN_ROOF & 255) / 255];
-  const hiRgb = [((SAN_ROOF_HI >> 16) & 255) / 255, ((SAN_ROOF_HI >> 8) & 255) / 255, (SAN_ROOF_HI & 255) / 255];
-  const shadeRgb = [((SAN_ROOF_SHADE >> 16) & 255) / 255, ((SAN_ROOF_SHADE >> 8) & 255) / 255, (SAN_ROOF_SHADE & 255) / 255];
+  const working = (hex: number) => {
+    const c = new Color(hex);
+    return [c.r, c.g, c.b];
+  };
   const lumOf = (rgb: number[]) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-  const hiLum = lumOf(hiRgb);
-  if (lumOf(shadeRgb) >= lumOf(roofRgb) || hiLum > lumOf(roofRgb) * 1.08 + 1e-4) throw new Error("roof overlay");
+  const roofLin = working(SAN_ROOF);
+  const hiLin = working(SAN_ROOF_HI);
+  const shadeLin = working(SAN_ROOF_SHADE);
+  const ink = working(0x2a2f38);
+  const rawHi = ((SAN_ROOF_HI >> 16) & 255) / 255;
+  if (!(roofLin[0] < rawHi && hiLin[0] < rawHi * 0.85)) throw new Error("roof overlay");
+  if (!(lumOf(shadeLin) < lumOf(roofLin) && lumOf(ink) < lumOf(roofLin) * 0.5 && lumOf(hiLin) > lumOf(roofLin))) {
+    throw new Error("roof overlay");
+  }
+  const hiCap = lumOf(hiLin) * 1.08 + 1e-4;
   const pushLine = (verts: number[][], rgb: number[]) => {
-    if (lumOf(rgb) > hiLum + 1e-4) throw new Error("roof overlay");
+    if (lumOf(rgb) > hiCap) throw new Error("roof overlay");
     const order = [0, 2, 1, 0, 3, 2];
     for (const i of order) {
       const v = verts[i];
@@ -547,66 +685,76 @@ export function buildSanRoof(id: District): RoofMeshData {
       );
     }
   }
-  type Ridge = { ax: number; az: number; bx: number; bz: number; longX: boolean; tone: number; block: number };
-  const convexRing = (ring: { x: number; z: number }[]) => {
-    let sign = 0;
-    const n = ring.length;
-    for (let i = 0; i < n; i++) {
-      const a = ring[(i + n - 1) % n];
-      const b = ring[i];
-      const c = ring[(i + 1) % n];
-      const cross = (b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x);
-      const scale = Math.hypot(b.x - a.x, b.z - a.z) * Math.hypot(c.x - b.x, c.z - b.z);
-      if (Math.abs(cross) <= 0.04 * scale) continue;
-      const s = cross > 0 ? 1 : -1;
-      if (!sign) sign = s;
-      else if (s !== sign) return false;
-    }
-    return sign !== 0;
+  type Ridge = { ax: number; az: number; bx: number; bz: number; dir: Dir; tone: number; block: number };
+  const inTri = (t: Tri, x: number, z: number) => {
+    const cross = (ax: number, az: number, bx: number, bz: number) => (bx - ax) * (z - az) - (bz - az) * (x - ax);
+    const s0 = cross(t[0][0], t[0][1], t[1][0], t[1][1]);
+    const s1 = cross(t[1][0], t[1][1], t[2][0], t[2][1]);
+    const s2 = cross(t[2][0], t[2][1], t[0][0], t[0][1]);
+    const neg = s0 < -1e-4 || s1 < -1e-4 || s2 < -1e-4;
+    const pos = s0 > 1e-4 || s1 > 1e-4 || s2 > 1e-4;
+    return !(neg && pos);
   };
-  const chordOf = (b: Building) => {
-    const hits: number[] = [];
-    const ring = b.ring;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i];
-      const c = ring[(i + 1) % ring.length];
-      if (b.longX) {
-        const d = c.z - a.z;
-        if (Math.abs(d) < 1e-8) continue;
-        const t = (b.cz - a.z) / d;
-        if (t < -1e-4 || t > 1 + 1e-4) continue;
-        hits.push(a.x + (c.x - a.x) * t);
-      } else {
-        const d = c.x - a.x;
-        if (Math.abs(d) < 1e-8) continue;
-        const t = (b.cx - a.x) / d;
-        if (t < -1e-4 || t > 1 + 1e-4) continue;
-        hits.push(a.z + (c.z - a.z) * t);
+  const ridges: Ridge[] = [];
+  for (let block = 0; block < sheets.length; block++) {
+    const sheet = sheets[block];
+    if (sheet.span < 4) continue;
+    const bounds: { a: P; b: P }[] = [];
+    const count = new Map<string, { a: P; b: P; n: number }>();
+    for (const ti of sheet.tris) {
+      const tri = kept[ti];
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k];
+        const b = tri[(k + 1) % 3];
+        const key = edgeKey(a, b);
+        const rec = count.get(key);
+        if (rec) rec.n++;
+        else count.set(key, { a, b, n: 1 });
       }
+    }
+    for (const rec of count.values()) if (rec.n === 1) bounds.push(rec);
+    if (!sheet.tris.some((ti) => inTri(kept[ti], sheet.cx, sheet.cz))) continue;
+    const dx = sheet.dir.x;
+    const dz = sheet.dir.z;
+    const hits: number[] = [];
+    for (const e of bounds) {
+      const ex = e.b[0] - e.a[0];
+      const ez = e.b[1] - e.a[1];
+      const den = dx * ez - dz * ex;
+      if (Math.abs(den) < 1e-8) continue;
+      const t = ((e.a[0] - sheet.cx) * ez - (e.a[1] - sheet.cz) * ex) / den;
+      const u = ((e.a[0] - sheet.cx) * dz - (e.a[1] - sheet.cz) * dx) / den;
+      if (u < -1e-3 || u > 1 + 1e-3) continue;
+      hits.push(t);
     }
     hits.sort((p, q) => p - q);
     const uniq: number[] = [];
     for (const h of hits) if (!uniq.length || Math.abs(h - uniq[uniq.length - 1]) > 0.05) uniq.push(h);
-    const mid = b.longX ? b.cx : b.cz;
+    let chord: { ax: number; az: number; bx: number; bz: number } | null = null;
     for (let i = 0; i + 1 < uniq.length; i++) {
-      if (uniq[i] > mid + 0.05 || uniq[i + 1] < mid - 0.05) continue;
-      if (uniq[i + 1] - uniq[i] < 4) return null;
-      if (b.longX) return { ax: uniq[i], az: b.cz, bx: uniq[i + 1], bz: b.cz };
-      return { ax: b.cx, az: uniq[i], bx: b.cx, bz: uniq[i + 1] };
+      if (uniq[i] > 0.05 || uniq[i + 1] < -0.05) continue;
+      if (uniq[i + 1] - uniq[i] < 4) break;
+      chord = {
+        ax: sheet.cx + dx * uniq[i],
+        az: sheet.cz + dz * uniq[i],
+        bx: sheet.cx + dx * uniq[i + 1],
+        bz: sheet.cz + dz * uniq[i + 1],
+      };
+      break;
     }
-    return null;
-  };
-  const ridges: Ridge[] = [];
-  const claimed = new Set<number>();
-  for (let block = 0; block < buildings.length; block++) {
-    const b = buildings[block];
-    if (Math.min(b.maxX - b.minX, b.maxZ - b.minZ) < 4) continue;
-    if (!convexRing(b.ring) || !pointInRing(b.ring, b.cx, b.cz)) continue;
-    const chord = chordOf(b);
     if (!chord) continue;
-    if (claimed.has(block)) throw new Error(`${id} ridge count`);
-    claimed.add(block);
-    ridges.push({ ...chord, longX: b.longX, tone: b.tone, block });
+    let inside = true;
+    for (const t of [0.2, 0.4, 0.6, 0.8]) {
+      const x = chord.ax + (chord.bx - chord.ax) * t;
+      const z = chord.az + (chord.bz - chord.az) * t;
+      if (!sheet.tris.some((ti) => inTri(kept[ti], x, z))) {
+        inside = false;
+        break;
+      }
+    }
+    if (!inside) continue;
+    const home = at(sheet.cx, sheet.cz);
+    ridges.push({ ...chord, dir: sheet.dir, tone: home ? home.tone : 0.96, block });
   }
   const crosses = (a: Ridge, b: Ridge) => {
     const o = (ax: number, az: number, bx: number, bz: number, cx: number, cz: number) => (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
@@ -654,17 +802,15 @@ export function buildSanRoof(id: District): RoofMeshData {
     }
   }
   for (const ridge of ridges) {
-    const nx = ridge.longX ? 0 : 1;
-    const nz = ridge.longX ? 1 : 0;
-    const lift = Math.min(1.08, ridge.tone * 1.06);
-    const hi = roofRgb.map((c, i) => Math.min(hiRgb[i], c * lift));
-    const shade = roofRgb.map((c) => c * ridge.tone * 0.78);
-    if (lumOf(hi) > hiLum + 1e-4 || lumOf(shade) >= lumOf(roofRgb) * ridge.tone) throw new Error("roof overlay");
-    const band = 0.18;
-    const sx0 = nx * 0.1;
-    const sz0 = nz * 0.1;
-    const sx1 = nx * 0.24;
-    const sz1 = nz * 0.24;
+    const nx = -ridge.dir.z;
+    const nz = ridge.dir.x;
+    const local = roofLin.map((c) => c * ridge.tone);
+    const hi = hiLin.map((c) => c * ridge.tone);
+    const shade = shadeLin.map((c) => c * ridge.tone);
+    if (lumOf(shade) >= lumOf(local) || lumOf(hi) <= lumOf(local) || lumOf(hi) > hiCap) throw new Error("roof overlay");
+    const band = 0.055;
+    const s0 = 0.04;
+    const s1 = 0.095;
     pushLine(
       [
         [ridge.ax - nx * band, RIDGE_Y, ridge.az - nz * band],
@@ -676,10 +822,10 @@ export function buildSanRoof(id: District): RoofMeshData {
     );
     pushLine(
       [
-        [ridge.ax + sx0, RIDGE_Y + 0.008, ridge.az + sz0],
-        [ridge.bx + sx0, RIDGE_Y + 0.008, ridge.bz + sz0],
-        [ridge.bx + sx1, RIDGE_Y + 0.008, ridge.bz + sz1],
-        [ridge.ax + sx1, RIDGE_Y + 0.008, ridge.az + sz1],
+        [ridge.ax + nx * s0, RIDGE_Y + 0.008, ridge.az + nz * s0],
+        [ridge.bx + nx * s0, RIDGE_Y + 0.008, ridge.bz + nz * s0],
+        [ridge.bx + nx * s1, RIDGE_Y + 0.008, ridge.bz + nz * s1],
+        [ridge.ax + nx * s1, RIDGE_Y + 0.008, ridge.az + nz * s1],
       ],
       shade,
     );
@@ -697,20 +843,29 @@ export function buildSanRoof(id: District): RoofMeshData {
 
 function slateTiles() {
   const canvas = document.createElement("canvas");
-  canvas.width = 8;
-  canvas.height = 8;
+  const size = 32;
+  canvas.width = size;
+  canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("roof tiles");
-  const img = ctx.createImageData(8, 8);
+  const img = ctx.createImageData(size, size);
   const base = [(SAN_ROOF >> 16) & 255, (SAN_ROOF >> 8) & 255, SAN_ROOF & 255];
   const line = base.map((c) => Math.round(c * 0.9));
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      const src = y === 0 ? line : base;
+  const lumByte = (rgb: number[]) => {
+    const ch = (u: number) => {
+      const c = u / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * ch(rgb[0]) + 0.7152 * ch(rgb[1]) + 0.0722 * ch(rgb[2]);
+  };
+  if (!(lumByte(line) < lumByte(base))) throw new Error("roof tile brighter than base");
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const src = y < 4 ? line : base;
       for (let k = 0; k < 3; k++) {
         if (src[k] > base[k]) throw new Error("roof tile brighter than base");
       }
-      const i = (y * 8 + x) * 4;
+      const i = (y * size + x) * 4;
       img.data[i] = src[0];
       img.data[i + 1] = src[1];
       img.data[i + 2] = src[2];
@@ -723,8 +878,9 @@ function slateTiles() {
   tex.wrapS = RepeatWrapping;
   tex.wrapT = RepeatWrapping;
   tex.magFilter = LinearFilter;
-  tex.minFilter = LinearFilter;
-  tex.generateMipmaps = false;
+  tex.minFilter = LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 8;
   return tex;
 }
 
