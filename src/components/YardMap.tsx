@@ -229,8 +229,8 @@ const ZONE_EXIT = new Set([
 ]);
 
 type MarkRole = "nm" | "ph";
-type MarkKind = "gate" | "home" | "guide" | "nm" | "fount" | "chest" | "mining" | "foot" | "minor";
-type WorldMark = { x: number; z: number; name: string; role?: MarkRole };
+type MarkKind = "gate" | "shut" | "home" | "guide" | "nm" | "fount" | "chest" | "mining" | "foot" | "minor";
+type WorldMark = { x: number; z: number; name: string; role?: MarkRole; closed?: boolean };
 type Box = { x: number; y: number; w: number; h: number };
 type Frame = { minX: number; minY: number; maxX: number; maxY: number };
 type PlacedLabel = { text: string; x: number; y: number; w: number; h: number };
@@ -291,7 +291,8 @@ function squareReadout(region: string, x: number, z: number): string {
   return hit.map ? `Map ${hit.map} · ${hit.square}` : hit.square;
 }
 
-function markKind(name: string, role?: MarkRole): MarkKind {
+function markKind(name: string, role?: MarkRole, closed?: boolean): MarkKind {
+  if (closed) return "shut";
   if (role === "nm") return "nm";
   if (role === "ph") return "minor";
   if (/home point/i.test(name)) return "home";
@@ -305,10 +306,34 @@ function markKind(name: string, role?: MarkRole): MarkKind {
   return "minor";
 }
 
-function gateText(name: string): string {
+function gateText(name: string, closed?: boolean): string {
+  if (closed) return `${name} (closed)`;
   const short = SHORT_GATE[name] ?? name;
   if (name === "Exit only" || name === "Enter only" || name === "Hut Door") return short;
   return `To ${short}`;
+}
+
+/** Muted diamond with a bar. Not the gold exit mark. */
+function paintShutMark(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, dpr: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#cbbda2";
+  ctx.strokeStyle = "#6e5844";
+  ctx.lineWidth = Math.max(1, dpr * 0.7);
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.lineTo(s, 0);
+  ctx.lineTo(0, s);
+  ctx.lineTo(-s, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.62, 0);
+  ctx.lineTo(s * 0.62, 0);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawMarkIcon(ctx: CanvasRenderingContext2D, kind: MarkKind, x: number, y: number, dpr: number) {
@@ -335,6 +360,10 @@ function drawMarkIcon(ctx: CanvasRenderingContext2D, kind: MarkKind, x: number, 
     ctx.fill();
     return;
   }
+  if (kind === "shut") {
+    paintShutMark(ctx, x, y, Math.max(2.4, dpr * 1.7), dpr);
+    return;
+  }
   const s = Math.max(2.6, dpr * 1.8);
   ctx.fillStyle = "#e3c57a";
   ctx.fillRect(x - s, y - s, s * 2, s * 2);
@@ -343,9 +372,11 @@ function drawMarkIcon(ctx: CanvasRenderingContext2D, kind: MarkKind, x: number, 
 function iconBox(kind: MarkKind, x: number, y: number, dpr: number): Box {
   const s = kind === "foot" || kind === "minor"
     ? Math.max(2.4, dpr * 1.6)
-    : kind === "mining"
-      ? Math.max(3.4, dpr * 2.5)
-      : Math.max(3.6, dpr * 2.3);
+    : kind === "shut"
+      ? Math.max(3.2, dpr * 2.2)
+      : kind === "mining"
+        ? Math.max(3.4, dpr * 2.5)
+        : Math.max(3.6, dpr * 2.3);
   return { x: x - s, y: y - s, w: s * 2, h: s * 2 };
 }
 
@@ -363,11 +394,11 @@ function labelMetrics(ctx: CanvasRenderingContext2D, text: string, sub: string |
   return { w: Math.ceil(Math.max(mainW, subW)), h: main + (sub ? ph + gap : 0), main, ph, gap };
 }
 
-function paintLabel(ctx: CanvasRenderingContext2D, text: string, sub: string | null, box: Box, dpr: number, size: { main: number; ph: number; gap: number }) {
+function paintLabel(ctx: CanvasRenderingContext2D, text: string, sub: string | null, box: Box, dpr: number, size: { main: number; ph: number; gap: number }, shut = false) {
   ctx.lineWidth = Math.max(2, dpr * 1.5);
   ctx.lineJoin = "round";
-  ctx.strokeStyle = "#0c1b38";
-  ctx.fillStyle = "#e3c57a";
+  ctx.strokeStyle = shut ? "#efe2c4" : "#0c1b38";
+  ctx.fillStyle = shut ? "#5c4636" : "#e3c57a";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   ctx.font = `${size.main}px ${LABEL_FONT}`;
@@ -447,7 +478,7 @@ function layoutMarks(
 ): PlacedLabel[] {
   const drawn = worldMarks.map((mark) => {
     const p = at(mark.x, mark.z);
-    return { ...mark, kind: markKind(mark.name, mark.role), px: p.x, py: p.y, sub: null as string | null };
+    return { ...mark, kind: markKind(mark.name, mark.role, mark.closed), px: p.x, py: p.y, sub: null as string | null };
   });
   const hidden = new Set<number>();
   for (let i = 0; i < drawn.length; i++) {
@@ -473,7 +504,7 @@ function layoutMarks(
 
   type Anchor = (typeof drawn)[number];
   const labels: Anchor[] = [];
-  const gates = icons.filter((mark) => mark.kind === "gate");
+  const gates = icons.filter((mark) => mark.kind === "gate" || mark.kind === "shut");
   const used = new Set<number>();
   for (let i = 0; i < gates.length; i++) {
     if (used.has(i)) continue;
@@ -509,7 +540,7 @@ function layoutMarks(
   for (const mark of icons) {
     if (mark.kind === "home" || mark.kind === "guide" || mark.kind === "nm" || mark.kind === "fount") labels.push(mark);
   }
-  const rank: Record<MarkKind, number> = { gate: 0, home: 1, guide: 1, nm: 2, fount: 3, chest: 9, mining: 9, foot: 9, minor: 9 };
+  const rank: Record<MarkKind, number> = { gate: 0, shut: 0, home: 1, guide: 1, nm: 2, fount: 3, chest: 9, mining: 9, foot: 9, minor: 9 };
   labels.sort((a, b) => rank[a.kind] - rank[b.kind] || a.name.localeCompare(b.name));
 
   const kinds = new Set(icons.map((mark) => mark.kind));
@@ -527,8 +558,8 @@ function layoutMarks(
   const placed: PlacedLabel[] = [];
   const gap = Math.max(3, dpr * 2);
   for (const mark of labels) {
-    const text = mark.kind === "gate"
-      ? gateText(mark.name)
+    const text = mark.kind === "gate" || mark.kind === "shut"
+      ? gateText(mark.name, mark.kind === "shut")
       : mark.kind === "home"
         ? "Home Point"
         : mark.kind === "guide"
@@ -545,6 +576,14 @@ function layoutMarks(
       { x: own.x + own.w + gap, y: mark.py - size.h / 2, w: size.w, h: size.h },
       { x: own.x - gap - size.w, y: mark.py - size.h / 2, w: size.w, h: size.h },
     ];
+    if (mark.kind === "shut") {
+      spots.push(
+        { x: own.x + own.w + gap, y: own.y - gap - size.h, w: size.w, h: size.h },
+        { x: own.x - gap - size.w, y: own.y - gap - size.h, w: size.w, h: size.h },
+        { x: own.x + own.w + gap, y: own.y + own.h + gap, w: size.w, h: size.h },
+        { x: own.x - gap - size.w, y: own.y + own.h + gap, w: size.w, h: size.h },
+      );
+    }
     let fit: Box | null = null;
     for (const spot of spots) {
       if (!boxInside(spot, inner)) continue;
@@ -554,7 +593,7 @@ function layoutMarks(
       break;
     }
     if (!fit) continue;
-    paintLabel(ctx, text, sub, fit, dpr, size);
+    paintLabel(ctx, text, sub, fit, dpr, size, mark.kind === "shut");
     placed.push({ text, x: fit.x, y: fit.y, w: fit.w, h: fit.h });
   }
   if (legend) paintLegend(ctx, items, legend, dpr);
@@ -721,6 +760,10 @@ function paintCityExits(
     const dx = p.x - c;
     const dy = p.y - c;
     if (dx * dx + dy * dy > limit) continue;
+    if (mark.closed) {
+      paintShutMark(ctx, p.x, p.y, Math.max(2.5, dpr * 1.65), dpr);
+      continue;
+    }
     const s = Math.max(3.2, dpr * 2.05);
     ctx.beginPath();
     ctx.moveTo(p.x, p.y - s);
@@ -1005,6 +1048,7 @@ function atlasWorldMarks(snap: RadarFrame, chart: { marks?: readonly WorldMark[]
     x: gate.x,
     z: gate.z,
     name: gate.name,
+    closed: gate.to === "closed",
   }));
 }
 
