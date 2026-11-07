@@ -596,46 +596,99 @@ function sanId(region: string): "south" | "north" | "port" {
   return "south";
 }
 
+type TownQuiet = { streets: Path2D; blocks: Path2D };
+const TOWN_QUIET: Partial<Record<"south" | "north" | "port", TownQuiet>> = {};
+
+function closeRing(path: Path2D, ring: { x: number; z: number }[], fat: number) {
+  if (ring.length < 3) return;
+  let cx = 0;
+  let cz = 0;
+  for (const p of ring) {
+    cx += p.x;
+    cz += p.z;
+  }
+  cx /= ring.length;
+  cz /= ring.length;
+  path.moveTo(cx + (ring[0].x - cx) * fat, cz + (ring[0].z - cz) * fat);
+  for (let i = 1; i < ring.length; i++) path.lineTo(cx + (ring[i].x - cx) * fat, cz + (ring[i].z - cz) * fat);
+  path.closePath();
+}
+
+/** World-space block and street art, built once. The circle only transforms it. */
+function townQuiet(id: "south" | "north" | "port"): TownQuiet {
+  const cached = TOWN_QUIET[id];
+  if (cached) return cached;
+  const draw = sanDraw(id);
+  const streets = new Path2D();
+  for (const ring of draw.rings) closeRing(streets, ring, 1);
+  const blocks = new Path2D();
+  for (const ring of draw.buildings) closeRing(blocks, ring, 1.08);
+  const art = { streets, blocks };
+  TOWN_QUIET[id] = art;
+  return art;
+}
+
 function paintTown(
   ctx: CanvasRenderingContext2D,
   at: (x: number, z: number) => Pt,
   unit: number,
   region: string,
+  quiet = false,
 ) {
   const id = sanId(region);
   const draw = sanDraw(id);
-  const trace = (rings: { x: number; z: number }[][]) => {
-    ctx.beginPath();
-    for (const ring of rings) {
-      if (ring.length < 3) continue;
+  if (quiet) {
+    const art = townQuiet(id);
+    const origin = at(0, 0);
+    const step = at(1, 0);
+    const s = step.x - origin.x || 1;
+    ctx.save();
+    ctx.translate(origin.x, origin.y);
+    ctx.scale(s, s);
+    ctx.fillStyle = "#efe2c4";
+    ctx.fill(art.streets, "evenodd");
+    ctx.fillStyle = "#b7a788";
+    ctx.fill(art.blocks);
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = 1.55 / Math.abs(s);
+    ctx.strokeStyle = "#6e5844";
+    ctx.stroke(art.streets);
+    ctx.restore();
+  } else {
+    const trace = (rings: { x: number; z: number }[][]) => {
+      ctx.beginPath();
+      for (const ring of rings) {
+        if (ring.length < 3) continue;
+        ring.forEach((p, i) => {
+          const q = at(p.x, p.z);
+          if (i === 0) ctx.moveTo(q.x, q.y);
+          else ctx.lineTo(q.x, q.y);
+        });
+        ctx.closePath();
+      }
+    };
+    ctx.fillStyle = "#efe2c4";
+    trace(draw.rings);
+    ctx.fill("evenodd");
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(1.35, unit * 0.42);
+    ctx.strokeStyle = "#6e5844";
+    const shades = ["#cbbda2", "#c4b496", "#b7a788", "#d0c2a6"];
+    draw.buildings.forEach((ring, n) => {
+      if (ring.length < 3) return;
+      ctx.beginPath();
       ring.forEach((p, i) => {
         const q = at(p.x, p.z);
         if (i === 0) ctx.moveTo(q.x, q.y);
         else ctx.lineTo(q.x, q.y);
       });
       ctx.closePath();
-    }
-  };
-  ctx.fillStyle = "#efe2c4";
-  trace(draw.rings);
-  ctx.fill("evenodd");
-  ctx.lineJoin = "round";
-  ctx.lineWidth = Math.max(1.35, unit * 0.42);
-  ctx.strokeStyle = "#6e5844";
-  const shades = ["#cbbda2", "#c4b496", "#b7a788", "#d0c2a6"];
-  draw.buildings.forEach((ring, n) => {
-    if (ring.length < 3) return;
-    ctx.beginPath();
-    ring.forEach((p, i) => {
-      const q = at(p.x, p.z);
-      if (i === 0) ctx.moveTo(q.x, q.y);
-      else ctx.lineTo(q.x, q.y);
+      ctx.fillStyle = shades[n % shades.length];
+      ctx.fill();
+      ctx.stroke();
     });
-    ctx.closePath();
-    ctx.fillStyle = shades[n % shades.length];
-    ctx.fill();
-    ctx.stroke();
-  });
+  }
   const fountain = SAN_PROPS.south.find((bit) => bit.id === "fountain");
   if (id === "south" && fountain) {
     const p = at(fountain.x, fountain.z);
@@ -644,7 +697,7 @@ function paintTown(
     ctx.arc(p.x, p.y, Math.max(2, (fountain.sx / 2) * unit * 0.35), 0, Math.PI * 2);
     ctx.fill();
   }
-  if (id === "port") {
+  if (id === "port" && !quiet) {
     const fisher = at(FISHER.x, FISHER.z);
     const joulet = at(JOULET.x, JOULET.z);
     ctx.fillStyle = "#e3c57a";
@@ -652,6 +705,52 @@ function paintTown(
     ctx.fillRect(joulet.x - Math.max(2, unit * 0.35), joulet.y - Math.max(2, unit * 0.35), Math.max(4, unit * 0.7), Math.max(4, unit * 0.7));
   }
 }
+function paintCityExits(
+  ctx: CanvasRenderingContext2D,
+  at: (x: number, z: number) => Pt,
+  snap: RadarFrame,
+  c: number,
+  radius: number,
+  dpr: number,
+) {
+  const city = snap.region === "Southern San d'Oria" || snap.region === "Northern San d'Oria" || snap.region === "Port San d'Oria";
+  if (!city) return;
+  const limit = (radius - dpr * 5) ** 2;
+  for (const mark of atlasWorldMarks(snap, null)) {
+    const p = at(mark.x, mark.z);
+    const dx = p.x - c;
+    const dy = p.y - c;
+    if (dx * dx + dy * dy > limit) continue;
+    const s = Math.max(3.2, dpr * 2.05);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - s);
+    ctx.lineTo(p.x + s, p.y);
+    ctx.lineTo(p.x, p.y + s);
+    ctx.lineTo(p.x - s, p.y);
+    ctx.closePath();
+    ctx.fillStyle = "#e3c57a";
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, dpr * 0.7);
+    ctx.strokeStyle = "#0c1b38";
+    ctx.stroke();
+  }
+}
+
+function paintNorth(ctx: CanvasRenderingContext2D, c: number, radius: number, ring: number, dpr: number) {
+  const y = c - radius + Math.max(ring * 0.2, dpr * 6.5);
+  ctx.save();
+  ctx.font = `600 ${Math.max(10, Math.round(8.5 * dpr))}px "Cormorant Garamond", Georgia, serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(2, dpr * 1.5);
+  ctx.strokeStyle = "#0c1b38";
+  ctx.fillStyle = "#e3c57a";
+  ctx.strokeText("N", c, y);
+  ctx.fillText("N", c, y);
+  ctx.restore();
+}
+
 function fillRect(ctx: CanvasRenderingContext2D, at: (x: number, z: number) => Pt, box: { minX: number; maxX: number; minZ: number; maxZ: number }, color: string) {
   const p = at((box.minX + box.maxX) / 2, (box.minZ + box.maxZ) / 2);
   const unitX = at(box.maxX, box.minZ).x - at(box.minX, box.minZ).x;
@@ -785,7 +884,8 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
   } else {
     ctx.fillStyle = PARCHMENT;
     ctx.fillRect(0, 0, size, size);
-    paintTown(ctx, at, radius / view, snap.region);
+    paintTown(ctx, at, radius / view, snap.region, true);
+    paintCityExits(ctx, at, snap, c, radius, dpr);
   }
   for (const blip of snap.blips) {
     const p = project(blip.x, blip.z, c, radius, ox, oz, view);
@@ -835,6 +935,7 @@ function paint(canvas: HTMLCanvasElement, snap: RadarFrame) {
   ctx.lineWidth = Math.max(1, dpr * 1.15);
   ctx.strokeStyle = "#e3c57a";
   ctx.stroke();
+  paintNorth(ctx, c, radius, ring, dpr);
 }
 
 function drawYou(ctx: CanvasRenderingContext2D, self: Pt, yaw: number, dpr: number) {
@@ -1062,6 +1163,18 @@ function paintAtlas(canvas: HTMLCanvasElement, snap: RadarFrame, yughottMap: 1 |
   }
 }
 
+function readMapDebug(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.localStorage.getItem("aetherfold-map-debug") === "1") return true;
+  } catch {
+    /* private mode */
+  }
+  return /(?:^|[?&])mapdebug=1(?:&|$)/.test(window.location.search);
+}
+
+const QUIET_COORDS = "pointer-events-none fixed left-0 top-0 h-px w-px overflow-hidden opacity-0";
+
 export function YardMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const atlasRef = useRef<HTMLCanvasElement>(null);
@@ -1075,8 +1188,13 @@ export function YardMap() {
   const yugSheetRef = useRef<1 | 2>(1);
   const yugPinned = useRef(false);
   const [open, setOpen] = useState(false);
+  const [debug, setDebug] = useState(false);
   const [yugSheet, setYugSheet] = useState<1 | 2>(1);
   const [zone, setZone] = useState("San d'Oria");
+
+  useEffect(() => {
+    setDebug(readMapDebug());
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1155,10 +1273,14 @@ export function YardMap() {
         className="pointer-events-auto flex flex-col items-end text-right"
       >
         <canvas ref={canvasRef} aria-hidden className="pointer-events-none size-28 rounded-full sm:size-36" />
-        <p ref={coordRef} className="mt-1 bg-navy/80 px-1.5 py-0.5 text-xs tabular-nums leading-none text-ink">
+        <p ref={squareRef} className="mt-1 bg-navy/80 px-1.5 py-0.5 text-lg font-semibold tabular-nums leading-none text-gold" />
+        <p
+          ref={coordRef}
+          aria-hidden={debug ? undefined : true}
+          className={debug ? "mt-0.5 bg-navy/80 px-1.5 py-0.5 text-[10px] tabular-nums leading-none text-muted" : QUIET_COORDS}
+        >
           (0.0, 0.0)
         </p>
-        <p ref={squareRef} className="mt-0.5 bg-navy/80 px-1.5 py-0.5 text-xs tabular-nums leading-none text-gold" />
         <p ref={nameRef} className="mt-1 max-w-40 border border-gold bg-panel px-2 py-1 text-right font-display text-sm leading-tight text-gold">
           San d'Oria
         </p>
@@ -1175,7 +1297,12 @@ export function YardMap() {
                   San d'Oria
                 </p>
                 <p ref={atlasSquareRef} data-map-square className="mt-1 font-display text-5xl leading-none tabular-nums text-gold" />
-                <p ref={atlasCoordRef} data-map-coords className="mt-1 text-xs tabular-nums text-muted">
+                <p
+                  ref={atlasCoordRef}
+                  data-map-coords
+                  aria-hidden={debug ? undefined : true}
+                  className={debug ? "mt-1 text-xs tabular-nums text-muted" : QUIET_COORDS}
+                >
                   (0.0, 0.0)
                 </p>
                 {zone === "Yughott Grotto" && (
